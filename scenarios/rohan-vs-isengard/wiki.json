@@ -1,0 +1,219 @@
+{
+  "units": {
+    "rohan_king": {
+      "name": "King's Riders",
+      "faction": "Rohan",
+      "type": "Elite Heavy Cavalry",
+      "description": "The personal household guard of the King of Rohan, mounted on the finest horses bred on the plains of Rohan. These riders are tested veterans who have served the king through many campaigns. They carry long spears, round shields, and ride in close formation that can shatter a shield-wall on open ground. When the king rides at their head, their courage is near-unbreakable.",
+      "strengths": [
+        "Devastating lance charge on open or road terrain — can break any infantry formation in the open",
+        "Exceptional morale bolstered by the presence of the King's banner and leadership",
+        "Highly mobile; able to disengage and regroup faster than foot troops",
+        "Experienced veterans with strong cohesion even under sustained pressure"
+      ],
+      "weaknesses": [
+        "Rugged, rocky, or forested terrain nullifies the cavalry charge advantage entirely",
+        "Vulnerable to massed heavy infantry with pikes or spears in prepared positions",
+        "Horses tire quickly under sustained combat and prolonged forced marches",
+        "River crossings are dangerous — horses are panicked by deep water under fire"
+      ],
+      "morale_notes": "High base morale, but catastrophic losses to the King's personal retinue are deeply demoralizing to all of Rohan. If the King's Riders break, nearby Rohan units lose heart.",
+      "historical_context": "Inspired by Eomer's Rohirrim — the finest light cavalry in Middle-earth, who decide battles with the charge but must disengage before being ground down."
+    },
+    "rohan_westfold": {
+      "name": "Westfold Militia",
+      "faction": "Rohan",
+      "type": "Provincial Infantry / Levy Cavalry",
+      "description": "The men of the Westfold are hardy frontiersmen, farmers and hunters who know their land intimately. They fight as a mix of dismounted riders and light infantry, carrying axes, bows, and short swords. They lack the drill and equipment of the King's cavalry but know the hills and river fords better than any Isengard scout. They are particularly suited to defending the Westfold plains and Helm's Deep approaches.",
+      "strengths": [
+        "Strong knowledge of local terrain, especially around Westfold and the Fords of Isen",
+        "Excellent in defensive positions, able to hold rugged ground longer than expected",
+        "Light archers can screen cavalry advances or harry retreating enemies",
+        "Good at ambush and skirmishing when using local terrain advantage"
+      ],
+      "weaknesses": [
+        "Poorly equipped compared to Uruk-hai — spears and light armor against heavy Uruk steel",
+        "Morale is brittle under sustained frontal assault, especially at night",
+        "Lack of cavalry punch means they cannot exploit a breakthrough",
+        "Vulnerable to the sheer physical size and aggression of Uruk-hai shock troops"
+      ],
+      "morale_notes": "Morale is tied to the land they are defending. Westfold militia fight hard to protect their homes but may waver if they see other Rohan forces broken near them.",
+      "historical_context": "Represents the men who fought and died at the First and Second Battle of the Fords of Isen before the main Rohirrim mustered."
+    },
+    "rohan_helms": {
+      "name": "Helm's Deep Garrison",
+      "faction": "Rohan",
+      "type": "Fortress Infantry / Castle Guard",
+      "description": "The permanent garrison of Helm's Deep, Middle-earth's most formidable fortress in the west of Rohan. These soldiers have drilled specifically to defend the Hornburg's walls, the Deeping Wall, and the narrow causeway. They are experts in the use of the fortress's choke points, oil reserves, and sally ports. In open battle they are average, but behind walls they are multiplied many times over in fighting value.",
+      "strengths": [
+        "Unrivaled defensive capability inside Helm's Deep or any fortified position",
+        "Expert at holding chokepoints, gate defenses, and narrow wall sections",
+        "Strong morale behind walls — the fortress itself is a psychological anchor",
+        "Can hold out against vastly superior numbers when properly supplied and led"
+      ],
+      "weaknesses": [
+        "Low offensive capability — these men are trained to hold, not to advance",
+        "In open field battle they lose the fortress multiplier entirely and are mediocre",
+        "Slow to move; if forced out of their fortress they are vulnerable on the march",
+        "Sappers and siege weapons (Isengard's blasting fire) can crack even Helm's Deep"
+      ],
+      "morale_notes": "Exceptionally steady in defense. The Garrison's morale is near-unshakeable behind the Deep's walls. If forced to fight in the open, confidence drops sharply.",
+      "historical_context": "Represents the defenders of the Battle of the Hornburg — a skeleton garrison that held the greatest fortress in the West against ten thousand Uruk-hai."
+    },
+    "isengard_uruk": {
+      "name": "Uruk-hai Host",
+      "faction": "Isengard",
+      "type": "Elite Shock Infantry",
+      "description": "The crown jewel of Saruman's war machine — ten thousand Uruk-hai bred in the pits of Orthanc, larger and stronger than any orc, capable of marching in daylight, carrying heavy armor and crossbows. The Uruk-hai fight with organized discipline unusual for orc-kind, using shield-walls, pike formations, and coordinated assault ladders. They do not break easily. They do not fear sunlight. They feel no mercy. Saruman's White Hand blazes on their helms.",
+      "strengths": [
+        "Massive physical size and strength — each Uruk outmasses two Men in melee",
+        "Disciplined formation fighting; they hold shield-walls better than most Men",
+        "Can march through the night without the morale penalties of ordinary troops",
+        "Explosive assault capability — breaching charges, battering rams, and blasting fire",
+        "Immune to daylight penalties that afflict ordinary Mordor orcs"
+      ],
+      "weaknesses": [
+        "Cavalry is a genuine threat on open ground — their formation can be disrupted by a mounted charge",
+        "Morale depends on victory and intimidation; a serious repulse can crack their discipline",
+        "Fighting over extended periods away from Isengard's supply stretches their cohesion",
+        "The blasting fire is a one-use siege weapon and cannot be manufactured in the field"
+      ],
+      "morale_notes": "High morale that edges toward fanaticism. However, if the Uruk-hai suffer heavy casualties without progress, the White Hand's dominance begins to fracture. They expect to win.",
+      "historical_context": "The army that devastated the Rohirrim at the Fords of Isen, killed Theodred, and assaulted Helm's Deep — the most formidable conventional force Saruman ever deployed."
+    },
+    "isengard_gap": {
+      "name": "Raft-wardens",
+      "faction": "Isengard",
+      "type": "River Guard / Mixed Infantry",
+      "description": "A garrison force assigned to hold and control the Gap of Rohan and the river approaches from Isengard. They are a mix of Dunlending auxiliaries under Isengard officers, equipped with pole-arms and short bows for river fighting. Their primary role is to hold river crossings, delay Rohirrim cavalry flanks, and secure Isengard's lines of communication. They are not elite shock troops but they are disciplined enough to hold ground if well-positioned.",
+      "strengths": [
+        "Excellent at defending river crossings and narrow passes — terrain they know well",
+        "Pole-arms are effective against cavalry trying to ford rivers",
+        "Dunlending fighters have deep grievances against Rohan, giving them personal motivation",
+        "Good at screening and delaying operations to buy time for the main Uruk host"
+      ],
+      "weaknesses": [
+        "Not heavy enough to stand toe-to-toe with the King's Riders in open ground",
+        "Dunlending auxiliary morale is volatile — they fight fiercely when winning but break quickly if hard pressed",
+        "Limited siege capability; cannot take fortified positions",
+        "Lack the Uruk-hai's iron discipline; prone to disorder under heavy assault"
+      ],
+      "morale_notes": "Moderate morale sustained by Isengard's authority and local Dunlending hatred of Rohan. A significant defeat can shatter the Dunlending contingent's will to fight.",
+      "historical_context": "Represents the river-guard forces that secured Isengard's western flank during the War of the Ring and fought the Rohirrim at the fords."
+    },
+    "isengard_fangorn": {
+      "name": "Scout Band",
+      "faction": "Isengard",
+      "type": "Light Infantry Scouts / Skirmishers",
+      "description": "A small company of Isengard light infantry assigned to scout and hold the Fangorn Gate approach — watching for any Ent activity from the ancient forest and screening Isengard's northern flank. They carry short bows, light crossbows, and curved swords. They are adapted for forest-edge and rugged terrain fighting. As scouts they are valuable; as a frontline force they are limited.",
+      "strengths": [
+        "Exceptional at ambush in rugged or wooded terrain — expert scouts",
+        "Fast movement through difficult country that slows heavier troops",
+        "Crossbows effective for harassment and holding forest-edge chokepoints",
+        "Knowledge of the Fangorn approaches gives them terrain advantage others lack"
+      ],
+      "weaknesses": [
+        "Too light to hold ground against any serious assault by trained infantry",
+        "Cannot stand in open battle against cavalry or heavy foot at all",
+        "Small unit size means casualties rapidly degrade combat effectiveness",
+        "No siege capability whatsoever"
+      ],
+      "morale_notes": "Morale is the lowest of Isengard's forces. These scouts rely on surprise and terrain; if caught in the open or facing a determined enemy, they will try to disengage.",
+      "historical_context": "Represents the Uruk-hai scouts who were pursuing Merry and Pippin through Fangorn — lightly armed but fast, meant for reconnaissance rather than pitched battle."
+    }
+  },
+  "terrain": {
+    "capital_rohan": {
+      "name": "Edoras",
+      "description": "The golden hall of Meduseld sits atop a great hill in the center of the plains of Rohan. The city of Edoras is ringed by a wooden palisade and a deep ditch, and the approach is a long exposed slope covered by archers. It is the heart of Rohan — to take it is to break the kingdom's spirit.",
+      "tactical_notes": "Strong defensive position; the hill approach forces attackers into a killing ground. Defenders gain significant advantage from prepared positions on the slope. Cavalry cannot charge uphill effectively."
+    },
+    "capital_isengard": {
+      "name": "Isengard",
+      "description": "The Ring of Isengard — a great circular wall of stone enclosing the tower of Orthanc, blast furnaces, armories, and the breeding pits of the Uruk-hai. It is a fortress-factory, capable of resupplying and reinforcing Isengard's army indefinitely. The walls are Numenorean-built: ancient, thick, and nearly unassailable by conventional assault.",
+      "tactical_notes": "Extremely difficult to assault directly. Any attacker approaching Isengard faces the full industrial might of Saruman's war machine at point-blank range. Only an Ent-host has ever breached these walls."
+    },
+    "fortified": {
+      "description": "A position reinforced with walls, earthworks, palisades, or natural stone barriers. Defenders can fight from cover, forcing attackers to advance into prepared fire.",
+      "tactical_notes": "Significant defensive bonus. Attackers must either breach the defenses directly (costly) or attempt to flank or starve out the defenders."
+    },
+    "stronghold": {
+      "description": "A major fortress or castle — Helm's Deep being the prime example — with thick walls, towers, a keep, and prepared defenses designed to hold against siege.",
+      "tactical_notes": "Massive defensive multiplier. A small garrison can hold against a much larger force for many turns. Assault without siege equipment is extremely costly."
+    },
+    "easy_defend": {
+      "description": "The terrain naturally favors defense — high ground, narrow approaches, clear fields of fire, or existing earthworks make this position significantly easier to hold than average.",
+      "tactical_notes": "Defender gains positional advantage. Attackers should expect higher casualties unless they can flank or bring overwhelming force."
+    },
+    "hard_defend": {
+      "description": "The terrain is difficult to hold defensively — open flanks, broken ground that disrupts formation, or multiple approach routes that the defender cannot all cover.",
+      "tactical_notes": "Defensive advantage is reduced. Neither side has a significant terrain edge and the battle is decided more by unit quality and stance than position."
+    },
+    "rugged": {
+      "description": "Rocky hills, broken ground, dense undergrowth, or steep slopes — terrain that slows movement and disrupts organized formations.",
+      "tactical_notes": "Cavalry is heavily penalized. Infantry fight more effectively here than cavalry. Ambush potential is high. Heavy formations lose their cohesion advantage."
+    },
+    "open": {
+      "description": "Flat grassland or gentle plains — the wide open spaces of Rohan's interior, ideal for cavalry maneuver and massed infantry formations.",
+      "tactical_notes": "Cavalry has full effectiveness. No cover for defenders. Flanking maneuvers are easy. Units that rely on terrain cover or ambush have no advantage here."
+    },
+    "river_crossing": {
+      "description": "A ford, bridge, or shallow section of river that must be crossed to advance. The crossing point is the decisive terrain feature — defenders can hold the near bank and cut down attackers as they ford.",
+      "tactical_notes": "Massive defensive advantage for whoever holds the crossing. Cavalry is very vulnerable in the water. A small force can hold a ford against a much larger one. Attackers must find another route or pay heavily."
+    },
+    "fast_march": {
+      "description": "Open roads and flat terrain ideal for rapid military movement — armies can cover ground here that would take twice as long in the hills.",
+      "tactical_notes": "Units moving through this terrain arrive fresher and faster. Pursuit is effective. No defensive advantage; the terrain is open and featureless."
+    },
+    "industrial": {
+      "description": "Isengard's forge-district — blast furnaces, armouries, weapon-smiths, and the breeding pits. A position that sustains the entire Isengard war machine.",
+      "tactical_notes": "Isengard forces defending here fight with additional conviction — this is the industrial heart of their faction. Destruction of this area is catastrophic for Isengard's long-term strength."
+    },
+    "ambush": {
+      "description": "Dense trees, broken rock, or deep shadow that enables a small force to strike from concealment and vanish before the enemy can respond effectively.",
+      "tactical_notes": "A defending or stationary force with knowledge of the terrain can spring devastating ambushes. Attacking into ambush terrain without scouts is very dangerous. The Scout Band thrives here."
+    }
+  },
+  "orders": {
+    "assault": {
+      "description": "An all-out, aggressive close assault intended to physically drive the enemy off this position through shock, momentum, and controlled violence. The attacker advances hard with no thought of retreat.",
+      "tactical_notes": "Assault grants an attack bonus from aggression and shock but exposes the attacker to higher casualties if the defender holds. A successful assault physically pushes the defender out of the position — they must fall back. A failed assault is costly: the attacker has committed fully and takes heavy losses.",
+      "game_effect": "If the attacker wins with an assault order, the defender is immediately pushed to an adjacent position. The attacker takes higher casualties than a normal attack even on victory."
+    },
+    "attack": {
+      "description": "A deliberate, coordinated offensive action. The attacking unit advances to close with the enemy, maintaining formation and fire discipline, with the intent to defeat them in place.",
+      "tactical_notes": "Standard attack — balanced between aggression and control. The attacker seeks to win the engagement but preserves the option to consolidate rather than overcommit.",
+      "game_effect": "Normal attack resolution. Attacker wins if their combat power exceeds the defender's. Defender stays in position unless routed."
+    },
+    "breakthrough": {
+      "description": "A concentrated assault at a specific point in the line, designed not merely to defeat the enemy here but to punch through and exploit into the territory beyond. The attacker accepts higher casualties in exchange for potentially advancing through the enemy position.",
+      "tactical_notes": "High-risk, high-reward. If the breakthrough succeeds, the attacker advances into the target territory behind enemy lines, creating a crisis for the defender. If it fails, the attacker has taken heavy casualties with nothing to show.",
+      "game_effect": "Attacker takes increased casualties (1.2x) but on victory can advance to a second target node immediately."
+    },
+    "defend": {
+      "description": "The unit holds its position, using all available cover and preparation to make the attacker's advance as costly as possible. No offensive action — every resource goes to surviving and inflicting losses.",
+      "tactical_notes": "Pure defense maximizes the defensive bonus from terrain and fortification. The unit trades offensive potential entirely for survivability.",
+      "game_effect": "Strong defensive stance — unit gains defense multiplier from terrain and dig-in. Will not advance or pursue."
+    },
+    "reinforce": {
+      "description": "The unit moves to join and bolster an allied force already in contact, lending numbers, morale, and fresh strength to a fight already underway.",
+      "tactical_notes": "Reinforcing units arrive with some tiredness from the march but bring morale boost to the defenders and numerical advantage to the fight.",
+      "game_effect": "Unit arrives at ally's position and grants morale boost to existing defenders."
+    },
+    "dig_in": {
+      "description": "The unit uses available time to fortify their current position — building earthworks, deepening trenches, clearing fields of fire, positioning on high ground. The longer a unit digs in, the harder it is to dislodge.",
+      "tactical_notes": "Each turn spent digging in increases the unit's defensive value. A fully dug-in unit on good terrain can hold against forces several times its size.",
+      "game_effect": "Increases dugIn value over time. dugIn provides stacking defensive bonus in subsequent combat."
+    },
+    "deny": {
+      "description": "The unit fortifies aggressively specifically to block enemy movement through this position — constructing obstacles, covering approaches, making the node impassable rather than just defensible.",
+      "tactical_notes": "Deny is a gamble: the unit commits to aggressive fortification but pays a defensive penalty in direct combat. If they successfully deny passage, the enemy cannot move through. If they are defeated, the deny attempt collapses.",
+      "game_effect": "If dugIn exceeds the threshold, attacking units cannot pass through this node. The defender takes a combat penalty in exchange for the blocking effect."
+    },
+    "hold": {
+      "description": "Dig in and hold this position at all costs — do not retreat, do not disengage. Every man stands and fights.",
+      "tactical_notes": "A unit ordered to hold will not retreat and benefits from its entrenchment. However, taking casualties does reduce the dugIn level slightly.",
+      "game_effect": "Defender stays in place, uses dig-in bonus. DugIn value degrades slightly after taking hits but unit does not retreat."
+    }
+  }
+}

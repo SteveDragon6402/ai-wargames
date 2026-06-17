@@ -1,0 +1,66 @@
+{
+  "id": "rohan-map",
+  "name": "Rohan vs Isengard",
+  "nodes": [
+    {
+      "id": "edoras",
+      "name": "Edoras",
+      "tags": ["capital_rohan", "fortified", "easy_defend"],
+      "layout": { "x": 60, "y": 160 }
+    },
+    {
+      "id": "helms_deep",
+      "name": "Helm's Deep",
+      "tags": ["stronghold", "easy_defend", "rugged"],
+      "layout": { "x": 60, "y": 400 }
+    },
+    {
+      "id": "westfold",
+      "name": "Westfold",
+      "tags": ["open"],
+      "layout": { "x": 220, "y": 280 }
+    },
+    {
+      "id": "fords_of_isen",
+      "name": "Fords of Isen",
+      "tags": ["river_crossing", "hard_defend"],
+      "layout": { "x": 400, "y": 300 }
+    },
+    {
+      "id": "gap_of_rohan",
+      "name": "Gap of Rohan",
+      "tags": ["open", "fast_march"],
+      "layout": { "x": 580, "y": 280 }
+    },
+    {
+      "id": "isengard",
+      "name": "Isengard",
+      "tags": ["capital_isengard", "industrial", "fortified"],
+      "layout": { "x": 760, "y": 160 }
+    },
+    {
+      "id": "fangorn_gate",
+      "name": "Fangorn Gate",
+      "tags": ["rugged", "ambush"],
+      "layout": { "x": 620, "y": 60 }
+    },
+    {
+      "id": "dunland_pass",
+      "name": "Dunland Pass",
+      "tags": ["rugged"],
+      "layout": { "x": 400, "y": 460 }
+    }
+  ],
+  "edges": [
+    { "id": "e_edoras_westfold", "from": "edoras", "to": "westfold", "tags": ["road"] },
+    { "id": "e_helms_westfold", "from": "helms_deep", "to": "westfold", "tags": ["rugged"] },
+    { "id": "e_westfold_fords", "from": "westfold", "to": "fords_of_isen", "tags": ["road"] },
+    { "id": "e_fords_gap", "from": "fords_of_isen", "to": "gap_of_rohan", "tags": ["road"] },
+    { "id": "e_gap_isengard", "from": "gap_of_rohan", "to": "isengard", "tags": ["road"] },
+    { "id": "e_gap_fangorn", "from": "gap_of_rohan", "to": "fangorn_gate", "tags": ["rugged"] },
+    { "id": "e_fangorn_isengard", "from": "fangorn_gate", "to": "isengard", "tags": ["rugged"] },
+    { "id": "e_fords_dunland", "from": "fords_of_isen", "to": "dunland_pass", "tags": ["rugged"] },
+    { "id": "e_dunland_westfold", "from": "dunland_pass", "to": "westfold", "tags": ["rugged"] },
+    { "id": "e_dunland_helms", "from": "dunland_pass", "to": "helms_deep", "tags": ["river"] }
+  ]
+}

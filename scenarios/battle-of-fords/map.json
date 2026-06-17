@@ -1,0 +1,73 @@
+{
+  "id": "fords-of-isen-map",
+  "name": "First Battle of the Fords of Isen",
+  "nodes": [
+    {
+      "id": "isengard_gate",
+      "name": "Isengard Gate",
+      "tags": ["capital_isengard", "fortified"],
+      "layout": { "x": 760, "y": 60 }
+    },
+    {
+      "id": "north_bank",
+      "name": "North Bank",
+      "tags": ["plains", "open"],
+      "layout": { "x": 580, "y": 160 }
+    },
+    {
+      "id": "west_ford",
+      "name": "West Ford",
+      "tags": ["river_crossing", "hard_defend"],
+      "layout": { "x": 420, "y": 220 }
+    },
+    {
+      "id": "eyot",
+      "name": "The Eyot",
+      "tags": ["rugged", "hard_defend"],
+      "layout": { "x": 400, "y": 320 }
+    },
+    {
+      "id": "east_bank",
+      "name": "East Bank",
+      "tags": ["plains", "open"],
+      "layout": { "x": 240, "y": 300 }
+    },
+    {
+      "id": "south_ford",
+      "name": "South Ford",
+      "tags": ["river_crossing"],
+      "layout": { "x": 500, "y": 440 }
+    },
+    {
+      "id": "westemnet_road",
+      "name": "Westemnet Road",
+      "tags": ["capital_rohan", "fast_march", "open"],
+      "layout": { "x": 80, "y": 340 }
+    },
+    {
+      "id": "wooded_slopes",
+      "name": "Wooded Slopes",
+      "tags": ["rugged", "ambush"],
+      "layout": { "x": 620, "y": 360 }
+    },
+    {
+      "id": "north_wold",
+      "name": "North Wold",
+      "tags": ["open", "fast_march"],
+      "layout": { "x": 380, "y": 80 }
+    }
+  ],
+  "edges": [
+    { "id": "e_gate_north", "from": "isengard_gate", "to": "north_bank", "tags": ["road"] },
+    { "id": "e_north_ford", "from": "north_bank", "to": "west_ford", "tags": ["road"] },
+    { "id": "e_ford_eyot", "from": "west_ford", "to": "eyot", "tags": ["river"] },
+    { "id": "e_eyot_east", "from": "eyot", "to": "east_bank", "tags": ["river"] },
+    { "id": "e_east_westemnet", "from": "east_bank", "to": "westemnet_road", "tags": ["road"] },
+    { "id": "e_north_slopes", "from": "north_bank", "to": "wooded_slopes", "tags": ["rugged"] },
+    { "id": "e_slopes_south", "from": "wooded_slopes", "to": "south_ford", "tags": ["rugged"] },
+    { "id": "e_south_east", "from": "south_ford", "to": "east_bank", "tags": ["river"] },
+    { "id": "e_south_westemnet", "from": "south_ford", "to": "westemnet_road", "tags": ["road"] },
+    { "id": "e_wold_north", "from": "north_wold", "to": "north_bank", "tags": ["road"] },
+    { "id": "e_wold_east", "from": "north_wold", "to": "east_bank", "tags": ["road"] }
+  ]
+}

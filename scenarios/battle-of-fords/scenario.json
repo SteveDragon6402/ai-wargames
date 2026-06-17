@@ -1,0 +1,134 @@
+{
+  "id": "battle-of-fords",
+  "name": "First Battle of the Fords of Isen",
+  "mapId": "fords-of-isen-map",
+  "factions": ["rohan", "isengard"],
+  "capitalNodes": {
+    "rohan": "westemnet_road",
+    "isengard": "isengard_gate"
+  },
+  "combat": {
+    "casualtyRate": 0.38,
+    "mutualAttrition": 0.22,
+    "dugInBonus": 0.25,
+    "speedDefenseBonus": 0.15,
+    "retreatLossMultiplier": 1.5,
+    "assaultAttackBonus": 1.35,
+    "denyDefensePenalty": 0.85,
+    "routThreshold": 20,
+    "dugInThreshold": 0.35,
+    "morale": { "win": 5, "loss": -14, "rout": -28, "digIn": 4 }
+  },
+  "units": [
+    {
+      "id": "uruk_vanguard",
+      "name": "Uruk-hai Vanguard",
+      "factionId": "isengard",
+      "nodeId": "north_bank",
+      "attack": 9,
+      "defense": 7,
+      "strength": 1,
+      "morale": 80,
+      "unitType": "heavy_infantry"
+    },
+    {
+      "id": "deaths_head",
+      "name": "Death's Head Stormers",
+      "factionId": "isengard",
+      "nodeId": "north_bank",
+      "attack": 11,
+      "defense": 5,
+      "strength": 0.4,
+      "morale": 85,
+      "unitType": "shock_infantry"
+    },
+    {
+      "id": "warg_outriders",
+      "name": "Warg-Rider Outriders",
+      "factionId": "isengard",
+      "nodeId": "north_bank",
+      "attack": 6,
+      "defense": 5,
+      "strength": 0.2,
+      "morale": 70,
+      "unitType": "light_cavalry"
+    },
+    {
+      "id": "warg_flankers",
+      "name": "Warg-Rider Flankers",
+      "factionId": "isengard",
+      "nodeId": "south_ford",
+      "attack": 7,
+      "defense": 5,
+      "strength": 0.2,
+      "morale": 72,
+      "unitType": "light_cavalry"
+    },
+    {
+      "id": "dunlending_spear",
+      "name": "Dunlending Warband",
+      "factionId": "isengard",
+      "nodeId": "isengard_gate",
+      "attack": 6,
+      "defense": 5,
+      "strength": 0.8,
+      "morale": 68,
+      "unitType": "light_infantry"
+    },
+    {
+      "id": "theodred_eorod",
+      "name": "Théodred's Household Éored",
+      "factionId": "rohan",
+      "nodeId": "east_bank",
+      "attack": 9,
+      "defense": 7,
+      "strength": 0.25,
+      "morale": 90,
+      "unitType": "heavy_cavalry"
+    },
+    {
+      "id": "west_mark_riders",
+      "name": "West-mark Éoreds",
+      "factionId": "rohan",
+      "nodeId": "east_bank",
+      "attack": 7,
+      "defense": 6,
+      "strength": 0.5,
+      "morale": 78,
+      "unitType": "medium_cavalry"
+    },
+    {
+      "id": "theodred_companions",
+      "name": "Théodred's Companions",
+      "factionId": "rohan",
+      "nodeId": "east_bank",
+      "attack": 8,
+      "defense": 9,
+      "strength": 0.25,
+      "morale": 92,
+      "unitType": "heavy_infantry"
+    },
+    {
+      "id": "grimbold",
+      "name": "Grimbold's Éored",
+      "factionId": "rohan",
+      "nodeId": "westemnet_road",
+      "attack": 7,
+      "defense": 6,
+      "strength": 0.25,
+      "morale": 80,
+      "unitType": "medium_cavalry"
+    },
+    {
+      "id": "elfhelm",
+      "name": "Elfhelm's Relief",
+      "factionId": "rohan",
+      "nodeId": "north_wold",
+      "attack": 8,
+      "defense": 6,
+      "strength": 0.25,
+      "morale": 82,
+      "unitType": "medium_cavalry"
+    }
+  ]
+}

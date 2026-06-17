@@ -1,0 +1,24 @@
+{
+  "name": "ai-wargames",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "dev": "node scripts/kill-port.mjs 3001 && turbo run dev",
+    "build": "turbo run build",
+    "lint": "turbo run lint",
+    "start": "turbo run start",
+    "test": "turbo run test",
+    "db:push": "pnpm --filter @wargame/db push",
+    "db:generate": "pnpm --filter @wargame/db generate"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
+  },
+  "pnpm": {
+    "overrides": {
+      "esbuild": "0.19.12"
+    }
+  }
+}

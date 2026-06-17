@@ -1,0 +1,87 @@
+{
+  "id": "rohan-vs-isengard",
+  "name": "Rohan vs Isengard",
+  "mapId": "rohan-map",
+  "factions": ["rohan", "isengard"],
+  "capitalNodes": {
+    "rohan": "edoras",
+    "isengard": "isengard"
+  },
+  "fallbackCapital": {
+    "rohan": "helms_deep"
+  },
+  "combat": {
+    "casualtyRate": 0.35,
+    "mutualAttrition": 0.2,
+    "dugInBonus": 0.25,
+    "speedDefenseBonus": 0.15,
+    "retreatLossMultiplier": 1.4,
+    "assaultAttackBonus": 1.3,
+    "denyDefensePenalty": 0.85,
+    "routThreshold": 25,
+    "dugInThreshold": 0.35,
+    "morale": { "win": 5, "loss": -12, "rout": -25, "digIn": 4 }
+  },
+  "units": [
+    {
+      "id": "rohan_king",
+      "name": "King's Riders",
+      "factionId": "rohan",
+      "nodeId": "edoras",
+      "attack": 8,
+      "defense": 7,
+      "strength": 1,
+      "morale": 85
+    },
+    {
+      "id": "rohan_westfold",
+      "name": "Westfold Militia",
+      "factionId": "rohan",
+      "nodeId": "westfold",
+      "attack": 5,
+      "defense": 6,
+      "strength": 1,
+      "morale": 75
+    },
+    {
+      "id": "rohan_helms",
+      "name": "Helm's Deep Garrison",
+      "factionId": "rohan",
+      "nodeId": "helms_deep",
+      "attack": 4,
+      "defense": 9,
+      "strength": 1,
+      "morale": 82
+    },
+    {
+      "id": "isengard_uruk",
+      "name": "Uruk-hai Host",
+      "factionId": "isengard",
+      "nodeId": "isengard",
+      "attack": 9,
+      "defense": 6,
+      "strength": 1,
+      "morale": 80
+    },
+    {
+      "id": "isengard_gap",
+      "name": "Raft-wardens",
+      "factionId": "isengard",
+      "nodeId": "gap_of_rohan",
+      "attack": 6,
+      "defense": 5,
+      "strength": 1,
+      "morale": 72
+    },
+    {
+      "id": "isengard_fangorn",
+      "name": "Scout Band",
+      "factionId": "isengard",
+      "nodeId": "fangorn_gate",
+      "attack": 5,
+      "defense": 4,
+      "strength": 1,
+      "morale": 70
+    }
+  ]
+}

@@ -1,0 +1,478 @@
+{
+  "units": {
+    "uruk_vanguard": {
+      "name": "Uruk-hai Vanguard",
+      "faction": "Isengard",
+      "type": "Heavy Infantry — Vanguard Regiment",
+      "description": "Saruman's heavy infantry spearhead at the First Fords — disciplined soldiers bred in the pits of Orthanc, taller and stronger than Men, capable of sustained combat without rest. They carry heavy scimitars, black shields, and iron mail. Their mission is to force the West Ford under arrow cover and engage Théodred's spearmen directly while the flanking force circles to the south.",
+      "strengths": [
+        "Exceptional strength and endurance — outmatches a Rohir in a straight fight",
+        "Disciplined formation fighting; holds a shield-wall under arrow fire",
+        "High morale bordering on fanaticism",
+        "Unaffected by daylight",
+        "Devastating in close assault"
+      ],
+      "weaknesses": [
+        "Mounted cavalry on open ground is a genuine threat before they can set shields",
+        "Slow to cross water under fire — the ford is a death funnel until they reach the bank",
+        "No missile capability of their own"
+      ],
+      "morale_notes": "Very high morale sustained by certainty of purpose. Can fracture if taking heavy casualties without progress, especially against cavalry.",
+      "historical_context": "These are the units who break Théodred's line at the West Ford. Their sustained advance under arrow fire demonstrates the core of Uruk military discipline."
+    },
+    "uruk_white_hand": {
+      "name": "Uruk Vanguard 'White Hand'",
+      "faction": "Isengard",
+      "type": "Heavy Infantry — Vanguard Regiment",
+      "description": "The first of Saruman's two heavy infantry regiments committed to the First Fords, wearing the White Hand blazed on black. These are not the screaming mountain-orcs of Mordor but disciplined soldiers bred in the pits of Orthanc — taller than Men, stronger, capable of marching through the day and night without the penalties that afflict ordinary orc-kind. They carry heavy scimitars, black shields, and wear iron mail. Their role at the Fords is to cross under arrow cover and engage Théodred's spearmen directly, holding them in place while the flanking force goes to work.",
+      "strengths": [
+        "Exceptional physical strength and endurance — each Uruk outmatches a man of Rohan in a straight test of arms",
+        "Disciplined formation fighting; they hold a shield-wall under arrow fire better than any unit on the field",
+        "High morale that borders on fanaticism — they expect to win and fight accordingly",
+        "Unaffected by daylight, which hampers many of Saruman's Mountain Orc auxiliaries",
+        "Devastating in close assault: once they close to striking range, they are very hard to dislodge"
+      ],
+      "weaknesses": [
+        "Cavalry on open ground is a genuine threat — a mounted charge from the éored can disrupt their formation before they can set their shields",
+        "A serious repulse can crack their confidence; the Uruks expect victory and struggle psychologically with sustained setback",
+        "Slow to cross water under fire; the West Ford is a death-funnel for them if the Rohirrim archers hold the bank",
+        "No missile capability of their own; dependent on the Dunlending bows for ranged support"
+      ],
+      "morale_notes": "Very high starting morale, sustained by the certainty of Saruman's purpose and the intoxication of numbers. However, if they take heavy casualties without progress — particularly against cavalry charges on open ground — their iron confidence can fracture.",
+      "historical_context": "These are the units who break Théodred's line at the West Ford in Tolkien's account. Their crossing under arrow fire, absorbing losses and still advancing, is one of the most telling demonstrations of Uruk discipline in the narrative."
+    },
+    "uruk_iron_tower": {
+      "name": "Uruk Vanguard 'Iron Tower'",
+      "faction": "Isengard",
+      "type": "Heavy Infantry — Vanguard Regiment",
+      "description": "The second of Saruman's heavy vanguard regiments, indistinguishable from the White Hand in equipment and quality, named for the tower of Orthanc that forged them. Where the White Hand crosses first and takes the worst of the arrow fire, the Iron Tower follows to exploit the lodgement on the far bank and widen the breach. They fight with the same cold, merciless discipline — but they arrive slightly fresher, which matters enormously in a river crossing battle.",
+      "strengths": [
+        "Same exceptional quality as the White Hand — heavy infantry at the peak of Isengard's military art",
+        "Arriving in the second wave means slightly lower casualties from the initial crossing",
+        "Excellent at consolidating a position once the first regiment has established a foothold",
+        "Very high cohesion; they will not break while the White Hand still stands"
+      ],
+      "weaknesses": [
+        "Cavalry threat on the east bank if they cross without the flanking move securing the rear first",
+        "If the White Hand is destroyed or repulsed, the Iron Tower's morale takes a serious knock",
+        "Like all Uruk infantry, they struggle in the water itself — the ford is dangerous for them until they reach the far bank"
+      ],
+      "morale_notes": "Iron morale while receiving support from their sister regiment. If the White Hand breaks first, expect a significant morale contagion to the Iron Tower.",
+      "historical_context": "Represents the bulk of the Uruk spearhead that overwhelms the Rohirrim position through sheer sustained pressure once the crossing has been forced."
+    },
+    "deaths_head": {
+      "name": "Death's Head Stormers",
+      "faction": "Isengard",
+      "type": "Shock Infantry — Breach Assault Company",
+      "description": "A smaller but terrifyingly specialised unit of perhaps 150–200 of Saruman's most brutal fighters, carrying two-handed weapons — great two-handed axes and heavy scimitars — and wearing heavier armour than the standard Uruks, but no shields. They are not built to hold a line but to break one. Where the Vanguard regiments are the hammer that pushes, the Death's Head are the spike that punches through. Their specific assignment at the Fords is to get onto the Eyot and kill Théodred personally — a task Saruman has evidently thought about carefully.",
+      "strengths": [
+        "Devastating close-quarters assault power — their two-handed weapons can cleave through shield-rings that would stop a spear",
+        "Physically superior even to standard Uruks; selected for size, aggression, and kill-rate",
+        "Excellent in cramped, confined positions like the Eyot, where formation matters less and individual ferocity more",
+        "High morale from their elite status and the fanaticism of their specific mission"
+      ],
+      "weaknesses": [
+        "No shields makes them vulnerable to massed missile fire — a withering Rohirrim arrow volley can hurt them badly before contact",
+        "Small unit size; casualties are proportionally more serious than for the large Vanguard regiments",
+        "Poor in open ground where they lack the formation protection that standard Uruks have",
+        "If their assault fails, they have no fallback capability — they are built to attack, not to hold"
+      ],
+      "morale_notes": "Fanatically high morale with an almost suicidal willingness to close. They will take extreme casualties to complete their assault. However, a decisive repulse — especially one that kills significant numbers before they can close — could break this brittle confidence.",
+      "historical_context": "These are the warriors who kill Théodred on the Eyot in Tolkien's account. Tolkien does not name them explicitly but their role is implied by the specificity of the assassination mission and the nature of the fight on the island — close, brutal, and decisive."
+    },
+    "orc_skirmishers": {
+      "name": "Mountain Orc Skirmishers",
+      "faction": "Isengard",
+      "type": "Light Infantry — Skirmisher Cohort",
+      "description": "Several hundred mountain orcs from the Misty Mountains — smaller and weaker than Uruks but numerous enough to be useful as missile fodder and harassment troops. They carry short bows, javelins, and curved blades. Their job at the Fords is not to win fights but to force the Rohirrim to dismount and form line, absorbing attention and arrows that would otherwise fall on the Uruk regiments. They are genuinely afraid of cavalry and will break under a mounted charge, but against infantry on foot in the press of a contested ford they can be surprisingly effective.",
+      "strengths": [
+        "Numerous, cheap, and useful for area harassment and forcing the enemy to react",
+        "Short bows and javelins keep the Rohirrim archers busy and thin the cavalry screen",
+        "Can swarm isolated or weakened units effectively when not facing formed cavalry",
+        "Their fear of cavalry can actually be useful — they will not over-extend into open ground"
+      ],
+      "weaknesses": [
+        "Will break and rout under a cavalry charge with almost no resistance — their only hope is cover or terrain",
+        "Low morale that collapses quickly under serious pressure from any quality unit",
+        "Vulnerable to daylight (though less severely than deep-Mordor orcs); fatigue faster",
+        "Completely outclassed in direct melee against anything better than levy infantry"
+      ],
+      "morale_notes": "Brittle. They fight adequately when the battle is going Isengard's way and they have numbers. When casualties mount or the cavalry arrives in force, they will rout quickly.",
+      "historical_context": "Represents the common orc contingent that Tolkien describes as part of Saruman's mixed force — the expendable mass that screens the Uruk advance and pins the Rohirrim's attention."
+    },
+    "warg_outriders": {
+      "name": "Warg-Rider Outriders",
+      "faction": "Isengard",
+      "type": "Light Cavalry — Northern Screen",
+      "description": "Sixty to eighty warg-riders assigned to screen the north of the Isengard advance and prevent the Rohirrim from getting clean reconnaissance back to their commanders. Wargs are not horses — they are intelligent predatory creatures with their own aggression — and their riders are brutal, experienced fighters. Against infantry in the open they are genuinely dangerous. Against trained Rohirrim cavalry on open ground, they are outmatched but fast enough to disengage. Their value is in disruption and information control rather than decisive combat.",
+      "strengths": [
+        "Very fast; able to screen large areas and deny the Rohirrim scouting advantages",
+        "Effective against isolated infantry and stragglers; will kill routing units ruthlessly",
+        "Wargs can traverse rugged terrain better than horses, giving them options in broken ground",
+        "Psychological factor: the sight and sound of wargs charging infantry is terrifying"
+      ],
+      "weaknesses": [
+        "Outmatched in a direct cavalry engagement against éoreds — Rohirrim horses and riders are better trained for mounted combat",
+        "Small unit size means they must pick their fights carefully or be destroyed",
+        "Cannot hold ground or resist determined infantry that forms a defensive line",
+        "If the Rohirrim cavalry gets into them properly, they will take serious losses quickly"
+      ],
+      "morale_notes": "Moderate morale. They will fight aggressively when they have the advantage but will disengage rather than take catastrophic losses in a fight they cannot win.",
+      "historical_context": "Represents the warg-rider screen that covered Saruman's advance and helped blind Rohan's cavalry commanders at the Fords."
+    },
+    "warg_flankers": {
+      "name": "Warg-Rider Flankers",
+      "faction": "Isengard",
+      "type": "Light Cavalry — South Ford Crossing (Hidden Deployment)",
+      "description": "The most operationally significant unit in Saruman's first commitment — sixty to eighty warg-riders assigned not to screen the front but to cross at the South Ford while the main battle rages at the West Ford, then come up behind Théodred's position on the East Bank. Their approach is kept secret. Their appearance in Rohan's rear is what transforms a hard-fought defensive action into a disaster, forcing Théodred to retreat onto the Eyot where he will be killed. They start the battle already across the river at the South Ford, waiting for their moment. Think of them as Saruman's version of a cavalry envelopment.",
+      "strengths": [
+        "Hidden deployment: Rohan does not know they are across until they appear — no scout warning, no time to react",
+        "Their mere appearance in Rohan's rear destroys morale and forces an immediate repositioning",
+        "Fast enough to exploit any gap in the Rohirrim position before it can be plugged",
+        "Effective against infantry caught in the open, especially units trying to retreat or reorient"
+      ],
+      "weaknesses": [
+        "Small unit size — they cannot hold the South Ford against a determined Rohirrim counterattack",
+        "If Rohan detects them early (e.g., via Elfhelm's approach from the North Wold), their surprise advantage disappears",
+        "They cannot cross the contested East Bank alone against formed cavalry; they need the main battle to keep Rohan occupied",
+        "Their wargs are not horses — sustained pursuit or open-field battle against éoreds will cost them badly"
+      ],
+      "morale_notes": "Confident and aggressive when their manoeuvre works as planned. If their surprise is spoiled or they encounter serious resistance, their morale is not robust enough for a sustained fight.",
+      "historical_context": "These are the units whose south ford crossing Tolkien identifies as the decisive operational move of the First Battle of the Fords. Grimbold later discovers and blocks this crossing in the Second Battle — but here, it works perfectly."
+    },
+    "dunlending_spear": {
+      "name": "Dunlending Spear Regiment",
+      "faction": "Isengard",
+      "type": "Light Infantry — Provincial Spear",
+      "description": "Four hundred Dunlending hillmen from the slopes of the White Mountains, armed with long spears, hide shields, and short swords. The Dunlendings have fought Rohan for generations over the Westfold and the Fords — they do not fight for Saruman's ideology but for their own ancient grievances. Against Rohirrim cavalry they are badly outmatched in open ground, but they fight with a ferocity born of hatred, and in prepared positions or river crossings they can be formidable. This regiment arrives second, following the Uruk vanguard, to hold ground the Uruks have taken.",
+      "strengths": [
+        "Motivated by deep ancestral hatred of Rohan — morale bonus when fighting Rohirrim specifically",
+        "Competent spear formation; effective at holding a position once the Uruks have seized it",
+        "Numerous enough to plug gaps and absorb attrition",
+        "Fighting for their homeland's honor gives them resilience that pure mercenaries lack"
+      ],
+      "weaknesses": [
+        "Outclassed by Rohirrim cavalry on open ground — a mounted charge will break them quickly",
+        "Lower quality than the Uruk regiments in every measurable respect",
+        "Dunlending morale is volatile: fight hard while winning, but if the battle turns against Isengard they may waver or desert",
+        "Limited tactical flexibility; they are trained to hold and push, not to manoeuvre"
+      ],
+      "morale_notes": "Hatred of Rohan provides a significant morale sustain in this specific battle. However, if Isengard's overall position collapses, Dunlending morale goes with it quickly — their loyalty to Saruman is shallow.",
+      "historical_context": "Tolkien describes Dunlendings as a significant component of Saruman's force at the Fords, drawn by ancestral hatred of Rohan. They fight alongside the Uruk-hai but represent a very different military tradition."
+    },
+    "dunlending_bow": {
+      "name": "Dunlending Bow Regiment",
+      "faction": "Isengard",
+      "type": "Light Infantry — Hillmen Archers",
+      "description": "Four hundred Dunlending hillmen equipped as archers, using the short recurve bows of the hill tribes. Their primary role is to cover the Uruk crossing at the West Ford — keeping the Rohirrim heads down while the heavy infantry wades across. Dunlending archery is competent but not exceptional; their main contribution is volume of fire rather than precision. On the North Bank they have a good elevated firing position over the ford that partially compensates for their lower individual skill compared to Westfold archers.",
+      "strengths": [
+        "Volume of fire can suppress Rohirrim archers and cavalry preparing to contest the ford",
+        "Fighting from the North Bank gives a positional advantage in the early turns",
+        "Hatred of Rohan sustains morale and focus during the gruelling arrow exchange",
+        "Numerous enough to absorb some casualties and keep firing"
+      ],
+      "weaknesses": [
+        "Outgunned individually by the Westfold bows, who are trained archers with longer range",
+        "In direct melee they are light infantry with minimal armour — catastrophic if cavalry reaches them",
+        "Once the ford is forced and the main battle moves to the East Bank, their role becomes secondary",
+        "Like all Dunlendings, their loyalty evaporates if Isengard's overall position breaks down"
+      ],
+      "morale_notes": "Steady while holding the North Bank in a fire support role. They become uncomfortable when pushed into direct melee.",
+      "historical_context": "Tolkien implies significant archer cover for the Uruk crossing; these represent that fire support element, using the classic Dunlending hillmen archery that the Rohirrim knew from generations of border skirmishing."
+    },
+    "dunlending_reavers": {
+      "name": "Dunlending Axemen 'Reavers'",
+      "faction": "Isengard",
+      "type": "Medium Infantry — Dunlending Storm Troops",
+      "description": "A hundred and fifty to two hundred of the most aggressive Dunlending fighters, equipped as heavy axemen with two-handed axes and minimal armour. Where the spear regiment is disciplined and holds line, the Reavers are berserkers — they fight for the joy of killing Rohirrim, and they use terrain and chaos better than the more disciplined spear regiment. They are best deployed into the close fighting at contested nodes, particularly the Eyot, where their axes and aggression can be decisive in the scramble that follows the Uruk breach.",
+      "strengths": [
+        "Two-handed axes are brutally effective in close combat where formation gives way to individual fighting",
+        "High aggression and willingness to take casualties to close with the enemy",
+        "Better than the spear regiment in cramped, confused fighting — they thrive in chaos",
+        "Ancestral hatred of Rohan makes them fight with exceptional ferocity against Rohirrim specifically"
+      ],
+      "weaknesses": [
+        "Minimal armour makes them very vulnerable to arrow fire on approach",
+        "Small unit size; they are consumed quickly in sustained fighting",
+        "Two-handed weapons leave them exposed if the enemy holds a tight shield-wall",
+        "Not disciplined enough to hold ground in an ordered fashion — better attacking than defending"
+      ],
+      "morale_notes": "Very aggressive morale, bordering on reckless. They will charge into situations that disciplined troops would avoid. This is a strength until it gets them killed.",
+      "historical_context": "Tolkien references Dunlending axemen at various points in the fighting around the Fords. These represent the more aggressive shock elements of the Dunlending contingent."
+    },
+    "theodred_eorod": {
+      "name": "Théodred's Household Éored",
+      "faction": "Rohan",
+      "type": "Heavy Cavalry — Prince's Household",
+      "description": "One hundred and twenty of the finest riders in the West-mark, personally chosen by Théodred son of Théoden and bound to him by the deepest oaths of Rohan's warrior culture. They carry the longest spears, ride the best horses bred on the plains south of the Fords, and wear painted shields with the horse-head of Rohan. They are the best-equipped cavalry force on this field. But Théodred has made a decisive error: by moving aggressively to the East Bank to contest the crossing, he has put his finest cavalry in a position where, once the South Ford flanking move succeeds, they will be forced to dismount on the Eyot and fight on foot — terrain that nullifies everything that makes them great.",
+      "strengths": [
+        "Devastating lance charge on open ground — nothing on this field can stop them on the plains",
+        "Exceptional morale bolstered by the presence of Théodred's personal command and the pride of Rohan's finest",
+        "Highly mobile; in the early turns they can screen and disrupt the Isengard advance before the ford is forced",
+        "Experienced veterans who maintain cohesion under sustained pressure"
+      ],
+      "weaknesses": [
+        "On the Eyot they must fight dismounted — cavalry on the island is worse than useless; they become simply well-equipped infantry fighting at a morale disadvantage from the dismount",
+        "Once flanked by the Warg-Rider Flankers, their line of retreat is cut and they face the psychological catastrophe of encirclement",
+        "River crossings: their horses panic in deep water under fire — they must avoid the ford themselves",
+        "Small unit size; Théodred's household is irreplaceable and every man lost is a personal blow to Rohan"
+      ],
+      "morale_notes": "Extraordinarily high morale, bordering on recklessness. They will follow Théodred wherever he leads, including onto the Eyot in a last stand. If Théodred is killed (he will be), this unit either fights to the death or disintegrates entirely.",
+      "historical_context": "Théodred commands from the Eyot and dies there, having led his household into an inescapable position. His men form a shield-ring around him and are destroyed. This is one of the most tragic episodes in Tolkien's account of the War of the Ring — the heir of Rohan brought low by a trap he could not see."
+    },
+    "west_mark_riders": {
+      "name": "West-mark Éoreds",
+      "faction": "Rohan",
+      "type": "Medium Cavalry — Line Éoreds",
+      "description": "The combined line cavalry of the West-mark — well-equipped, well-trained Rohirrim riders. Not the elite of Théodred's household but the backbone of the Westfold defence. They screen Théodred's deployment, engage the Warg-riders, and attempt to disrupt the Uruk crossing. Combined strength of two éoreds.",
+      "strengths": [
+        "Mounted speed and shock — can disrupt Uruk formations before they set",
+        "High mobility across the open east bank",
+        "Competent coordinated fighting; steady in a running engagement"
+      ],
+      "weaknesses": [
+        "Outmatched by Uruk heavy infantry in a sustained melee if they cannot maintain momentum",
+        "Vulnerable to the South Ford flanking move — if the rear is threatened, morale becomes fragile",
+        "River crossings and the Eyot negate their cavalry advantage"
+      ],
+      "morale_notes": "Solid but not heroic. Will hold while Théodred leads; if his command element is cut off, expect steady deterioration.",
+      "historical_context": "These éoreds took heavy casualties when the South Ford flanking move forced a general retreat. They anchored the line long enough for the companions to reach the Eyot."
+    },
+    "west_mark_1": {
+      "name": "First West-mark Éored",
+      "faction": "Rohan",
+      "type": "Medium Cavalry — Line Éored",
+      "description": "One hundred and twenty riders of the West-mark's standing cavalry, well-trained and equipped but not the elite of Théodred's household. They carry spears, round shields, and ride the sturdy horses of the Westfold. Their role at the Fords is to screen Théodred's deployment, engage the warg-riders, and contest the crossing at range before the main Uruk push. They are capable fighters but outnumbered and, like all Rohirrim cavalry at this battle, potentially made useless by the flanking manoeuvre that will come from the South Ford.",
+      "strengths": [
+        "Effective cavalry charge on open ground — can disrupt Uruk formations if they catch them exposed",
+        "Mobile enough to respond to threats across the East Bank and the Westemnet Road",
+        "Good morale sustained by the defensive mission of protecting their homeland"
+      ],
+      "weaknesses": [
+        "On the Eyot or West Ford they cannot use their cavalry advantage",
+        "Outnumbered roughly 2:1 by the Isengard force overall",
+        "If the flanking move succeeds, they may be caught on the East Bank with nowhere to retreat"
+      ],
+      "morale_notes": "Steady defensive morale. They fight hard for the Westfold but are not fanatical; if the battle turns catastrophically they will attempt to withdraw rather than die in place.",
+      "historical_context": "Represents Théodred's line éoreds — the workhorses of the West-mark cavalry that take the initial shock of the Uruk advance and suffer heavy casualties in the fighting retreat."
+    },
+    "west_mark_2": {
+      "name": "Second West-mark Éored",
+      "faction": "Rohan",
+      "type": "Medium Cavalry — Line Éored",
+      "description": "A second éored of similar quality to the First — one hundred and twenty riders screening and fighting alongside their comrades. Together the two line éoreds give Théodred a mobile screen that can harass the Uruk crossing and buy time, but they cannot stop the crossing outright against the weight of numbers Saruman has committed.",
+      "strengths": [
+        "Working in concert with the First Éored, they can conduct coordinated charges that neither could manage alone",
+        "Experienced riders who know this ground — the Westfold and the Fords are their home territory"
+      ],
+      "weaknesses": [
+        "Same cavalry limitations on river crossings and the Eyot",
+        "By the time the flanking move develops, both line éoreds are likely already bloodied and tired"
+      ],
+      "morale_notes": "Similar to the First Éored. Their morale is tied to the general state of the battle — when they see the flanking riders appear in the rear, expect a sharp morale drop.",
+      "historical_context": "Tolkien refers to multiple éoreds in Théodred's command. These two represent the standard West-mark cavalry that bear the brunt of the forward fighting."
+    },
+    "grimbold": {
+      "name": "Third Éored (Grimbold's)",
+      "faction": "Rohan",
+      "type": "Medium Cavalry — Reserve Éored (Dismounted Capable)",
+      "description": "Held in reserve on the Westemnet Road, Grimbold commands the most tactically unusual element of Rohan's force at the Fords — an éored whose riders are trained to fight effectively both mounted and on foot, which is rare for Rohan. Grimbold himself will later become one of the key Rohirrim commanders, displaying exactly the kind of flexibility Théodred lacks. At this battle his role is to anchor the southern line of retreat and, after Théodred falls, stabilise the Rohirrim position enough to prevent Saruman pursuing into the Westfold.",
+      "strengths": [
+        "Can fight dismounted in a shield-wall unlike most Rohirrim cavalry — this gives him options on the Westemnet Road",
+        "Positioned in reserve, he arrives fresher than the forward éoreds",
+        "Grimbold's personal leadership is exceptional — morale bonus from his command",
+        "Controls the critical retreat and reinforcement axis; his position is strategically vital"
+      ],
+      "weaknesses": [
+        "Smaller than a full éored; he cannot fight the whole Isengard force alone",
+        "On the Westemnet Road, he is vulnerable to the Warg-Rider Flankers if they push south from the South Ford",
+        "The flanking threat means he cannot simply ride north to reinforce without exposing the road behind him"
+      ],
+      "morale_notes": "Steady and professional — Grimbold does not panic. He is the unit most likely to maintain coherent command after Théodred dies. High effective morale under pressure.",
+      "historical_context": "Grimbold is one of the heroes of the Fords. He is the one who recovers the field after Théodred's death and prevents total disaster, and he goes on to fight at the Battle of the Pelennor Fields."
+    },
+    "elfhelm": {
+      "name": "Fourth Éored (Elfhelm's Relief)",
+      "faction": "Rohan",
+      "type": "Medium Cavalry — Relief Force",
+      "description": "Elfhelm rides from the North Wold with his éored, having been on detached duty elsewhere in the West-mark. He arrives after the main battle is decided — too late to save Théodred — but in time to recover the field, secure Théodred's body, and prevent the Isengard advance from becoming a rout. His arrival from the North Wold is the difference between a tactical defeat and a strategic disaster. In game terms, he is the wild card: if the Isengard player wins too slowly, Elfhelm arrives and changes the calculus.",
+      "strengths": [
+        "Arrives fresh to a battle where everyone else is exhausted and bloodied",
+        "His relief dramatically boosts the morale of surviving Rohirrim units",
+        "Controls the North Wold approach — he can come in on either the north flank or directly to the East Bank",
+        "Highly competent commander; his personal reputation adds to the morale boost of his arrival"
+      ],
+      "weaknesses": [
+        "If the battle ends before he arrives (Isengard wins too fast), he cannot influence the outcome",
+        "A single éored cannot reverse a complete Rohirrim collapse; he can only stabilise a partial one",
+        "His arrival from the north is predictable; a good Isengard player can position the Warg Outriders to delay him"
+      ],
+      "morale_notes": "Very high morale, buoyed by his mission to relieve his Prince. His arrival is a morale event for all Rohirrim units within contact range.",
+      "historical_context": "Elfhelm recovers Théodred's body from the Eyot and prevents the complete Isengard breakout into the Westfold. He also fights at the Pelennor, where he leads the éored that rides down the Haradrim southward."
+    },
+    "theodred_companions": {
+      "name": "Théodred's Companions",
+      "faction": "Rohan",
+      "type": "Heavy Infantry — Dismounted Household Guard",
+      "description": "When the Eyot makes cavalry impossible, Théodred's household riders dismount and form a shield-ring around their prince. Fighting on foot, they are now simply the best-equipped heavy infantry in Rohan's force — long shields, mail armour, helmets with crests, fighting hand-to-hand with the grim competence of men who know they are not going to leave this island alive. Tolkien is explicit: they form the ring, and they all die. This is the Last Stand unit of this battle — extraordinarily high individual morale and cohesion, but fighting in terrain that costs them every advantage they would otherwise have, against elite shock troops specifically tasked with killing their prince.",
+      "strengths": [
+        "Highest individual quality of any unit in this battle on the Rohirrim side",
+        "Shield-ring formation on the Eyot makes them extremely hard to break through quickly",
+        "Morale is effectively absolute — they will not retreat; they are sworn to protect Théodred and will die before they yield",
+        "Their defense can hold the Eyot for multiple turns, buying time for Grimbold and Elfhelm to act"
+      ],
+      "weaknesses": [
+        "They are dismounted cavalry fighting as infantry — they lack the specialist training of true heavy infantry",
+        "The Eyot is the worst possible ground for them; they cannot manoeuvre or escape",
+        "Against the Death's Head Stormers with two-handed weapons, their shields will eventually be cleaved through",
+        "Small unit; every casualty is irreplaceable, and they are outnumbered on the island"
+      ],
+      "morale_notes": "Near-absolute morale. Last Stand applies — they fight until destroyed or until Théodred is dead, at which point surviving members (if any) will either die in place or be overwhelmed. Do not expect them to retreat under any normal combat resolution.",
+      "historical_context": "Tolkien writes that Théodred's companions formed a shield-ring around him and were slain. This is the most poignant image of the First Battle of the Fords — Rohan's finest, dying on a nameless island in the Isen to protect their lord."
+    },
+    "westfold_spear": {
+      "name": "Westfold Levy (Spear)",
+      "faction": "Rohan",
+      "type": "Light Infantry — Provincial Levy",
+      "description": "Two to three hundred levy spearmen from the Westfold fiefs — farmers and hunters who answer the call to arms when the Fords are threatened. They carry ash spears, large round shields, and wear whatever armour they could afford or were issued. They are not trained soldiers in the Rohirrim muster sense but they know this land intimately and they are fighting for their homes. On the East Bank they form the infantry line behind the cavalry screen, holding the Rohirrim position while the éoreds manoeuvre.",
+      "strengths": [
+        "Knowledge of the terrain — the fords, the banks, the ground — is unmatched by Isengard's forces",
+        "Fighting for home and family gives them defensive resilience that pure numbers don't reflect",
+        "Competent in a prepared defensive line; they can hold the East Bank against infantry if the cavalry holds the flanks",
+        "Good with arrows at close range from the East Bank position"
+      ],
+      "weaknesses": [
+        "Poorly equipped compared to Uruk-hai — light armour against heavy Uruk steel means they will take disproportionate casualties",
+        "Morale is brittle under sustained pressure, especially if they see cavalry units breaking around them",
+        "No ability to contest the ford itself against Uruk crossing — they need the cavalry to do that",
+        "If the flanking move succeeds and they are caught between two enemy forces, they will break"
+      ],
+      "morale_notes": "Decent defensive morale while holding the East Bank. Vulnerable to morale contagion from cavalry rout around them.",
+      "historical_context": "Represents the Westfold levy who fought at the Fords — Tolkien notes that Théodred had both cavalry and foot soldiers at his disposal."
+    },
+    "westfold_bow": {
+      "name": "Westfold Levy (Bow)",
+      "faction": "Rohan",
+      "type": "Light Infantry — Westfold Archers",
+      "description": "One hundred and fifty to two hundred Westfold archers, using the long bows of the Westfold tradition — not Elven archery, but competent and effective at practical battle ranges. Their role is to contest the West Ford crossing at range, thinning the Uruk vanguard as it wades across, and to suppress the Dunlending bow regiment on the North Bank. They are the primary reason the Uruk crossing is costly rather than easy. Against them, the Death's Head Stormers are particularly vulnerable if they can be caught before closing range.",
+      "strengths": [
+        "Excellent at range fire over the ford — the geography of the crossing gives them a natural advantage",
+        "Can significantly reduce Uruk strength before contact if well-positioned on the East Bank",
+        "Effective against the Orc Skirmishers who lack armour",
+        "Useful for harassing any Isengard unit that crosses and tries to reorganize"
+      ],
+      "weaknesses": [
+        "Completely outclassed in direct melee — if cavalry or infantry closes with them, they die quickly",
+        "Limited ammunition and fatigue; sustained firing will degrade their effectiveness",
+        "Outgunned in volume (not quality) by the Dunlending Bow Regiment, which is twice their size",
+        "If the East Bank is overrun, they have nowhere to go"
+      ],
+      "morale_notes": "Steady while they have range advantage and can see the effect of their arrows. Morale collapses quickly if enemy reaches them in melee or if they are flanked.",
+      "historical_context": "Rohan's archery capacity at the Fords, which Tolkien implies is significant — the Uruk crossing costs Saruman real casualties. These are not the great archers of Mirkwood but they are competent defenders of the ford."
+    }
+  },
+  "terrain": {
+    "plains": {
+      "name": "Rohirric Plains",
+      "description": "The open grassland of Rohan — flat, firm ground stretching in every direction without meaningful cover, cut only by the gentle rise and fall of the landscape. For the horse-lords, this is their element: the plains are where the éored charge reaches its full devastating speed, where lances find their range, and where cavalry can wheel and reform without obstruction. For infantry without cavalry support, the plains are a death sentence — there is nowhere to hide and no ground to anchor a defensive line.",
+      "tactical_notes": "Cavalry operates at full effectiveness and should be adjudicated as having overwhelming advantage over infantry caught in the open. Infantry that attempts to hold plains ground against a formed cavalry charge should expect heavy casualties and near-certain defeat unless they have significant numerical advantage, a prepared position, or covering terrain. Conversely, light infantry with missile weapons can be very effective against cavalry on plains if the cavalry has been disordered or is advancing slowly."
+    },
+    "eyot": {
+      "name": "The Eyot",
+      "description": "A long, low island in the middle of the River Isen at the Ford crossing — described by Tolkien as a narrow strip of earth with marshy edges, accessible only by wading from either bank. It is perhaps a hundred yards long and thirty wide at its broadest. There is no room to manoeuvre, no cover, and the banks on either side are exposed to missile fire. It is the most defensible point in the battle because it can only be approached across water, but it is also a trap: once the flanking move succeeds and the East Bank falls, there is nowhere to retreat to. The men on the Eyot know they are going to die there.",
+      "tactical_notes": "Cavalry is entirely useless on the Eyot — horses cannot manoeuvre on the narrow strip and would be a liability rather than an asset. Any cavalry unit that ends up here must be treated as dismounted infantry fighting at a morale disadvantage. The position is defensible for multiple turns against a frontal assault because the approach across water is costly, but it is an absolute dead end — if flanked, there is no escape. Shock infantry (like the Death's Head) with two-handed weapons is particularly effective here because the cramped conditions favour individual strength over formation. Heavy cavalry fighting dismounted here should be adjudicated harshly in terms of morale and effective defense."
+    },
+    "south_ford": {
+      "name": "South Ford",
+      "description": "A secondary fording point on the Isen several hundred yards downstream from the main West Ford crossing, shallow enough for warg-riders to wade but not heavily fortified or watched. This is Saruman's trump card — a crossing point that Théodred does not have the numbers to garrison, allowing the Warg-Rider Flankers to appear behind the Rohirrim position without warning. The ford itself is not difficult to cross but the approach through the Wooded Slopes is rugged terrain that screens the crossing force from observation.",
+      "tactical_notes": "A crossing at the South Ford is operationally decisive because it threatens the East Bank from a direction Rohan cannot easily defend. Any force crossing here and reaching the East Bank from the south has, by definition, entered behind the Rohirrim defensive line. If the Warg Flankers cross here and arrive at the East Bank from the south while Rohan entered the East Bank from the west (via the Westemnet Road), the flanking condition triggers and Rohan's retreat is cut."
+    },
+    "capital_rohan": {
+      "name": "Westemnet Road",
+      "description": "The road south through the Westemnet toward Helm's Deep and the heart of Rohan — the main axis of retreat for the Rohirrim force at the Fords and the reinforcement route for Grimbold and Elfhelm. If Isengard takes and holds this road, Rohan's forces at the Fords are cut off, the Westfold lies open, and the road to Helm's Deep is undefended. This is the strategic objective that turns a tactical victory at the ford into a campaign victory.",
+      "tactical_notes": "Holding the Westemnet Road is Rohan's strategic imperative. If this node falls to Isengard without Rohirrim defenders, the game is over. Grimbold's reserve position here is the last line of defense against an Isengard breakout southward."
+    },
+    "capital_isengard": {
+      "name": "Isengard Gate",
+      "description": "The approach to the Ring of Isengard — the fortified staging area from which Saruman's forces deploy. Reinforcements, supply, and the Dunlending contingent all flow from this direction. It is effectively impregnable to any force Rohan could bring to this battle, but it is also far from the action. Saruman sits in Orthanc directing the operation; his forces fight and die at the ford.",
+      "tactical_notes": "Isengard Gate is the spawn point for Isengard reinforcements. Taking it is beyond Rohan's capacity at this battle. Isengard units that retreat toward it have a safe haven but lose several turns returning to the fight."
+    },
+    "river_crossing": {
+      "name": "River Ford",
+      "description": "A fordable crossing of the River Isen — shallow enough to wade but still chest-deep in places, with a stony bottom that can throw horses and a current strong enough to slow armoured infantry. Defenders on the far bank have every advantage: the approaching force is slowed, disordered, and exposed to missile fire for the full width of the crossing. The West Ford in particular is a killing ground for Uruk-hai advancing under Rohirrim arrows.",
+      "tactical_notes": "River crossings are strongly defensive. Any unit crossing under fire should expect significant casualties and reduced morale. Cavalry is particularly vulnerable — horses are panicked by deep water under fire and cannot charge across a ford. The cost of forcing a river crossing against a determined defender is very high. However, once across, the attacker's morale typically surges because the worst is over."
+    },
+    "hard_defend": {
+      "description": "The position is difficult to hold defensively — open flanks, broken ground that disrupts formation, or multiple approach routes that the defender cannot all cover simultaneously.",
+      "tactical_notes": "The terrain reduces defensive advantage significantly. Neither side holds a marked positional edge and the battle is decided by unit quality, numbers, and orders rather than terrain. At the West Ford and the Eyot, hard_defend reflects the difficulty of covering all approach angles rather than the inherent weakness of the position."
+    },
+    "rugged": {
+      "description": "Rocky ground, broken terrain, steep slopes or dense undergrowth that disrupts organised formations and slows movement.",
+      "tactical_notes": "Cavalry is severely penalised in rugged terrain — horses cannot charge effectively and become a liability rather than an asset. Infantry fights more effectively here than cavalry, and light infantry with knowledge of the terrain can hold rugged positions against much larger forces. Warg-riders handle rugged terrain better than horses, giving Isengard's light cavalry more flexibility than the Rohirrim éoreds in the Wooded Slopes."
+    },
+    "ambush": {
+      "name": "Wooded Slopes",
+      "description": "The broken, wooded terrain west of the Westemnet Road that screens the approach to the South Ford. Dense trees, rocky outcrops, and dead ground allow a small force to move unseen through the area. The Warg-Rider Flankers used exactly this terrain to reach the South Ford without detection.",
+      "tactical_notes": "A defending force in ambush terrain can spring a devastating first attack with significant surprise bonus. The Warg Flankers' hidden crossing essentially leverages this terrain for their operational surprise. Any unit attempting to advance through the Wooded Slopes should expect potential ambush and disrupted formation."
+    },
+    "open": {
+      "description": "Flat or gently rolling open ground — not the prime cavalry terrain of the plains but still good cavalry country, with clear sightlines and room to manoeuvre.",
+      "tactical_notes": "Cavalry is effective on open ground. No significant defensive advantage for either side. Flanking manoeuvres are easy because there is no cover to hide a defensive line. This describes the North Bank where Isengard forms up, and the general country around the Westemnet Road."
+    },
+    "fast_march": {
+      "description": "Open road or flat terrain ideal for rapid movement — armies cover ground quickly here that would take twice as long in the hills.",
+      "tactical_notes": "Units moving through fast_march terrain arrive fresher and faster. Pursuit along these routes is very effective. No defensive advantage. The Westemnet Road is the critical fast_march node — controlling it determines the speed of reinforcement and retreat for both sides."
+    },
+    "fortified": {
+      "description": "A position reinforced with walls, earthworks, palisades, or natural stone barriers.",
+      "tactical_notes": "Significant defensive multiplier. Isengard Gate is fortified but it represents Saruman's rear area rather than a front-line defensive position."
+    }
+  },
+  "orders": {
+    "assault": {
+      "description": "An all-out, aggressive close assault intended to physically drive the enemy off this position through shock, momentum, and controlled violence.",
+      "tactical_notes": "Assault grants a significant attack bonus from aggression and shock but exposes the attacker to higher casualties if the defender holds. A successful assault physically pushes the defender out of the position. A failed assault is costly — the attacker has committed fully and takes heavy losses. At river crossings like the West Ford, assault is particularly risky because the attacker is disordered and exposed during the crossing itself.",
+      "game_effect": "If the attacker wins with an assault order, the defender is immediately pushed to an adjacent position. The attacker takes higher casualties than a normal attack even on victory."
+    },
+    "attack": {
+      "description": "A deliberate, coordinated offensive action — advancing to close with the enemy while maintaining formation and fire discipline.",
+      "tactical_notes": "Standard attack — balanced between aggression and control. The attacker seeks to win the engagement but preserves the option to consolidate rather than overcommit.",
+      "game_effect": "Normal attack resolution. Attacker wins if their combat power exceeds the defender's. Defender stays in position unless routed."
+    },
+    "breakthrough": {
+      "description": "A concentrated assault at a specific point, designed to punch through and exploit the territory beyond.",
+      "tactical_notes": "High-risk, high-reward. If breakthrough succeeds, the attacker advances through the enemy position into the next territory, creating a crisis.",
+      "game_effect": "Attacker takes increased casualties but on victory can advance to a second target node immediately."
+    },
+    "defend": {
+      "description": "The unit holds its position using all available cover, making the attacker's advance as costly as possible.",
+      "tactical_notes": "Pure defense maximizes terrain and fortification bonuses. The unit trades offensive potential entirely for survivability.",
+      "game_effect": "Strong defensive stance — unit gains defense multiplier from terrain and dig-in."
+    },
+    "reinforce": {
+      "description": "The unit moves to bolster an allied force already in contact, lending numbers, morale, and fresh strength.",
+      "tactical_notes": "Reinforcing units arrive with some fatigue but bring morale boost to existing defenders and numerical advantage.",
+      "game_effect": "Unit arrives at ally's position and grants morale boost to existing defenders."
+    },
+    "dig_in": {
+      "description": "The unit uses available time to fortify their current position — earthworks, trenches, clearing fields of fire.",
+      "tactical_notes": "Each turn spent digging in increases defensive value. A fully dug-in unit on good terrain can hold against forces several times its size.",
+      "game_effect": "Increases dugIn value over time, which provides stacking defensive bonus in subsequent combat."
+    },
+    "deny": {
+      "description": "The unit fortifies aggressively to block enemy movement through this position entirely.",
+      "tactical_notes": "Deny trades defensive combat effectiveness for blocking power. If successful, the enemy cannot pass. If the unit is defeated, the deny collapses.",
+      "game_effect": "If dugIn exceeds the threshold, attacking units cannot move through this node. Defender takes a combat penalty in exchange."
+    },
+    "hold": {
+      "description": "Dig in and hold at all costs — do not retreat, do not disengage.",
+      "tactical_notes": "A unit ordered to hold will not retreat and benefits from entrenchment. This is the order Théodred's Companions are effectively under on the Eyot.",
+      "game_effect": "Defender stays in place, uses dig-in bonus. DugIn value degrades slightly after taking hits but unit does not retreat."
+    },
+    "flanked": {
+      "description": "A situational condition, not a player order — applied when enemy forces have entered a contested node from the same direction the defending faction used to enter, cutting the line of retreat.",
+      "tactical_notes": "This is one of the most decisive situations in pre-modern battle and in this battle specifically. The Warg-Rider Flankers' appearance behind Théodred's position is what turned a hard defensive battle into a disaster. A flanked force cannot properly orient their shield-wall — they must face two directions at once, which thins both lines. Morale collapses as men realise they are surrounded and cannot retreat. The flanking attacker fights with the confidence of encirclement and the knowledge that they have achieved the decisive manoeuvre. Outcomes should strongly favour the flanking side unless: the flanked unit has exceptional quality or heroic leadership (e.g. Théodred's Companions making their last stand), the terrain is so cramped it physically prevents the flanking advantage from being exploited (the Eyot is the prime example — there is almost no flank to turn on a narrow island), or the flanking force is too small or weak to exploit the position (the Warg Flankers with only 0.2 strength cannot alone destroy a full éored). The flanked faction cannot retreat via the contested entry edge — their route is physically cut by the flankers.",
+      "game_effect": "Flanked faction cannot retreat via the entry edge. AI adjudicator should treat flanking as a major qualitative and morale disadvantage, applying heavy morale penalties to the flanked unit and a confidence bonus to the flanker."
+    }
+  }
+}

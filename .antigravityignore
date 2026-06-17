@@ -1,0 +1,4 @@
+# Antigravity ignore — files not to index
+.env
+.env.local
+.env.*.local

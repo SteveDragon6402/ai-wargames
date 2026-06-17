@@ -1,0 +1,17 @@
+[build]
+builder = "nixpacks"
+
+[[services]]
+name = "web"
+source = "apps/web"
+buildCommand = "pnpm install && pnpm build"
+startCommand = "pnpm start"
+
+[services.variables]
+PORT = "3000"
+
+[[services]]
+name = "worker"
+source = "apps/worker"
+buildCommand = "pnpm install && pnpm build"
+startCommand = "pnpm start"

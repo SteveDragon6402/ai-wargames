@@ -1,0 +1,102 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  @apply bg-slate-950 text-slate-100 antialiased;
+}
+
+@layer components {
+  .game-shell {
+    @apply flex h-dvh flex-col overflow-hidden bg-slate-950;
+  }
+
+  .game-scroll {
+    @apply min-h-0 flex-1 overflow-y-auto overscroll-contain;
+  }
+
+  .game-label {
+    @apply text-[10px] font-semibold uppercase tracking-wider text-slate-500;
+  }
+
+  .game-text {
+    @apply text-xs text-slate-300;
+  }
+
+  .game-panel {
+    @apply rounded-lg border border-slate-700/80 bg-slate-800/50;
+  }
+}
+
+/* React Flow — wargame map */
+.game-map {
+  @apply absolute inset-0;
+  background-color: #14110d;
+}
+
+.game-map .react-flow {
+  width: 100%;
+  height: 100%;
+  background-color: #14110d;
+}
+
+/* Parchment-toned viewport background */
+.game-map .react-flow__renderer {
+  background-color: #14110d;
+}
+
+.game-map .react-flow__background {
+  background-color: #14110d;
+}
+
+/* Road edges get the marching animation on the centre highlight stripe */
+.game-map .react-flow__edge.animated path:last-of-type {
+  animation: march-dash 1.4s linear infinite;
+}
+
+/* All edges: subtle shadow for depth */
+.game-map .react-flow__edge-path {
+  filter: drop-shadow(0 1px 3px rgb(0 0 0 / 0.6));
+}
+
+.game-map .react-flow__edge.selected .react-flow__edge-path,
+.game-map .react-flow__edge:hover .react-flow__edge-path {
+  filter: drop-shadow(0 0 5px rgb(255 255 255 / 0.15));
+}
+
+@keyframes march-dash {
+  to {
+    stroke-dashoffset: -12;
+  }
+}
+
+.game-map .react-flow__minimap {
+  bottom: 8px;
+  right: 8px;
+  width: 108px !important;
+  height: 76px !important;
+  border: 1px solid #3f3a33;
+  border-radius: 6px;
+  background-color: #1a1612 !important;
+}
+
+.game-map .react-flow__controls {
+  bottom: 8px;
+  left: 8px;
+}
+
+/* Handles are invisible — layout only */
+.game-map .react-flow__handle {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  width: 1px !important;
+  height: 1px !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  border: none !important;
+}
+
+/* Pick-mode hint overlay */
+.pick-hint {
+  @apply pointer-events-none absolute left-2 top-2 z-10 max-w-[200px] rounded border border-amber-500/40 bg-slate-950/95 px-2 py-1.5 text-[11px] leading-snug text-amber-100 shadow-lg backdrop-blur;
+}
