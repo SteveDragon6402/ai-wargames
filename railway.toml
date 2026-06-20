@@ -3,15 +3,16 @@ builder = "nixpacks"
 
 [[services]]
 name = "web"
-source = "apps/web"
 buildCommand = "pnpm install && pnpm build"
-startCommand = "pnpm start"
+startCommand = "pnpm --filter @wargame/web start"
 
 [services.variables]
-PORT = "3000"
+NODE_ENV = "production"
 
 [[services]]
 name = "worker"
-source = "apps/worker"
 buildCommand = "pnpm install && pnpm build"
-startCommand = "pnpm start"
+startCommand = "pnpm --filter @wargame/worker start"
+
+[services.variables]
+NODE_ENV = "production"
