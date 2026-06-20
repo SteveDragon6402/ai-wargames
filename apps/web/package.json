@@ -6,7 +6,7 @@
     "predev": "pnpm --filter @wargame/server build",
     "dev": "next dev",
     "prebuild": "pnpm --filter @wargame/shared build && pnpm --filter @wargame/engine build && pnpm --filter @wargame/db build && pnpm --filter @wargame/server build",
-    "build": "next build",
+    "build": "NODE_ENV=production next build",
     "start": "next start -p ${PORT:-3000}",
     "lint": "next lint"
   },
