@@ -1,4 +1,4 @@
-import type { Command } from "@wargame/shared";
+import type { Command, TurnEvent } from "@wargame/shared";
 import { and, eq } from "drizzle-orm";
 import { games, getDb, orders as ordersTable, players, rooms } from "@wargame/db";
 
@@ -68,6 +68,7 @@ export async function buildRoomSnapshot(roomId: string, viewerPlayerId?: string)
           turnEndsAt: game.turnEndsAt?.toISOString() ?? null,
           state: game.state,
           winnerFactionId: game.winnerFactionId,
+          lastTurnEvents: (game.lastTurnEvents ?? []) as TurnEvent[],
         }
       : null,
     viewer: viewer

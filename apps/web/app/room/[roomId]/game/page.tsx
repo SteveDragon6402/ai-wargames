@@ -9,6 +9,8 @@ import { EventLog } from "@/components/game/EventLog";
 import { GameLayout } from "@/components/game/GameLayout";
 import { MapView } from "@/components/game/MapView";
 import { OrderStrip } from "@/components/game/OrderStrip";
+import { GameOver } from "@/components/game/GameOver";
+import { TurnDebrief } from "@/components/game/TurnDebrief";
 import { TurnHeader } from "@/components/game/TurnHeader";
 import { UnitInspector } from "@/components/game/UnitInspector";
 import {
@@ -32,6 +34,12 @@ import { useRoom } from "@/hooks/useRoom";
 import { useSocket } from "@/hooks/useSocket";
 import { formatEvent } from "@/lib/format-event";
 
+interface DebriefState {
+  completedTurn: number;
+  events: TurnEvent[];
+  availableTurns: number[];
+}
+
 export default function GamePage() {
   const params = useParams<{ roomId: string }>();
   const roomId = params?.roomId ?? "";
@@ -44,6 +52,9 @@ export default function GamePage() {
   const lastPersistedKey = useRef<string | null>(null);
   const [logOpen, setLogOpen] = useState(true);
   const [activeFaction, setActiveFaction] = useState<FactionId>("rohan");
+  const [debrief, setDebrief] = useState<DebriefState | null>(null);
+  const prevTurnRef = useRef<number | null>(null);
+  const submittedRef = useRef(false);
 
   const gameState = localState ?? snapshot?.game?.state ?? null;
   const soloDualFaction = snapshot?.room?.soloDualFaction ?? false;
@@ -102,21 +113,54 @@ export default function GamePage() {
     lastPersistedKey.current = null;
   }, []);
 
+  const showDebrief = useCallback(
+    async (completedTurn: number, turnEvents: TurnEvent[]) => {
+      const res = await fetch(`/api/rooms/${roomId}/history`).catch(() => null);
+      const availableTurns: number[] = res?.ok
+        ? ((await res.json()) as { turns: number[] }).turns
+        : [completedTurn];
+      setDebrief({ completedTurn, events: turnEvents, availableTurns });
+    },
+    [roomId]
+  );
+
   const handleTurnResolved = useCallback(
-    (state: GameState) => {
+    (state: GameState, turnEvents: TurnEvent[]) => {
       setLocalState(state);
       setSelectedUnitId(null);
       setOrderDraft(null);
-      refresh();
+      submittedRef.current = false;
+      refresh().then((snap) => {
+        const resolved = snap ?? null;
+        const completedTurn = state.turn - 1;
+        if (completedTurn > 0) {
+          const finalEvents = turnEvents.length > 0
+            ? turnEvents
+            : (resolved?.game?.lastTurnEvents ?? []);
+          void showDebrief(completedTurn, finalEvents);
+        }
+      });
     },
-    [refresh]
+    [refresh, showDebrief]
   );
 
   useSocket(roomId, refresh, handleTurnResolved, pushEvent);
 
   useEffect(() => {
-    if (snapshot?.game?.state) setLocalState(snapshot.game.state);
-  }, [snapshot?.game?.state]);
+    if (!snapshot?.game) return;
+    const turn = snapshot.game.turn;
+    setLocalState(snapshot.game.state);
+
+    // Detect turn increment from polling (non-socket path)
+    if (prevTurnRef.current !== null && turn > prevTurnRef.current) {
+      submittedRef.current = false;
+      const lastEvents = snapshot.game.lastTurnEvents ?? [];
+      const completedTurn = turn - 1;
+      void showDebrief(completedTurn, lastEvents);
+    }
+    prevTurnRef.current = turn;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [snapshot?.game?.turn]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -146,12 +190,15 @@ export default function GamePage() {
 
   useEffect(() => {
     if (!orderDraft || !isDraftComplete(orderDraft)) return;
+    // Never auto-save after orders are locked
+    if (submittedRef.current) return;
 
     const command = buildCommandFromDraft(orderDraft);
     const key = JSON.stringify(command);
     if (lastPersistedKey.current === key) return;
 
     const timer = window.setTimeout(async () => {
+      if (submittedRef.current) return;
       const ok = await persistOrder(command);
       if (!ok) return;
       lastPersistedKey.current = key;
@@ -167,33 +214,42 @@ export default function GamePage() {
 
   async function handleSubmitTurn() {
     setSubmitting(true);
+    submittedRef.current = true;
     try {
       const res = await fetch(`/api/rooms/${roomId}/submit`, { method: "POST" });
       const data = await res.json() as {
         ok?: boolean; error?: string; resolving?: boolean; resolved?: boolean;
         turn?: number; events?: TurnEvent[];
       };
-      if (!res.ok) throw new Error(data.error ?? "Submit failed");
-
-      if (data.resolving) {
-        if (data.resolved) {
-          // Turn resolved inline (solo mode) — push battle events from response
-          for (const e of data.events ?? []) {
-            const msg = formatEvent(e);
-            if (msg) pushEvent(msg);
-          }
-        } else {
-          pushEvent("Turn resolving…");
-        }
-      } else {
-        pushEvent("Waiting for opponent");
+      if (!res.ok) {
+        submittedRef.current = false;
+        throw new Error(data.error ?? "Submit failed");
       }
 
-      const snap = await refresh();
-      if (snap?.game?.state) {
-        setLocalState(snap.game.state);
-        setSelectedUnitId(null);
-        clearOrder();
+      if (data.resolving && data.resolved) {
+        // Both players were ready — push events and show debrief
+        const resolvedEvents = data.events ?? [];
+        for (const e of resolvedEvents) {
+          const msg = formatEvent(e);
+          if (msg) pushEvent(msg);
+        }
+        const snap = await refresh();
+        if (snap?.game?.state) {
+          setLocalState(snap.game.state);
+          setSelectedUnitId(null);
+          clearOrder();
+          submittedRef.current = false;
+          const completedTurn = snap.game.turn - 1;
+          if (completedTurn > 0) {
+            const finalEvents = resolvedEvents.length > 0
+              ? resolvedEvents
+              : (snap.game.lastTurnEvents ?? []);
+            void showDebrief(completedTurn, finalEvents);
+          }
+        }
+      } else {
+        if (!data.resolving) pushEvent("Waiting for opponent…");
+        await refresh();
       }
     } catch (e) {
       pushEvent(e instanceof Error ? e.message : "Error");
@@ -203,6 +259,7 @@ export default function GamePage() {
   }
 
   async function handleDeleteOrder(unitId: string) {
+    if (submittedRef.current) return;
     await fetch(
       `/api/rooms/${roomId}/orders?unitId=${encodeURIComponent(unitId)}`,
       { method: "DELETE" }
@@ -213,10 +270,6 @@ export default function GamePage() {
 
   function handlePickAction(action: ActionType) {
     if (!selectedUnit) return;
-    if (action === "abandon_capital") {
-      void persistOrder({ type: "abandon_capital" });
-      return;
-    }
     const draft = createDraft(action, selectedUnit.id);
     if (action === "dig_in" || action === "disengage") {
       void persistOrder(buildCommandFromDraft(draft));
@@ -233,9 +286,7 @@ export default function GamePage() {
     lastPersistedKey.current = JSON.stringify(command);
     setDraftIsNew(false);
     setOrderDraft(draft);
-    if (command.type !== "abandon_capital") {
-      setSelectedUnitId(command.unitId);
-    }
+    setSelectedUnitId(command.unitId);
   }
 
   function handleFactionChange(faction: string) {
@@ -280,11 +331,7 @@ export default function GamePage() {
   }
 
   const editingUnitId = orderDraft?.unitId ?? null;
-  const panelUnit =
-    selectedUnit ??
-    (orderDraft?.action === "abandon_capital" && commandingFaction && gameState
-      ? Object.values(gameState.units).find((u) => u.factionId === commandingFaction)
-      : null);
+  const panelUnit = selectedUnit ?? null;
 
   const turnEndsAt = snapshot?.game?.turnEndsAt;
   const [secondsLeft, setSecondsLeft] = useState(0);
@@ -301,11 +348,15 @@ export default function GamePage() {
     return () => clearInterval(id);
   }, [turnEndsAt]);
 
+  const minPlayers = soloDualFaction ? 1 : 2;
+  const allReady =
+    snapshot !== null &&
+    snapshot.players.length >= minPlayers &&
+    snapshot.readyPlayerIds.length >= snapshot.players.length;
+
   const waitingOnResolve =
     snapshot?.game?.phase === "planning" &&
-    (secondsLeft === 0 ||
-      (snapshot.readyPlayerIds.length >= snapshot.players.length &&
-        snapshot.players.length >= (soloDualFaction ? 1 : 2)));
+    (secondsLeft === 0 || allReady);
 
   useEffect(() => {
     if (!waitingOnResolve) return;
@@ -334,10 +385,31 @@ export default function GamePage() {
 
   const winner =
     snapshot.game?.winnerFactionId ?? gameState.meta.winnerFactionId;
+  const resolving = allReady && !debrief && !winner;
   const nodeNames = nodeNameMap(gameState.map.nodes);
 
   return (
     <>
+      {winner && (
+        <GameOver
+          winner={winner}
+          myFaction={commandingFaction ?? ""}
+          turn={snapshot.game?.turn ?? gameState.turn}
+        />
+      )}
+      {debrief && (
+        <TurnDebrief
+          completedTurn={debrief.completedTurn}
+          events={debrief.events}
+          roomId={roomId}
+          availableTurns={debrief.availableTurns}
+          onDismiss={() => {
+            setDebrief(null);
+            setSelectedUnitId(null);
+            clearOrder();
+          }}
+        />
+      )}
       <GameLayout
         header={
           <TurnHeader
@@ -349,6 +421,7 @@ export default function GamePage() {
             readyPlayerIds={snapshot.readyPlayerIds}
             totalPlayers={snapshot.players.length}
             winner={winner}
+            resolving={resolving}
             onSubmit={handleSubmitTurn}
             submitting={submitting}
             soloDualFaction={soloDualFaction}
@@ -375,7 +448,17 @@ export default function GamePage() {
           />
         }
         sidebarScroll={
-          !orderDraft ? (
+          snapshot.mySubmitted ? (
+            <div className="flex flex-col items-center justify-center gap-2 p-6 text-center" style={{ fontFamily: "var(--font-mono), monospace" }}>
+              <div style={{ color: "var(--color-gold)", fontSize: 20 }}>⊘</div>
+              <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "#555" }}>
+                Orders Locked
+              </p>
+              <p className="text-[8px] uppercase tracking-wider" style={{ color: "#333" }}>
+                Awaiting opponent confirmation
+              </p>
+            </div>
+          ) : !orderDraft ? (
             <ActionPalette
               actions={availableActions}
               activeAction={null}
@@ -400,6 +483,7 @@ export default function GamePage() {
             orders={orders}
             state={gameState}
             editingUnitId={editingUnitId}
+            locked={snapshot.mySubmitted}
             onSelect={handleEditOrder}
             onDelete={handleDeleteOrder}
           />

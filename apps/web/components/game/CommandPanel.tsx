@@ -26,7 +26,6 @@ const ACTION_LABELS: Record<ActionType, string> = {
   cover: "Cover",
   retreat: "Retreat",
   disengage: "Disengage",
-  abandon_capital: "Abandon capital",
 };
 
 export function CommandPanelBody({
@@ -220,9 +219,6 @@ export function CommandPanelBody({
         <p className="game-text">Both sides must disengage on this node to break contact.</p>
       )}
 
-      {draft.action === "abandon_capital" && (
-        <p className="game-text">Relocate your capital to the fallback position. One use per game.</p>
-      )}
     </section>
   );
 }

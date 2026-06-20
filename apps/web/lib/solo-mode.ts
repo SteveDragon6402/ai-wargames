@@ -5,7 +5,6 @@ export function commandFaction(
   state: GameState,
   command: Command
 ): FactionId | null {
-  if (command.type === "abandon_capital") return "rohan";
   const unit = state.units[command.unitId];
   return unit?.factionId ?? null;
 }

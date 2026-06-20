@@ -33,14 +33,6 @@ export function validateCommand(
   factionId: FactionId,
   command: Command
 ): void {
-  if (command.type === "abandon_capital") {
-    if (factionId !== "rohan") throw new ValidationError("Only Rohan may abandon capital");
-    if (state.meta.abandonCapitalUsed.rohan) {
-      throw new ValidationError("Abandon capital already used");
-    }
-    return;
-  }
-
   const unit = state.units[command.unitId];
   if (!unit) throw new ValidationError("Unit not found");
   if (unit.factionId !== factionId) {

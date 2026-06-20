@@ -2,33 +2,55 @@
 
 interface EventLogProps {
   events: string[];
-  open: boolean;
-  onToggle: () => void;
+  open?: boolean;
+  onToggle?: () => void;
 }
 
-export function EventLog({ events, open, onToggle }: EventLogProps) {
+export function EventLog({ events }: EventLogProps) {
   return (
-    <section className="border-t border-slate-800/80">
-      <button
-        type="button"
-        onClick={onToggle}
-        className="w-full px-3 py-1.5 text-left game-label hover:text-slate-300"
+    <div className="flex flex-col h-full" style={{ fontFamily: "var(--font-mono), monospace" }}>
+      {/* Transmission header */}
+      <div
+        className="shrink-0 px-3 py-2 text-[9px] font-bold uppercase tracking-widest"
+        style={{ borderBottom: "1px solid var(--color-border)", color: "#444" }}
       >
-        Battle log {open ? "▼" : "▶"} ({events.length})
-      </button>
-      {open && (
-        <ul className="max-h-24 overflow-y-auto overscroll-contain px-3 pb-2 text-[11px] leading-relaxed text-slate-400">
-          {events.length === 0 ? (
-            <li className="italic text-slate-600">No events yet</li>
-          ) : (
-            events.map((e, i) => (
-              <li key={i} className="border-b border-slate-900 py-1 last:border-0">
-                {e}
+        &gt;&gt; Incoming Transmission
+      </div>
+
+      {/* Events */}
+      <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain">
+        {events.length === 0 ? (
+          <p
+            className="px-3 py-4 text-[9px] uppercase tracking-widest italic"
+            style={{ color: "#2a2a2a" }}
+          >
+            No transmissions received
+          </p>
+        ) : (
+          <ul className="flex flex-col-reverse">
+            {[...events].reverse().map((e, i) => (
+              <li
+                key={i}
+                className="px-3 py-2"
+                style={{ borderBottom: "1px solid var(--color-border-dim)" }}
+              >
+                <p
+                  className="text-[9px] font-bold uppercase tracking-widest mb-1"
+                  style={{ color: "#555" }}
+                >
+                  TICK: {String(i).padStart(4, "0")}.{String(Math.floor(Math.random() * 99)).padStart(2, "0")}
+                </p>
+                <p
+                  className="text-[10px] leading-relaxed"
+                  style={{ color: "#999" }}
+                >
+                  {e}
+                </p>
               </li>
-            ))
-          )}
-        </ul>
-      )}
-    </section>
+            ))}
+          </ul>
+        )}
+      </div>
+    </div>
   );
 }

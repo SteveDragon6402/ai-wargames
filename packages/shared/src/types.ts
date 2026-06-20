@@ -162,18 +162,13 @@ export interface DisengageCommand {
   unitId: string;
 }
 
-export interface AbandonCapitalCommand {
-  type: "abandon_capital";
-}
-
 export type Command =
   | MoveCommand
   | DigInCommand
   | AttackCommand
   | CoverCommand
   | RetreatCommand
-  | DisengageCommand
-  | AbandonCapitalCommand;
+  | DisengageCommand;
 
 export interface GameMeta {
   scenarioId: string;
@@ -220,7 +215,6 @@ export type TurnEvent =
   | { type: "disengage"; nodeId: string }
   | { type: "morale_change"; unitId: string; delta: number; newMorale: number }
   | { type: "dig_in"; unitId: string; nodeId: string; intention: DigInIntention }
-  | { type: "capital_shift"; factionId: FactionId; from: string; to: string }
   | { type: "victory"; factionId: FactionId; reason: string }
   | {
       type: "intercept";
@@ -252,5 +246,4 @@ export interface TurnResult {
 
 export interface ResolveOptions {
   combat: CombatConfig;
-  rohanFallbackCapital?: string;
 }

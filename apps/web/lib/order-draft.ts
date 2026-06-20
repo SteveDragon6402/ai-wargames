@@ -70,7 +70,6 @@ export function isDraftComplete(draft: OrderDraft): boolean {
     case "dig_in":
       return true;
     case "disengage":
-    case "abandon_capital":
       return true;
     default:
       return false;
@@ -144,16 +143,6 @@ export function commandToDraft(cmd: Command): OrderDraft | null {
         attackIntention: "attack",
         digInIntention: "hold",
       };
-    case "abandon_capital":
-      return {
-        action: "abandon_capital",
-        unitId: "__abandon_capital__",
-        speed: "normal",
-        stance: "balanced",
-        moveIntention: "balanced",
-        attackIntention: "attack",
-        digInIntention: "hold",
-      };
     default:
       return null;
   }
@@ -200,8 +189,6 @@ export function buildCommandFromDraft(draft: OrderDraft): Command {
       };
     case "disengage":
       return { type: "disengage", unitId: draft.unitId };
-    case "abandon_capital":
-      return { type: "abandon_capital" };
     default:
       throw new Error("Unknown action");
   }

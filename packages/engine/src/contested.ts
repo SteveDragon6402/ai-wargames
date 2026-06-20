@@ -95,7 +95,7 @@ export interface OrderMap {
 export function buildOrderMap(commands: Command[]): OrderMap {
   const byUnit = new Map<string, Command>();
   for (const c of commands) {
-    if (c.type !== "abandon_capital" && "unitId" in c) {
+    if ("unitId" in c) {
       byUnit.set(c.unitId, c);
     }
   }

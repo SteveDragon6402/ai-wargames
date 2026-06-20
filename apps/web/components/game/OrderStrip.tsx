@@ -8,6 +8,7 @@ interface OrderStripProps {
   orders: Command[];
   state: GameState;
   editingUnitId: string | null;
+  locked?: boolean;
   onSelect: (command: Command) => void;
   onDelete: (unitId: string) => void;
 }
@@ -16,49 +17,86 @@ export function OrderStrip({
   orders,
   state,
   editingUnitId,
+  locked = false,
   onSelect,
   onDelete,
 }: OrderStripProps) {
   const nodeNames = nodeNameMap(state.map.nodes);
 
   return (
-    <section className="px-3 py-2">
-      <h3 className="game-label mb-1.5">Order queue</h3>
+    <section
+      className="px-3 py-2"
+      style={{ fontFamily: "var(--font-mono), monospace" }}
+    >
+      <div className="mb-1.5 flex items-center justify-between">
+        <h3
+          className="text-[9px] font-bold uppercase tracking-widest"
+          style={{ color: "#444" }}
+        >
+          Order Queue
+        </h3>
+        {locked && (
+          <span
+            className="text-[8px] font-bold uppercase tracking-widest px-1.5 py-px"
+            style={{ color: "var(--color-gold)", border: "1px solid #8b6914" }}
+          >
+            Locked
+          </span>
+        )}
+      </div>
+
       {orders.length === 0 ? (
-        <p className="text-[11px] text-slate-600">
-          Issue commands from the panel — they appear here for review and edits.
+        <p className="text-[9px] uppercase tracking-wide" style={{ color: "#2a2a2a" }}>
+          No orders drafted
         </p>
       ) : (
-        <ul className="flex list-none flex-col gap-1 p-0">
+        <ul className="flex flex-col gap-0.5">
           {orders.map((cmd, i) => {
             const uid = orderUnitId(cmd);
             const active = uid !== null && uid === editingUnitId;
+
+            let borderColor = "#1a1a1a";
+            let bgColor = "#0d0d0d";
+            if (locked) {
+              borderColor = "#1a1a1a";
+              bgColor = "#0a0a0a";
+            } else if (active) {
+              borderColor = "#8b6914";
+              bgColor = "rgba(200,148,26,0.08)";
+            }
+
             return (
               <li
                 key={uid ?? i}
-                className={`flex items-center justify-between gap-2 rounded-md border px-2.5 py-2 text-[11px] transition ${
-                  active
-                    ? "border-amber-500/60 bg-amber-500/10 ring-1 ring-amber-500/30"
-                    : "border-slate-700/80 bg-slate-950 hover:border-slate-600 hover:bg-slate-900"
-                }`}
+                className="flex items-center justify-between gap-2 px-2 py-1.5 text-[9px] transition"
+                style={{
+                  border: `1px solid ${borderColor}`,
+                  background: bgColor,
+                  opacity: locked ? 0.7 : 1,
+                }}
               >
                 <button
                   type="button"
-                  onClick={() => onSelect(cmd)}
-                  className="min-w-0 flex-1 text-left text-slate-200"
+                  onClick={locked ? undefined : () => onSelect(cmd)}
+                  disabled={locked}
+                  className="min-w-0 flex-1 text-left disabled:cursor-default uppercase tracking-wide"
+                  style={{ color: "#999" }}
                 >
                   {orderLabel(cmd, state, nodeNames)}
                 </button>
-                {uid ? (
+                {uid && !locked && (
                   <button
                     type="button"
                     onClick={() => onDelete(uid)}
-                    className="shrink-0 rounded px-1.5 py-px text-[10px] text-red-400 hover:bg-red-500/10"
+                    className="shrink-0 px-1 py-px text-[10px] transition-colors"
+                    style={{ color: "#444" }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = "#e05555")}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = "#444")}
                     aria-label="Remove order"
                   >
                     ×
                   </button>
-                ) : null}
+                )}
               </li>
             );
           })}

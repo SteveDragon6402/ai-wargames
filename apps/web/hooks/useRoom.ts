@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import type { Command, GameState } from "@wargame/shared";
+import type { Command, GameState, TurnEvent } from "@wargame/shared";
 
 export interface RoomSnapshot {
   room: {
@@ -19,6 +19,7 @@ export interface RoomSnapshot {
     turnEndsAt: string | null;
     state: GameState;
     winnerFactionId: string | null;
+    lastTurnEvents: TurnEvent[];
   } | null;
   viewer: {
     playerId: string;

@@ -9,7 +9,6 @@ import { getCurrentPlayer } from "@/lib/player";
 import { factionForOrderValidation } from "@/lib/solo-mode";
 
 function unitIdForCommand(command: Command): string {
-  if (command.type === "abandon_capital") return "__abandon_capital__";
   return command.unitId;
 }
 
@@ -37,6 +36,11 @@ export async function PUT(
   const [game] = await db.select().from(games).where(eq(games.roomId, roomId)).limit(1);
   if (!game || game.phase !== "planning") {
     return NextResponse.json({ error: "Not in planning phase" }, { status: 400 });
+  }
+
+  const readyIds: string[] = Array.isArray(game.readyPlayerIds) ? game.readyPlayerIds : [];
+  if (readyIds.includes(player.id)) {
+    return NextResponse.json({ error: "Orders locked after submission" }, { status: 403 });
   }
 
   const command = body.data.command;
@@ -71,11 +75,6 @@ export async function PUT(
     command,
   });
 
-  await db
-    .update(games)
-    .set({ readyPlayerIds: [] })
-    .where(eq(games.roomId, roomId));
-
   return NextResponse.json({ ok: true });
 }
 
@@ -99,6 +98,11 @@ export async function DELETE(
   const [game] = await db.select().from(games).where(eq(games.roomId, roomId)).limit(1);
   if (!game) {
     return NextResponse.json({ error: "No game" }, { status: 404 });
+  }
+
+  const readyIds: string[] = Array.isArray(game.readyPlayerIds) ? game.readyPlayerIds : [];
+  if (readyIds.includes(player.id)) {
+    return NextResponse.json({ error: "Orders locked after submission" }, { status: 403 });
   }
 
   await db

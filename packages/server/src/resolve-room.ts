@@ -2,11 +2,10 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { and, eq } from "drizzle-orm";
 import { loadScenario, resolveTurn } from "@wargame/engine";
-import { games, getDb, orders, players, rooms } from "@wargame/db";
+import { gameHistory, games, getDb, orders, players, rooms } from "@wargame/db";
 import type { Command, FactionId, GameState } from "@wargame/shared";
 
 function commandFaction(state: GameState, command: Command): FactionId | null {
-  if (command.type === "abandon_capital") return "rohan";
   const unit = state.units[command.unitId];
   return unit?.factionId ?? null;
 }
@@ -91,7 +90,6 @@ export async function resolveRoomTurn(roomId: string) {
 
     const result = await resolveTurn(claimed.state, factionOrders, {
       combat: scenario.combat,
-      rohanFallbackCapital: scenario.fallbackCapital?.rohan,
       adjudicator,
     });
 
@@ -112,8 +110,16 @@ export async function resolveRoomTurn(roomId: string) {
         winnerFactionId: winner,
         readyPlayerIds: [],
         turnJobId: null,
+        lastTurnEvents: result.events,
       })
       .where(eq(games.roomId, roomId));
+
+    await db.insert(gameHistory).values({
+      roomId,
+      turn: claimed.turn,
+      events: result.events,
+      stateAfter: result.state,
+    }).onConflictDoNothing();
 
     if (winner) {
       await db

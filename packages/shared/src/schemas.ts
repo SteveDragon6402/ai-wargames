@@ -60,10 +60,6 @@ export const disengageCommandSchema = z.object({
   unitId: z.string(),
 });
 
-export const abandonCapitalCommandSchema = z.object({
-  type: z.literal("abandon_capital"),
-});
-
 export const commandSchema = z.discriminatedUnion("type", [
   moveCommandSchema,
   digInCommandSchema,
@@ -71,7 +67,6 @@ export const commandSchema = z.discriminatedUnion("type", [
   coverCommandSchema,
   retreatCommandSchema,
   disengageCommandSchema,
-  abandonCapitalCommandSchema,
 ]);
 
 export const createRoomSchema = z.object({

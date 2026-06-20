@@ -19,9 +19,7 @@ export function formatEvent(e: TurnEvent): string | null {
     case "combat":
       return `Combat at ${e.nodeId}: ${e.winner}`;
     case "victory":
-      return `${e.factionId} wins!`;
-    case "capital_shift":
-      return `Capital moved to ${e.to}`;
+      return `${e.factionId} wins — total annihilation!`;
     case "rout":
       return `Rout: ${e.unitId}`;
     case "deny_blocked":

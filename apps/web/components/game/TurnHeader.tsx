@@ -1,7 +1,6 @@
 "use client";
 
 import Link from "next/link";
-import { factionDisplayName } from "@/lib/unit-labels";
 
 interface TurnHeaderProps {
   code: string;
@@ -12,13 +11,23 @@ interface TurnHeaderProps {
   readyPlayerIds: string[];
   totalPlayers: number;
   winner: string | null;
+  resolving: boolean;
   onSubmit: () => void;
   submitting: boolean;
-  /** Solo mode: show faction switcher to command both sides */
   soloDualFaction?: boolean;
   activeFaction?: string;
   onFactionChange?: (faction: string) => void;
 }
+
+const FACTION_LABEL: Record<string, string> = {
+  rohan: "ROHAN",
+  isengard: "ISENGARD",
+};
+
+const FACTION_COLOR: Record<string, string> = {
+  rohan: "#5ecb6b",
+  isengard: "#e05555",
+};
 
 export function TurnHeader({
   code,
@@ -29,6 +38,7 @@ export function TurnHeader({
   readyPlayerIds,
   totalPlayers,
   winner,
+  resolving,
   onSubmit,
   submitting,
   soloDualFaction,
@@ -36,89 +46,124 @@ export function TurnHeader({
   onFactionChange,
 }: TurnHeaderProps) {
   const displayFaction = soloDualFaction ? (activeFaction ?? faction) : faction;
-  const mm = Math.floor(secondsLeft / 60);
+  const mm = Math.floor(secondsLeft / 60).toString().padStart(2, "0");
   const ss = (secondsLeft % 60).toString().padStart(2, "0");
   const urgent = secondsLeft > 0 && secondsLeft <= 15;
 
   return (
-    <header className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 bg-slate-950/95 px-3 py-2 backdrop-blur">
-      <section className="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs">
-        <Link href="/" className="text-[10px] text-slate-600 hover:text-slate-400">
-          ← Home
+    <header
+      className="flex shrink-0 items-center justify-between px-4 py-2 text-[11px]"
+      style={{
+        background: "var(--color-surface)",
+        borderBottom: "1px solid var(--color-border)",
+        fontFamily: "var(--font-mono), monospace",
+      }}
+    >
+      {/* Left: logo + room context */}
+      <div className="flex items-center gap-4">
+        <Link
+          href="/"
+          className="text-[10px] font-bold uppercase tracking-widest transition-opacity hover:opacity-70"
+          style={{ color: "var(--color-gold)" }}
+        >
+          ✕ WAR ROOM: MIDDLE-EARTH
         </Link>
-        <span className="font-mono text-base font-bold tracking-widest text-amber-400">
-          {code}
+        <span style={{ color: "var(--color-border)" }}>|</span>
+        <span className="font-bold tracking-widest" style={{ color: "#555" }}>
+          CODE:{" "}
+          <span style={{ color: "#ccc" }}>{code}</span>
         </span>
-        <span className="text-slate-500">Turn {turn}</span>
+        <span style={{ color: "#444" }}>
+          TURN <span style={{ color: "#ccc" }}>{turn}</span>
+        </span>
+
+        {/* Faction badge / switcher */}
         {soloDualFaction && onFactionChange ? (
-          <span className="flex items-center gap-1">
-            <span className="text-[9px] uppercase tracking-wider text-slate-600">
-              Commanding
-            </span>
+          <div className="flex items-center gap-1">
+            <span style={{ color: "#444" }}>CMD:</span>
             {(["rohan", "isengard"] as const).map((f) => (
               <button
                 key={f}
                 type="button"
                 onClick={() => onFactionChange(f)}
-                className={`rounded-full px-2 py-px text-[10px] font-semibold transition ${
-                  displayFaction === f
-                    ? f === "rohan"
-                      ? "bg-emerald-700 text-emerald-100 ring-1 ring-emerald-500"
-                      : "bg-red-800 text-red-100 ring-1 ring-red-500"
-                    : "bg-slate-800/80 text-slate-500 hover:text-slate-300"
-                }`}
+                className="rounded px-2 py-px text-[9px] font-bold uppercase tracking-wider transition-all"
+                style={{
+                  color: displayFaction === f ? FACTION_COLOR[f] : "#444",
+                  border: `1px solid ${displayFaction === f ? FACTION_COLOR[f] : "#2a2a2a"}`,
+                  background: "transparent",
+                }}
               >
-                {factionDisplayName(f)}
+                {FACTION_LABEL[f] ?? f}
               </button>
             ))}
-          </span>
+          </div>
         ) : (
           <span
-            className={`rounded-full px-2 py-px text-[10px] font-semibold ${
-              displayFaction === "rohan"
-                ? "bg-emerald-900/70 text-emerald-300"
-                : displayFaction === "isengard"
-                  ? "bg-red-900/70 text-red-300"
-                  : "bg-slate-800 text-slate-200"
-            }`}
+            className="rounded px-2 py-px text-[9px] font-bold uppercase tracking-wider"
+            style={{
+              color: FACTION_COLOR[displayFaction] ?? "#888",
+              border: `1px solid ${FACTION_COLOR[displayFaction] ?? "#444"}`,
+            }}
           >
-            {factionDisplayName(displayFaction)}
+            {FACTION_LABEL[displayFaction] ?? displayFaction}
           </span>
         )}
-        {soloDualFaction && (
-          <span className="rounded bg-amber-900/40 px-1.5 py-px text-[9px] font-medium text-amber-400">
-            Solo · both sides
-          </span>
-        )}
-      </section>
+      </div>
 
-      <section className="flex items-center gap-2">
+      {/* Right: turn deadline + submit */}
+      <div className="flex items-center gap-4">
         {winner ? (
-          <span className="text-sm font-semibold text-amber-400">
-            {winner ? factionDisplayName(winner) : ""} wins!
+          <span
+            className="text-sm font-bold uppercase tracking-widest"
+            style={{ color: "var(--color-gold)" }}
+          >
+            {(FACTION_LABEL[winner] ?? winner)} WINS
           </span>
+        ) : resolving ? (
+          <div className="flex items-center gap-2">
+            <span
+              className="inline-block h-2 w-2 animate-pulse rounded-full"
+              style={{ background: "var(--color-gold)" }}
+            />
+            <span style={{ color: "#888" }} className="uppercase tracking-widest text-[10px]">
+              Resolving orders…
+            </span>
+          </div>
         ) : (
           <>
-            <span
-              className={`font-mono text-xl tabular-nums ${urgent ? "text-red-400" : "text-slate-100"}`}
-            >
-              {mm}:{ss}
-            </span>
-            <span className="hidden text-[10px] text-slate-500 sm:inline">
-              Ready {readyPlayerIds.length}/{totalPlayers}
-              {mySubmitted && " · Locked"}
-            </span>
-            <button
-              type="button"
-              disabled={submitting || mySubmitted}
-              onClick={onSubmit}
-              className="rounded-md bg-amber-500 px-3 py-1.5 text-xs font-semibold text-slate-950 hover:bg-amber-400 disabled:opacity-50"
-            >
-              {mySubmitted ? "Orders locked" : "Submit orders"}
-            </button>
+            <div className="text-right">
+              <div
+                className="text-[9px] uppercase tracking-widest"
+                style={{ color: "#444" }}
+              >
+                Turn Deadline
+              </div>
+              <div
+                className="font-bold tabular-nums text-xl leading-none"
+                style={{ color: urgent ? "#e05555" : "#e8e8e8" }}
+              >
+                {mm}:{ss}
+              </div>
+            </div>
+
+            <div className="flex flex-col items-end gap-1">
+              <span className="text-[9px] uppercase tracking-widest" style={{ color: "#444" }}>
+                Ready {readyPlayerIds.length}/{totalPlayers}
+                {mySubmitted ? " · Locked" : ""}
+              </span>
+              <button
+                type="button"
+                disabled={submitting || mySubmitted}
+                onClick={onSubmit}
+                className="btn-gold"
+                style={{ padding: "6px 16px", fontSize: "10px" }}
+              >
+                {mySubmitted ? "Orders Locked" : "Submit Turn"}
+              </button>
+            </div>
           </>
         )}
-      </section>
+      </div>
     </header>
   );
 }

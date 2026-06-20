@@ -16,7 +16,7 @@ export function resolveInterceptFire(
   const events: TurnEvent[] = [];
   const orderMap = new Map<string, Command>();
   for (const c of allCommands) {
-    if (c.type !== "abandon_capital" && "unitId" in c) {
+    if ("unitId" in c) {
       orderMap.set(c.unitId, c);
     }
   }

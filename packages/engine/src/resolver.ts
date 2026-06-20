@@ -20,7 +20,7 @@ import {
 import { extractMoveOrders, resolveMovement } from "./movement.js";
 import { resolveInterceptFire } from "./intercept.js";
 import { applyMoraleAndRout } from "./morale.js";
-import { clearArrivedFlags, syncEngagements, unitsAtNode } from "./node-utils.js";
+import { clearArrivedFlags, syncEngagements } from "./node-utils.js";
 import {
   enrichMoveCommand,
   getDeniedNodes,
@@ -88,37 +88,13 @@ export function createInitialState(
   return syncEngagements(state);
 }
 
-export function applyAbandonCapital(
-  state: GameState,
-  fallbackNodeId: string
-): GameState {
-  return {
-    ...state,
-    meta: {
-      ...state.meta,
-      capitalNodes: {
-        ...state.meta.capitalNodes,
-        rohan: fallbackNodeId,
-      },
-      abandonCapitalUsed: { ...state.meta.abandonCapitalUsed, rohan: true },
-    },
-  };
-}
-
 export function checkVictory(state: GameState): FactionId | null {
-  const caps = state.meta.capitalNodes;
   for (const faction of ["rohan", "isengard"] as FactionId[]) {
     const enemy: FactionId = faction === "rohan" ? "isengard" : "rohan";
-    const capitalId = caps[enemy];
-    const occupiers = unitsAtNode(state, capitalId).filter(
-      (u) => u.factionId === faction
+    const enemyAlive = Object.values(state.units).some(
+      (u) => u.factionId === enemy && u.strength > 0
     );
-    const defenders = unitsAtNode(state, capitalId).filter(
-      (u) => u.factionId === enemy
-    );
-    if (occupiers.length > 0 && defenders.length === 0) {
-      return faction;
-    }
+    if (!enemyAlive) return faction;
   }
   return null;
 }
@@ -168,19 +144,6 @@ export async function resolveTurn(
   for (const fo of allOrders) {
     validateOrders(next, graph, fo.factionId, fo.commands);
     allCommands.push(...fo.commands);
-    for (const cmd of fo.commands) {
-      if (cmd.type === "abandon_capital") {
-        const fallback = options.rohanFallbackCapital ?? "helms_deep";
-        const from = next.meta.capitalNodes.rohan;
-        next = applyAbandonCapital(next, fallback);
-        events.push({
-          type: "capital_shift",
-          factionId: "rohan",
-          from,
-          to: fallback,
-        });
-      }
-    }
   }
 
   // Record the last attack stance/intention on each unit for default ordering next turn
@@ -334,7 +297,7 @@ export async function resolveTurn(
       phase: "planning",
       turn: next.turn,
     };
-    events.push({ type: "victory", factionId: winner, reason: "capital_captured" });
+    events.push({ type: "victory", factionId: winner, reason: "annihilation" });
   } else {
     next = {
       ...next,

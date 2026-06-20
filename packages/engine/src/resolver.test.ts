@@ -14,7 +14,6 @@ const opts = () => {
   const { scenario } = initGameFromScenario(root, "rohan-vs-isengard");
   return {
     combat: scenario.combat,
-    rohanFallbackCapital: scenario.fallbackCapital?.rohan,
   };
 };
 
@@ -63,22 +62,9 @@ describe("resolveTurn v2", () => {
     expect(result.events.some((e) => e.type === "dig_in")).toBe(true);
   });
 
-  it("abandons rohan capital", async () => {
-    const { state: initial } = initGameFromScenario(root, "rohan-vs-isengard");
-    const result = await resolveTurn(
-      initial,
-      [
-        { factionId: "rohan", commands: [{ type: "abandon_capital" }] },
-        { factionId: "isengard", commands: [] },
-      ],
-      opts()
-    );
-    expect(result.state.meta.capitalNodes.rohan).toBe("helms_deep");
-  });
-
-  it("detects capital capture", () => {
+  it("detects annihilation victory", () => {
     const { map, scenario } = initGameFromScenario(root, "rohan-vs-isengard");
-    let state = createInitialState(map, {
+    const state = createInitialState(map, {
       id: scenario.id,
       capitalNodes: scenario.capitalNodes,
       units: [
@@ -94,6 +80,7 @@ describe("resolveTurn v2", () => {
         },
       ],
     });
+    // No Rohan units — Isengard wins by annihilation
     expect(checkVictory(state)).toBe("isengard");
   });
 

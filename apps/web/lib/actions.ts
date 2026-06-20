@@ -12,8 +12,7 @@ export type ActionType =
   | "attack"
   | "cover"
   | "retreat"
-  | "disengage"
-  | "abandon_capital";
+  | "disengage";
 
 export function getAvailableActions(
   state: GameState,
@@ -40,10 +39,6 @@ export function getAvailableActions(
     actions.push("attack", "retreat", "disengage");
     if (allies.length > 0) actions.push("cover");
   }
-  if (myFaction === "rohan" && !state.meta.abandonCapitalUsed.rohan) {
-    actions.push("abandon_capital");
-  }
-
   return actions;
 }
 

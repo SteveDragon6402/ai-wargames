@@ -2,29 +2,105 @@
 @tailwind components;
 @tailwind utilities;
 
+:root {
+  --color-bg: #0a0a0a;
+  --color-surface: #111111;
+  --color-border: #242424;
+  --color-border-dim: #1a1a1a;
+  --color-gold: #c8941a;
+  --color-gold-bright: #f0b429;
+  --color-rohan: #2d6a35;
+  --color-rohan-text: #5ecb6b;
+  --color-isengard: #8b1a1a;
+  --color-isengard-text: #e05555;
+  --color-contested: #8b6914;
+}
+
 body {
-  @apply bg-slate-950 text-slate-100 antialiased;
+  background-color: var(--color-bg);
+  color: #d0cfc8;
+  font-family: var(--font-mono), "Courier New", Courier, monospace;
+  -webkit-font-smoothing: antialiased;
 }
 
 @layer components {
   .game-shell {
-    @apply flex h-dvh flex-col overflow-hidden bg-slate-950;
+    display: flex;
+    height: 100dvh;
+    flex-direction: column;
+    overflow: hidden;
+    background-color: var(--color-bg);
   }
 
   .game-scroll {
     @apply min-h-0 flex-1 overflow-y-auto overscroll-contain;
   }
 
+  /* Tactical label style — all caps monospace */
   .game-label {
-    @apply text-[10px] font-semibold uppercase tracking-wider text-slate-500;
+    font-family: var(--font-mono), monospace;
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #555;
   }
 
   .game-text {
-    @apply text-xs text-slate-300;
+    font-family: var(--font-mono), monospace;
+    font-size: 11px;
+    color: #aaa;
   }
 
   .game-panel {
-    @apply rounded-lg border border-slate-700/80 bg-slate-800/50;
+    border: 1px solid var(--color-border);
+    background-color: var(--color-surface);
+  }
+
+  /* Serif class for narrative text (debrief) */
+  .font-narrative {
+    font-family: var(--font-serif), Georgia, "Times New Roman", serif;
+  }
+
+  /* Gold accent button */
+  .btn-gold {
+    @apply font-mono uppercase tracking-wider;
+    background-color: var(--color-gold);
+    color: #0a0a0a;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    padding: 10px 20px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: background-color 0.15s;
+  }
+  .btn-gold:hover {
+    background-color: var(--color-gold-bright);
+  }
+  .btn-gold:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  /* Dim outline button */
+  .btn-outline {
+    @apply font-mono uppercase tracking-wider;
+    border: 1px solid #333;
+    color: #888;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    padding: 10px 20px;
+    font-size: 11px;
+    cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+  }
+  .btn-outline:hover {
+    border-color: var(--color-gold);
+    color: var(--color-gold);
+  }
+  .btn-outline:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
   }
 }
 

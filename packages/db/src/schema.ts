@@ -1,4 +1,4 @@
-import type { Command, GameState } from "@wargame/shared";
+import type { Command, GameState, TurnEvent } from "@wargame/shared";
 import {
   boolean,
   integer,
@@ -43,7 +43,22 @@ export const games = pgTable("games", {
   readyPlayerIds: jsonb("ready_player_ids").$type<string[]>().default([]).notNull(),
   state: jsonb("state").$type<GameState>().notNull(),
   winnerFactionId: text("winner_faction_id"),
+  lastTurnEvents: jsonb("last_turn_events").$type<TurnEvent[]>().default([]).notNull(),
 });
+
+export const gameHistory = pgTable(
+  "game_history",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    roomId: uuid("room_id")
+      .notNull()
+      .references(() => rooms.id, { onDelete: "cascade" }),
+    turn: integer("turn").notNull(),
+    events: jsonb("events").$type<TurnEvent[]>().notNull(),
+    stateAfter: jsonb("state_after").$type<GameState>().notNull(),
+  },
+  (t) => [uniqueIndex("game_history_room_turn_idx").on(t.roomId, t.turn)]
+);
 
 export const orders = pgTable(
   "orders",
