@@ -5,6 +5,7 @@
   "scripts": {
     "predev": "pnpm --filter @wargame/server build",
     "dev": "next dev",
+    "prebuild": "pnpm --filter @wargame/shared build && pnpm --filter @wargame/engine build && pnpm --filter @wargame/db build && pnpm --filter @wargame/server build",
     "build": "next build",
     "start": "next start -p ${PORT:-3000}",
     "lint": "next lint"

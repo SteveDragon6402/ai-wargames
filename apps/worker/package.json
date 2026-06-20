@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "prebuild": "pnpm --filter @wargame/shared build && pnpm --filter @wargame/engine build && pnpm --filter @wargame/db build && pnpm --filter @wargame/server build",
     "build": "tsc",
     "predev": "pnpm --filter @wargame/server build",
     "dev": "tsc && (tsc -w --preserveWatchOutput &) && node --watch dist/index.js",
