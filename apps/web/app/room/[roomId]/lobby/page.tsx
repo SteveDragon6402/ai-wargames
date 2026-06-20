@@ -7,7 +7,7 @@ import { useRoom } from "@/hooks/useRoom";
 
 export default function LobbyPage() {
   const params = useParams<{ roomId: string }>();
-  const roomId = typeof params.roomId === "string" ? params.roomId : "";
+  const roomId = typeof params?.roomId === "string" ? params.roomId : "";
   const router = useRouter();
   const { snapshot, refresh, error, loading } = useRoom(roomId);
   const [starting, setStarting] = useState(false);
