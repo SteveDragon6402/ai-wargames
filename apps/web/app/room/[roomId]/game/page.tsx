@@ -33,7 +33,8 @@ import { useSocket } from "@/hooks/useSocket";
 import { formatEvent } from "@/lib/format-event";
 
 export default function GamePage() {
-  const { roomId } = useParams<{ roomId: string }>();
+  const params = useParams<{ roomId: string }>();
+  const roomId = params?.roomId ?? "";
   const { snapshot, refresh, events, pushEvent, error: roomError, loading: roomLoading } = useRoom(roomId);
   const [localState, setLocalState] = useState<GameState | null>(null);
   const [selectedUnitId, setSelectedUnitId] = useState<string | null>(null);
