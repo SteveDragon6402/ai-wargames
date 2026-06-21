@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { loadScenario } from "@wargame/engine";
 import { getDb, players, rooms } from "@wargame/db";
 import { createRoomSchema } from "@wargame/shared";
 import { NextResponse } from "next/server";
+import { getScenariosDir } from "@/lib/env";
 import { generateRoomCode } from "@/lib/room-code";
 import { setSessionCookie } from "@/lib/session";
 
@@ -19,6 +21,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: msgs || "Invalid request" }, { status: 400 });
   }
 
+  const scenarioId = parsed.data.scenarioId ?? "battle-of-fords";
+
+  let hostFactionId: string;
+  try {
+    const { scenario } = loadScenario(getScenariosDir(), scenarioId);
+    hostFactionId = scenario.factions[0] ?? "rohan";
+  } catch {
+    return NextResponse.json({ error: `Unknown scenario: ${scenarioId}` }, { status: 400 });
+  }
+
   try {
     const db = getDb();
     const roomId = randomUUID();
@@ -30,21 +42,21 @@ export async function POST(req: Request) {
       id: roomId,
       code,
       status: "lobby",
-      scenarioId: "battle-of-fords",
+      scenarioId,
       hostPlayerId: playerId,
     });
 
     await db.insert(players).values({
       id: playerId,
       roomId,
-      factionId: "rohan",
+      factionId: hostFactionId,
       displayName: parsed.data.displayName,
       sessionToken,
     });
 
     await setSessionCookie(sessionToken);
 
-    return NextResponse.json({ roomId, code, playerId, factionId: "rohan" });
+    return NextResponse.json({ roomId, code, playerId, factionId: hostFactionId });
   } catch (e) {
     console.error("[POST /api/rooms]", e);
     return NextResponse.json(

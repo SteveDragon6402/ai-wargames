@@ -9,7 +9,7 @@ import { generateRoomCode } from "@/lib/room-code";
 import { setSessionCookie } from "@/lib/session";
 
 /**
- * Create a solo room where one player commands both Rohan and Isengard.
+ * Create a solo room where one player commands both factions.
  * Starts the game immediately and sets the session cookie for the new player.
  */
 export async function POST(req: Request) {
@@ -18,22 +18,29 @@ export async function POST(req: Request) {
   }
 
   let displayName = "Commander";
+  let scenarioId = "battle-of-fords";
   try {
     const body = await req.json();
     if (body && typeof body.displayName === "string" && body.displayName.trim()) {
       displayName = body.displayName.trim().slice(0, 32);
+    }
+    if (body && typeof body.scenarioId === "string" && body.scenarioId.trim()) {
+      scenarioId = body.scenarioId.trim();
     }
   } catch {
     /* empty body is fine */
   }
 
   try {
+    const scenariosDir = getScenariosDir();
+    const { scenario, state } = initGameFromScenario(scenariosDir, scenarioId);
+    const hostFactionId = scenario.factions[0] ?? "rohan";
+
     const db = getDb();
     const roomId = randomUUID();
     const playerId = randomUUID();
     const sessionToken = randomUUID();
     const code = generateRoomCode();
-    const scenarioId = "battle-of-fords";
 
     await db.insert(rooms).values({
       id: roomId,
@@ -47,12 +54,10 @@ export async function POST(req: Request) {
     await db.insert(players).values({
       id: playerId,
       roomId,
-      factionId: "rohan",
+      factionId: hostFactionId,
       displayName,
       sessionToken,
     });
-
-    const { state } = initGameFromScenario(getScenariosDir(), scenarioId);
 
     // Solo mode: no timer — turn advances only when the player clicks End Turn
     await db.insert(games).values({

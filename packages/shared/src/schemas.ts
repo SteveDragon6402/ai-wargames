@@ -71,6 +71,7 @@ export const commandSchema = z.discriminatedUnion("type", [
 
 export const createRoomSchema = z.object({
   displayName: z.string().min(1).max(32),
+  scenarioId: z.string().min(1).optional(),
 });
 
 export const joinRoomSchema = z.object({

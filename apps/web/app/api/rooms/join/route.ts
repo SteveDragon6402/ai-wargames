@@ -1,8 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
+import { loadScenario } from "@wargame/engine";
 import { getDb, players, rooms } from "@wargame/db";
 import { joinRoomSchema } from "@wargame/shared";
 import { NextResponse } from "next/server";
+import { getScenariosDir } from "@/lib/env";
 import { setSessionCookie } from "@/lib/session";
 
 export async function POST(req: Request) {
@@ -43,9 +45,17 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Room is full" }, { status: 400 });
     }
 
-    const factionId = existing.some((p) => p.factionId === "rohan")
-      ? "isengard"
-      : "rohan";
+    // Determine the second faction from the scenario's faction list
+    let factionId: string;
+    try {
+      const { scenario } = loadScenario(getScenariosDir(), room.scenarioId);
+      const takenFactions = new Set(existing.map((p) => p.factionId));
+      const available = scenario.factions.find((f) => !takenFactions.has(f));
+      factionId = available ?? scenario.factions[1] ?? "isengard";
+    } catch {
+      // Fallback: pick whichever of the original two isn't taken
+      factionId = existing.some((p) => p.factionId === "rohan") ? "isengard" : "rohan";
+    }
 
     const playerId = randomUUID();
     const sessionToken = randomUUID();

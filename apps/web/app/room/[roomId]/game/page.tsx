@@ -544,6 +544,22 @@ export default function GamePage() {
     return () => clearInterval(id);
   }, [waitingOnResolve, refresh]);
 
+  // Must be declared before any early return so React's hook order is stable
+  const battleNarratives = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const e of (snapshot?.game?.lastTurnEvents ?? [])) {
+      if (e.type === "node_battle" && e.narrative) {
+        m.set(e.nodeId, e.narrative);
+      }
+    }
+    return m;
+  }, [snapshot?.game?.lastTurnEvents]);
+
+  const nodeNames = useMemo(
+    () => (gameState ? nodeNameMap(gameState.map.nodes) : {}),
+    [gameState]
+  );
+
   if (!gameState || !snapshot) {
     return (
       <main className="flex min-h-screen flex-col items-center justify-center gap-3 bg-slate-950">
@@ -565,18 +581,6 @@ export default function GamePage() {
   const winner =
     snapshot.game?.winnerFactionId ?? gameState.meta.winnerFactionId;
   const resolving = allReady && !debrief && !winner;
-  const nodeNames = nodeNameMap(gameState.map.nodes);
-
-  // Build battle narratives map from last turn events
-  const battleNarratives = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const e of (snapshot.game?.lastTurnEvents ?? [])) {
-      if (e.type === "node_battle" && e.narrative) {
-        m.set(e.nodeId, e.narrative);
-      }
-    }
-    return m;
-  }, [snapshot.game?.lastTurnEvents]);
 
   return (
     <>

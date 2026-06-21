@@ -1,8 +1,14 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { factionDisplayName } from "@/lib/unit-labels";
+
+interface ScenarioMeta {
+  id: string;
+  name: string;
+  factions: string[];
+}
 
 async function safeJson(res: Response): Promise<{ error?: string } & Record<string, unknown>> {
   try {
@@ -40,6 +46,21 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const codeRef = useRef<HTMLInputElement>(null);
 
+  /* Scenario picker */
+  const [scenarios, setScenarios] = useState<ScenarioMeta[]>([]);
+  const [selectedScenarioId, setSelectedScenarioId] = useState("battle-of-fords");
+
+  useEffect(() => {
+    fetch("/api/scenarios")
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d.scenarios) && d.scenarios.length > 0) {
+          setScenarios(d.scenarios);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   /* Admin state */
   const [adminOpen, setAdminOpen] = useState(false);
   const [adminAuthed, setAdminAuthed] = useState(false);
@@ -59,7 +80,10 @@ export default function HomePage() {
       const res = await fetch("/api/rooms", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ displayName: name.trim() || "Commander" }),
+        body: JSON.stringify({
+          displayName: name.trim() || "Commander",
+          scenarioId: selectedScenarioId,
+        }),
       });
       const data = await safeJson(res);
       if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Failed to create room");
@@ -145,7 +169,10 @@ export default function HomePage() {
           Authorization: `Bearer ${adminPw}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ displayName: name.trim() || "Commander" }),
+        body: JSON.stringify({
+          displayName: name.trim() || "Commander",
+          scenarioId: selectedScenarioId,
+        }),
       });
       const data = await safeJson(res);
       if (!res.ok) {
@@ -211,7 +238,7 @@ export default function HomePage() {
             className="text-[10px] uppercase tracking-widest"
             style={{ color: "#444", letterSpacing: "0.2em" }}
           >
-            Middle-Earth Theatre · Fords of Isen
+            AI-Adjudicated Node Warfare
           </p>
         </div>
 
@@ -253,6 +280,67 @@ export default function HomePage() {
                 maxLength={32}
               />
             </div>
+
+            {/* Scenario picker */}
+            {scenarios.length > 0 && (
+              <div>
+                <label
+                  className="mb-1.5 block text-[9px] font-bold uppercase tracking-widest"
+                  style={{ color: "#555" }}
+                >
+                  Theatre of War
+                </label>
+                <div className="flex flex-col gap-1">
+                  {scenarios.map((s) => {
+                    const selected = s.id === selectedScenarioId;
+                    return (
+                      <button
+                        key={s.id}
+                        type="button"
+                        onClick={() => setSelectedScenarioId(s.id)}
+                        className="w-full px-3 py-2 text-left transition-all"
+                        style={{
+                          background: selected ? "#0f0d04" : "#060606",
+                          border: selected
+                            ? "1px solid var(--color-gold)"
+                            : "1px solid #1e1e1e",
+                          fontFamily: "var(--font-mono), monospace",
+                        }}
+                        onMouseEnter={(e) => {
+                          if (!selected) e.currentTarget.style.borderColor = "#333";
+                        }}
+                        onMouseLeave={(e) => {
+                          if (!selected) e.currentTarget.style.borderColor = "#1e1e1e";
+                        }}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span
+                            className="truncate text-[10px] font-bold uppercase tracking-wide"
+                            style={{ color: selected ? "var(--color-gold)" : "#888" }}
+                          >
+                            {s.name}
+                          </span>
+                          {selected && (
+                            <span
+                              className="shrink-0 text-[8px] font-bold uppercase tracking-widest"
+                              style={{ color: "var(--color-gold)" }}
+                            >
+                              ✓
+                            </span>
+                          )}
+                        </div>
+                        <div
+                          className="mt-0.5 text-[8px] uppercase tracking-widest"
+                          style={{ color: "#444" }}
+                        >
+                          {s.factions.map((f) => factionDisplayName(f)).join(" vs ")}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             <button
               type="button"
