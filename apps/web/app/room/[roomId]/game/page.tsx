@@ -38,6 +38,98 @@ interface DebriefState {
   completedTurn: number;
   events: TurnEvent[];
   availableTurns: number[];
+  initialState: GameState;
+}
+
+function GroupInspector({
+  unitIds,
+  gameState,
+  nodeNames,
+  onClear,
+}: {
+  unitIds: string[];
+  gameState: GameState;
+  nodeNames: Record<string, string>;
+  onClear: () => void;
+}) {
+  const units = unitIds.map((id) => gameState.units[id]).filter(Boolean);
+  const nodeName = units[0] ? nodeNames[units[0].nodeId] ?? units[0].nodeId : "";
+  return (
+    <div
+      className="p-3 space-y-2"
+      style={{ fontFamily: "var(--font-mono), monospace" }}
+    >
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <p
+            className="text-[9px] font-bold uppercase tracking-widest"
+            style={{ color: "var(--color-gold)" }}
+          >
+            Group Command
+          </p>
+          <p className="mt-0.5 text-[11px] font-semibold" style={{ color: "#ccc" }}>
+            {units.length} units · {nodeName}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={onClear}
+          className="shrink-0 rounded border px-2 py-0.5 text-[9px] transition-colors"
+          style={{
+            border: "1px solid #333",
+            color: "#555",
+            background: "transparent",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#555")}
+          onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#333")}
+        >
+          Clear
+        </button>
+      </div>
+      <div className="space-y-0.5">
+        {units.map((u) =>
+          u ? (
+            <div
+              key={u.id}
+              className="flex items-center gap-1.5 rounded px-1.5 py-0.5"
+              style={{ background: "#0d0d0d", border: "1px solid #1a1a1a" }}
+            >
+              <span
+                className="h-1.5 w-1.5 shrink-0 rounded-full"
+                style={{
+                  background:
+                    u.factionId === "rohan" ? "#5ecb6b" : "#e05555",
+                }}
+              />
+              <span
+                className="flex-1 truncate font-bold uppercase"
+                style={{ fontSize: "9px", color: "#aaa", letterSpacing: "0.06em" }}
+              >
+                {u.name}
+              </span>
+              <span
+                className="tabular-nums"
+                style={{
+                  fontSize: "8px",
+                  color:
+                    u.strength >= 0.7
+                      ? "#5ecb6b"
+                      : u.strength >= 0.4
+                        ? "#c8941a"
+                        : "#e05555",
+                }}
+              >
+                {Math.round(u.strength * 100)}%
+              </span>
+            </div>
+          ) : null
+        )}
+      </div>
+      <p className="text-[8px] italic" style={{ color: "#444" }}>
+        Pick an order below — it will be issued to all units above.
+      </p>
+    </div>
+  );
 }
 
 export default function GamePage() {
@@ -55,6 +147,9 @@ export default function GamePage() {
   const [debrief, setDebrief] = useState<DebriefState | null>(null);
   const prevTurnRef = useRef<number | null>(null);
   const submittedRef = useRef(false);
+  // Group command state — lets the player select all units on a node at once
+  const [groupUnitIds, setGroupUnitIds] = useState<string[]>([]);
+  const groupUnitIdsRef = useRef<string[]>([]);
 
   const gameState = localState ?? snapshot?.game?.state ?? null;
   const soloDualFaction = snapshot?.room?.soloDualFaction ?? false;
@@ -113,13 +208,39 @@ export default function GamePage() {
     lastPersistedKey.current = null;
   }, []);
 
+  const clearGroup = useCallback(() => {
+    setGroupUnitIds([]);
+    groupUnitIdsRef.current = [];
+  }, []);
+
+  // Keep ref in sync so closures in effects can read the latest group
+  useEffect(() => {
+    groupUnitIdsRef.current = groupUnitIds;
+  }, [groupUnitIds]);
+
+  // Intersection of available actions across all group units
+  const groupAvailableActions = useMemo<ActionType[]>(() => {
+    if (groupUnitIds.length === 0 || !gameState || !commandingFaction) return [];
+    const sets = groupUnitIds.map((uid) => {
+      const u = gameState.units[uid];
+      if (!u) return new Set<ActionType>();
+      return new Set(getAvailableActions(gameState, u, commandingFaction));
+    });
+    const first = sets[0];
+    if (!first) return [];
+    // Intersection — exclude cover since covering different allies per unit is confusing
+    return [...first].filter(
+      (a) => a !== "cover" && sets.every((s) => s.has(a))
+    );
+  }, [groupUnitIds, gameState, commandingFaction]);
+
   const showDebrief = useCallback(
-    async (completedTurn: number, turnEvents: TurnEvent[]) => {
+    async (completedTurn: number, turnEvents: TurnEvent[], state: GameState) => {
       const res = await fetch(`/api/rooms/${roomId}/history`).catch(() => null);
       const availableTurns: number[] = res?.ok
         ? ((await res.json()) as { turns: number[] }).turns
         : [completedTurn];
-      setDebrief({ completedTurn, events: turnEvents, availableTurns });
+      setDebrief({ completedTurn, events: turnEvents, availableTurns, initialState: state });
     },
     [roomId]
   );
@@ -129,6 +250,7 @@ export default function GamePage() {
       setLocalState(state);
       setSelectedUnitId(null);
       setOrderDraft(null);
+      clearGroup();
       submittedRef.current = false;
       refresh().then((snap) => {
         const resolved = snap ?? null;
@@ -137,7 +259,7 @@ export default function GamePage() {
           const finalEvents = turnEvents.length > 0
             ? turnEvents
             : (resolved?.game?.lastTurnEvents ?? []);
-          void showDebrief(completedTurn, finalEvents);
+          void showDebrief(completedTurn, finalEvents, state);
         }
       });
     },
@@ -156,7 +278,7 @@ export default function GamePage() {
       submittedRef.current = false;
       const lastEvents = snapshot.game.lastTurnEvents ?? [];
       const completedTurn = turn - 1;
-      void showDebrief(completedTurn, lastEvents);
+      void showDebrief(completedTurn, lastEvents, snapshot.game.state);
     }
     prevTurnRef.current = turn;
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -164,11 +286,12 @@ export default function GamePage() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") clearOrder();
+      if (e.key === "Escape") { clearOrder(); clearGroup(); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [clearOrder]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clearOrder, clearGroup]);
 
   const persistOrder = useCallback(
     async (command: Command): Promise<boolean> => {
@@ -202,6 +325,16 @@ export default function GamePage() {
       const ok = await persistOrder(command);
       if (!ok) return;
       lastPersistedKey.current = key;
+      // Apply same command to any remaining group units (with their own unitId)
+      const groupIds = groupUnitIdsRef.current;
+      if (groupIds.length > 1) {
+        const others = groupIds.filter((id) => id !== command.unitId);
+        for (const uid of others) {
+          await persistOrder({ ...command, unitId: uid });
+        }
+        setGroupUnitIds([]);
+        groupUnitIdsRef.current = [];
+      }
       if (draftIsNew) {
         setOrderDraft(null);
         setDraftIsNew(false);
@@ -244,7 +377,7 @@ export default function GamePage() {
             const finalEvents = resolvedEvents.length > 0
               ? resolvedEvents
               : (snap.game.lastTurnEvents ?? []);
-            void showDebrief(completedTurn, finalEvents);
+            void showDebrief(completedTurn, finalEvents, snap.game.state);
           }
         }
       } else {
@@ -268,13 +401,55 @@ export default function GamePage() {
     await refresh();
   }
 
+  function handleSelectAll(nodeId: string) {
+    if (!gameState || !commandingFaction || submittedRef.current) return;
+    const nodeUnits = Object.values(gameState.units).filter(
+      (u) => u.nodeId === nodeId && u.factionId === commandingFaction
+    );
+    if (nodeUnits.length < 2) return;
+    clearGroup();
+    clearOrder();
+    setSelectedUnitId(null);
+    const ids = nodeUnits.map((u) => u.id);
+    setGroupUnitIds(ids);
+    groupUnitIdsRef.current = ids;
+  }
+
   function handlePickAction(action: ActionType) {
-    if (!selectedUnit) return;
-    const draft = createDraft(action, selectedUnit.id);
+    const isGroup = groupUnitIds.length > 0;
+    const leadId = isGroup ? groupUnitIds[0] : selectedUnitId;
+    if (!leadId || !gameState) return;
+
+    // Auto-complete actions — immediately create an order, no panel needed
     if (action === "dig_in" || action === "disengage") {
-      void persistOrder(buildCommandFromDraft(draft));
+      if (isGroup) {
+        for (const uid of groupUnitIds) {
+          void persistOrder(buildCommandFromDraft(createDraft(action, uid)));
+        }
+        clearGroup();
+      } else {
+        void persistOrder(buildCommandFromDraft(createDraft(action, leadId)));
+      }
       return;
     }
+
+    // For group commands that need a target: use the first unit as the "lead"
+    // The auto-save effect will propagate the finalized command to all other group units
+    const lead = gameState.units[leadId];
+    if (!lead) return;
+    if (isGroup) setSelectedUnitId(leadId);
+
+    const draft = createDraft(action, leadId);
+
+    // Auto-select target when there's only one valid choice
+    if (action === "move") {
+      const adj = getAdjacentNodes(gameState, leadId);
+      if (adj.length === 1) draft.targetNodeId = adj[0];
+    } else if (action === "retreat") {
+      const targets = getRetreatTargets(gameState, lead);
+      if (targets.length === 1) draft.targetNodeId = targets[0];
+    }
+
     lastPersistedKey.current = null;
     setDraftIsNew(true);
     setOrderDraft(draft);
@@ -293,6 +468,7 @@ export default function GamePage() {
     if (faction !== "rohan" && faction !== "isengard") return;
     setActiveFaction(faction);
     setSelectedUnitId(null);
+    clearGroup();
     clearOrder();
   }
 
@@ -311,6 +487,9 @@ export default function GamePage() {
     }
 
     if (unit.factionId !== commandingFaction) return;
+
+    // Clear group selection when switching to individual
+    if (groupUnitIds.length > 0) clearGroup();
 
     if (orderDraft && unitId !== selectedUnitId) {
       clearOrder();
@@ -388,6 +567,17 @@ export default function GamePage() {
   const resolving = allReady && !debrief && !winner;
   const nodeNames = nodeNameMap(gameState.map.nodes);
 
+  // Build battle narratives map from last turn events
+  const battleNarratives = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const e of (snapshot.game?.lastTurnEvents ?? [])) {
+      if (e.type === "node_battle" && e.narrative) {
+        m.set(e.nodeId, e.narrative);
+      }
+    }
+    return m;
+  }, [snapshot.game?.lastTurnEvents]);
+
   return (
     <>
       {winner && (
@@ -401,6 +591,7 @@ export default function GamePage() {
         <TurnDebrief
           completedTurn={debrief.completedTurn}
           events={debrief.events}
+          initialState={debrief.initialState}
           roomId={roomId}
           availableTurns={debrief.availableTurns}
           onDismiss={() => {
@@ -437,15 +628,27 @@ export default function GamePage() {
             validNodeIds={validNodeIds}
             pickMode={pickMode}
             pickableUnitIds={pickableUnitIds}
+            battleNarratives={battleNarratives}
             onSelectUnit={handleSelectUnit}
             onSelectNode={handleSelectNode}
+            onSelectAll={snapshot.mySubmitted ? undefined : handleSelectAll}
+            groupedUnitIds={groupUnitIds.length > 0 ? new Set(groupUnitIds) : undefined}
           />
         }
         sidebarHeader={
-          <UnitInspector
-            unit={selectedUnit}
-            nodeName={selectedUnit ? nodeNames[selectedUnit.nodeId] : undefined}
-          />
+          groupUnitIds.length > 0 ? (
+            <GroupInspector
+              unitIds={groupUnitIds}
+              gameState={gameState}
+              nodeNames={nodeNames}
+              onClear={clearGroup}
+            />
+          ) : (
+            <UnitInspector
+              unit={selectedUnit}
+              nodeName={selectedUnit ? nodeNames[selectedUnit.nodeId] : undefined}
+            />
+          )
         }
         sidebarScroll={
           snapshot.mySubmitted ? (
@@ -458,6 +661,12 @@ export default function GamePage() {
                 Awaiting opponent confirmation
               </p>
             </div>
+          ) : groupUnitIds.length > 0 && !orderDraft ? (
+            <ActionPalette
+              actions={groupAvailableActions}
+              activeAction={null}
+              onPick={handlePickAction}
+            />
           ) : !orderDraft ? (
             <ActionPalette
               actions={availableActions}
@@ -470,11 +679,12 @@ export default function GamePage() {
               unit={panelUnit}
               state={gameState}
               autoSaveHint
+              groupCount={groupUnitIds.length}
               onChange={(next) => {
                 lastPersistedKey.current = null;
                 setOrderDraft(next);
               }}
-              onCancel={clearOrder}
+              onCancel={() => { clearOrder(); clearGroup(); }}
             />
           ) : null
         }

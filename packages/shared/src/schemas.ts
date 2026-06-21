@@ -15,7 +15,7 @@ export const attackIntentionSchema = z.enum([
   "breakthrough",
 ]);
 export const digInIntentionSchema = z.enum(["deny", "hold"]);
-export const factionIdSchema = z.enum(["rohan", "isengard"]);
+export const factionIdSchema = z.enum(["rohan", "isengard", "lannister", "stark"]);
 
 export const moveCommandSchema = z.object({
   type: z.literal("move"),

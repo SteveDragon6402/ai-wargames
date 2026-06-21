@@ -7,6 +7,8 @@ export function nodeNameMap(nodes: NodeDef[]): Record<string, string> {
 const TERRAIN_LABELS: Partial<Record<TerrainTag, string>> = {
   capital_rohan: "Capital",
   capital_isengard: "Capital",
+  capital_lannister: "Capital",
+  capital_stark: "Capital",
   fortified: "Fortified",
   stronghold: "Stronghold",
   easy_defend: "Easy defend",
@@ -23,6 +25,8 @@ const TERRAIN_LABELS: Partial<Record<TerrainTag, string>> = {
 const TERRAIN_PHRASES: Partial<Record<TerrainTag, string>> = {
   capital_rohan: "Rohan capital",
   capital_isengard: "Isengard capital",
+  capital_lannister: "Lannister command position",
+  capital_stark: "Stark muster point",
   fortified: "Fortified position",
   stronghold: "Major stronghold",
   easy_defend: "Defensive ground",
@@ -39,6 +43,8 @@ export function terrainPhrase(tags: TerrainTag[]): string {
   const priority: TerrainTag[] = [
     "capital_rohan",
     "capital_isengard",
+    "capital_lannister",
+    "capital_stark",
     "stronghold",
     "fortified",
     "river_crossing",
@@ -59,6 +65,8 @@ export function terrainPhrase(tags: TerrainTag[]): string {
 const TERRAIN_TOOLTIPS: Partial<Record<TerrainTag, string>> = {
   capital_rohan: "Faction capital — high strategic value",
   capital_isengard: "Faction capital — high strategic value",
+  capital_lannister: "Lannister command — high strategic value",
+  capital_stark: "Stark muster — high strategic value",
   fortified: "Improved defense for dug-in troops",
   stronghold: "Major defensive bonus",
   easy_defend: "Favorable ground for defenders",
@@ -84,6 +92,8 @@ export function terrainIcon(tag: TerrainTag): string {
   const icons: Partial<Record<TerrainTag, string>> = {
     capital_rohan: "♔",
     capital_isengard: "♜",
+    capital_lannister: "♔",
+    capital_stark: "♔",
     fortified: "⛊",
     stronghold: "▣",
     easy_defend: "↑",
@@ -102,6 +112,8 @@ export function primaryTerrainTags(tags: TerrainTag[]): TerrainTag[] {
   const priority: TerrainTag[] = [
     "capital_rohan",
     "capital_isengard",
+    "capital_lannister",
+    "capital_stark",
     "stronghold",
     "fortified",
     "river_crossing",

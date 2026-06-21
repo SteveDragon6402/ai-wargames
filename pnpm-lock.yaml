@@ -20,6 +20,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@anthropic-ai/sdk':
+        specifier: ^0.39.0
+        version: 0.39.0
       '@wargame/db':
         specifier: workspace:*
         version: link:../../packages/db

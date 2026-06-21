@@ -19,6 +19,8 @@ const NODE_DEFENSE: Record<string, number> = {
   ambush: 1.12,
   capital_rohan: 1.2,
   capital_isengard: 1.2,
+  capital_lannister: 1.2,
+  capital_stark: 1.2,
 };
 
 export function nodeDefenseMultiplier(tags: string[]): number {

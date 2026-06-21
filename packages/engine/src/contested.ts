@@ -108,7 +108,10 @@ export function resolveDisengage(state: GameState): { state: GameState; events: 
 
   for (const [nodeId, eng] of Object.entries(next.engagements)) {
     const votes = eng.disengageVotes;
-    if (votes.rohan && votes.isengard) {
+    const factionsAtNode = [
+      ...new Set(unitsAtNode(next, nodeId).map((u) => u.factionId)),
+    ];
+    if (factionsAtNode.length > 0 && factionsAtNode.every((f) => votes[f])) {
       delete next.engagements[nodeId];
       const units = { ...next.units };
       for (const u of unitsAtNode(next, nodeId)) {
@@ -750,7 +753,8 @@ export async function resolveContestedNodes(
     if (!isContested(next, nodeId)) continue;
     const eng = next.engagements[nodeId];
     if (!eng) continue;
-    if (eng.disengageVotes.rohan && eng.disengageVotes.isengard) continue;
+    const factionsHere = [...new Set(unitIds.map((id) => next.units[id]?.factionId).filter(Boolean))];
+    if (factionsHere.length > 0 && factionsHere.every((f) => eng.disengageVotes[f as FactionId])) continue;
 
     const byFaction = new Map<FactionId, string[]>();
     for (const id of unitIds) {

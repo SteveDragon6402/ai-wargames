@@ -35,6 +35,7 @@ export function CommandPanelBody({
   onChange,
   onCancel,
   autoSaveHint,
+  groupCount = 0,
 }: {
   draft: OrderDraft;
   unit: UnitState;
@@ -42,6 +43,8 @@ export function CommandPanelBody({
   onChange: (draft: OrderDraft) => void;
   onCancel?: () => void;
   autoSaveHint?: boolean;
+  /** When > 1 this draft will be applied to multiple units as a group command */
+  groupCount?: number;
 }) {
   const names = nodeNameMap(state.map.nodes);
 
@@ -65,8 +68,13 @@ export function CommandPanelBody({
         <div>
           <p className="game-label">Order — {ACTION_LABELS[draft.action]}</p>
           <h3 className="text-sm font-semibold text-slate-100">{unit.name}</h3>
+          {groupCount > 1 && (
+            <p className="mt-1 text-[9px] font-bold uppercase tracking-widest" style={{ color: "#c8941a" }}>
+              Group · {groupCount} units
+            </p>
+          )}
           {autoSaveHint ? (
-            <p className="mt-1 text-[10px] text-slate-500">
+            <p className="mt-0.5 text-[10px] text-slate-500">
               {complete
                 ? "Saved to queue — adjust options anytime"
                 : "Select targets on the map…"}
@@ -96,6 +104,11 @@ export function CommandPanelBody({
             options={["slow", "normal", "forced"] as const}
             value={draft.speed}
             onChange={(speed: Speed) => onChange({ ...draft, speed })}
+            optionHints={{
+              slow: "Cautious march — preserves cohesion and reduces casualties",
+              normal: "Standard pace — balanced risk and efficiency",
+              forced: "Maximum speed — arrive sooner but fatigue and expose troops",
+            }}
           />
         </>
       )}
@@ -116,6 +129,11 @@ export function CommandPanelBody({
               }
               onChange(next);
             }}
+            optionHints={{
+              balanced: "Even mix of offence and defence — standard approach",
+              aggressive: "Press the attack on arrival — unlocks Assault intention",
+              defensive: "Hold ground if engaged en route — reduces casualties",
+            }}
           />
           <OptionChips
             label="Intention"
@@ -132,8 +150,10 @@ export function CommandPanelBody({
                   : []
             }
             optionHints={{
-              assault: "Requires aggressive stance",
-              attack: "Not available in defensive stance",
+              balanced: "Standard advance — no special posture",
+              attack: "Arrive ready to fight — not available in defensive stance",
+              reinforce: "Link up with friendly forces at destination",
+              assault: "All-out charge — requires aggressive stance",
             }}
           />
         </>
@@ -152,6 +172,11 @@ export function CommandPanelBody({
               }
               onChange(next);
             }}
+            optionHints={{
+              balanced: "Even mix of offence and defence",
+              aggressive: "Press hard — more damage dealt, more received; unlocks Assault and Breakthrough",
+              defensive: "Fight defensively — fewer casualties but less damage output",
+            }}
           />
           <OptionChips
             label="Intention"
@@ -166,8 +191,10 @@ export function CommandPanelBody({
                 : []
             }
             optionHints={{
-              assault: "Requires aggressive stance; pick a specific enemy target",
-              breakthrough: "Requires aggressive stance; then click an adjacent territory",
+              attack: "Standard engagement — press the battle",
+              defend: "Fighting defence — hold your position while trading blows",
+              assault: "All-out assault on a single target — requires aggressive stance",
+              breakthrough: "Force through to an adjacent territory — requires aggressive stance",
             }}
           />
           {draft.attackIntention === "assault" && (
@@ -209,8 +236,8 @@ export function CommandPanelBody({
             onChange({ ...draft, digInIntention })
           }
           optionHints={{
-            hold: "Stronger defense; degrades under sustained attack",
-            deny: "Weaker but blocks enemy entry when dug in",
+            hold: "Build a strong defensive position — harder to dislodge but degrades under sustained assault",
+            deny: "Block enemy movement through this node — weaker fortification but area denial",
           }}
         />
       )}

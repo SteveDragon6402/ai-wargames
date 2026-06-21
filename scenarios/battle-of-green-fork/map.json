@@ -1,0 +1,170 @@
+{
+  "id": "green-fork-map",
+  "name": "The Green Fork — Open ground east of the Kingsroad",
+  "nodes": [
+    {
+      "id": "north_deploy",
+      "name": "North Deploy",
+      "tags": ["open", "plains", "capital_stark"],
+      "layout": { "x": 400, "y": 80 }
+    },
+    {
+      "id": "kingsroad",
+      "name": "The Kingsroad",
+      "tags": ["fast_march"],
+      "layout": { "x": 400, "y": 210 }
+    },
+    {
+      "id": "west_field",
+      "name": "West Field",
+      "tags": ["rugged"],
+      "layout": { "x": 170, "y": 370 }
+    },
+    {
+      "id": "center_field",
+      "name": "Center Field",
+      "tags": ["open", "plains"],
+      "layout": { "x": 400, "y": 390 }
+    },
+    {
+      "id": "east_field",
+      "name": "East Field",
+      "tags": ["open", "plains"],
+      "layout": { "x": 630, "y": 370 }
+    },
+    {
+      "id": "green_fork_bank",
+      "name": "Green Fork Bank",
+      "tags": ["river_crossing"],
+      "layout": { "x": 30, "y": 370 }
+    },
+    {
+      "id": "east_woods",
+      "name": "East Woods",
+      "tags": ["ambush"],
+      "layout": { "x": 790, "y": 370 }
+    },
+    {
+      "id": "the_creek",
+      "name": "The Creek",
+      "tags": ["river_crossing"],
+      "layout": { "x": 400, "y": 300 }
+    },
+    {
+      "id": "van_line",
+      "name": "Van Line",
+      "tags": ["open"],
+      "layout": { "x": 400, "y": 530 }
+    },
+    {
+      "id": "tywins_ridge",
+      "name": "Tywin's Ridge",
+      "tags": ["easy_defend", "capital_lannister"],
+      "layout": { "x": 400, "y": 680 }
+    },
+    {
+      "id": "south_deploy",
+      "name": "South Deploy",
+      "tags": ["open"],
+      "layout": { "x": 400, "y": 820 }
+    }
+  ],
+  "edges": [
+    {
+      "id": "e_nd_kr",
+      "from": "north_deploy",
+      "to": "kingsroad",
+      "tags": ["road"]
+    },
+    {
+      "id": "e_kr_wf",
+      "from": "kingsroad",
+      "to": "west_field",
+      "tags": []
+    },
+    {
+      "id": "e_kr_cf",
+      "from": "kingsroad",
+      "to": "center_field",
+      "tags": ["road"]
+    },
+    {
+      "id": "e_kr_ef",
+      "from": "kingsroad",
+      "to": "east_field",
+      "tags": []
+    },
+    {
+      "id": "e_kr_tc",
+      "from": "kingsroad",
+      "to": "the_creek",
+      "tags": ["road"]
+    },
+    {
+      "id": "e_wf_cf",
+      "from": "west_field",
+      "to": "center_field",
+      "tags": []
+    },
+    {
+      "id": "e_wf_gfb",
+      "from": "west_field",
+      "to": "green_fork_bank",
+      "tags": ["river"]
+    },
+    {
+      "id": "e_cf_ef",
+      "from": "center_field",
+      "to": "east_field",
+      "tags": []
+    },
+    {
+      "id": "e_cf_tc",
+      "from": "center_field",
+      "to": "the_creek",
+      "tags": []
+    },
+    {
+      "id": "e_cf_vl",
+      "from": "center_field",
+      "to": "van_line",
+      "tags": []
+    },
+    {
+      "id": "e_ef_ew",
+      "from": "east_field",
+      "to": "east_woods",
+      "tags": ["rugged"]
+    },
+    {
+      "id": "e_ef_vl",
+      "from": "east_field",
+      "to": "van_line",
+      "tags": []
+    },
+    {
+      "id": "e_tc_vl",
+      "from": "the_creek",
+      "to": "van_line",
+      "tags": []
+    },
+    {
+      "id": "e_vl_tr",
+      "from": "van_line",
+      "to": "tywins_ridge",
+      "tags": []
+    },
+    {
+      "id": "e_vl_sd",
+      "from": "van_line",
+      "to": "south_deploy",
+      "tags": ["road"]
+    },
+    {
+      "id": "e_tr_sd",
+      "from": "tywins_ridge",
+      "to": "south_deploy",
+      "tags": ["road"]
+    }
+  ]
+}

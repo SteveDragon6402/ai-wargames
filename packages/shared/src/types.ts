@@ -1,4 +1,4 @@
-export type FactionId = "rohan" | "isengard";
+export type FactionId = "rohan" | "isengard" | "lannister" | "stark";
 export type RoomStatus = "lobby" | "playing" | "finished";
 export type GamePhase = "planning" | "resolving";
 export type Speed = "slow" | "normal" | "forced";
@@ -20,6 +20,8 @@ export type UnitType =
 export type TerrainTag =
   | "capital_rohan"
   | "capital_isengard"
+  | "capital_lannister"
+  | "capital_stark"
   | "fortified"
   | "stronghold"
   | "easy_defend"
@@ -63,6 +65,7 @@ export interface UnitTemplate {
   defense: number;
   strength: number;
   morale?: number;
+  tiredness?: number;
   unitType?: UnitType;
 }
 

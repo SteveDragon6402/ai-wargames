@@ -90,6 +90,8 @@ export function factionDisplayName(factionId: string): string {
   const names: Record<string, string> = {
     rohan: "Rohan",
     isengard: "Isengard",
+    lannister: "Lannister",
+    stark: "Stark",
   };
   return names[factionId] ?? factionId.charAt(0).toUpperCase() + factionId.slice(1);
 }

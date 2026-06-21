@@ -25,7 +25,9 @@ function buildFactionOrders(
     }));
   }
 
-  const factions: FactionId[] = ["rohan", "isengard"];
+  const factions = [
+    ...new Set(Object.values(state.units).map((u) => u.factionId)),
+  ] as FactionId[];
   return factions.map((factionId) => ({
     factionId,
     commands: currentOrders

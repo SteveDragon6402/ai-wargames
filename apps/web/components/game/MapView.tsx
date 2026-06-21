@@ -33,6 +33,14 @@ interface MapViewProps {
   pickableUnitIds: string[];
   onSelectUnit: (unitId: string) => void;
   onSelectNode: (nodeId: string) => void;
+  /** Called when a player clicks "Select All" on a node */
+  onSelectAll?: (nodeId: string) => void;
+  /** Unit IDs currently in the active group selection */
+  groupedUnitIds?: Set<string>;
+  /** nodeId → AI narrative from the last resolved turn */
+  battleNarratives?: Map<string, string>;
+  /** When true, disables all interaction (for history viewer) */
+  readonly?: boolean;
 }
 
 function nodeHighlight(
@@ -58,6 +66,10 @@ export function MapView({
   pickableUnitIds,
   onSelectUnit,
   onSelectNode,
+  onSelectAll,
+  groupedUnitIds,
+  battleNarratives,
+  readonly = false,
 }: MapViewProps) {
   const fitOnce = useRef(false);
   const validSet = useMemo(() => new Set(validNodeIds), [validNodeIds]);
@@ -79,6 +91,11 @@ export function MapView({
   const onSelectUnitStable = useCallback(
     (id: string) => onSelectUnit(id),
     [onSelectUnit]
+  );
+
+  const onSelectAllStable = useCallback(
+    (nodeId: string) => onSelectAll?.(nodeId),
+    [onSelectAll]
   );
 
   const positions = useMemo(
@@ -109,12 +126,15 @@ export function MapView({
             terrainTags: n.tags,
             units,
             myFaction,
-            selectedUnitId,
-            highlight: nodeHighlight(n.id, unitNodeId, pickMode, validSet),
+            selectedUnitId: readonly ? null : selectedUnitId,
+            highlight: readonly ? "none" : nodeHighlight(n.id, unitNodeId, pickMode, validSet),
             isCapital,
             contested,
-            pickableUnitIds: pickableSet,
+            pickableUnitIds: readonly ? new Set<string>() : pickableSet,
             onSelectUnit: onSelectUnitStable,
+            onSelectAll: readonly ? undefined : () => onSelectAllStable(n.id),
+            groupedUnitIds,
+            battleNarrative: battleNarratives?.get(n.id) ?? null,
           },
         };
       }),
@@ -129,6 +149,8 @@ export function MapView({
       pickableSet,
       unitNodeId,
       onSelectUnitStable,
+      onSelectAllStable,
+      groupedUnitIds,
     ]
   );
 
@@ -192,37 +214,48 @@ export function MapView({
         nodeTypes={nodeTypes}
         edgeTypes={edgeTypes}
         onInit={onInit}
-        minZoom={0.25}
-        maxZoom={1.5}
+        minZoom={0.2}
+        maxZoom={2}
         nodesDraggable={false}
         nodesConnectable={false}
         elementsSelectable={false}
-        onNodeClick={(_, node) => onSelectNode(node.id)}
+        onNodeClick={readonly ? undefined : (_, node) => onSelectNode(node.id)}
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Lines} color="#2a2218" gap={40} />
+        <Background variant={BackgroundVariant.Dots} color="#1e1c18" gap={32} size={1.5} />
         <Controls
           showInteractive={false}
-          className="!rounded-lg !border-slate-700 !bg-slate-900/95 !shadow-lg [&>button]:!border-slate-600 [&>button]:!bg-slate-800 [&>button]:!fill-slate-200"
-        />
-        <MiniMap
-          nodeColor={(n) => {
-            const nd = n.data as { highlight?: TerritoryHighlight; units?: { factionId: string }[] };
-            const h = nd?.highlight;
-            if (h === "valid") return "#d97706";
-            if (h === "current") return "#64748b";
-            if (h === "invalid") return "#1c1917";
-            const u = nd?.units;
-            if (u && u.length > 0) {
-              return u[0]!.factionId === "rohan" ? "#065f46" : "#7f1d1d";
-            }
-            return "#292524";
+          style={{
+            background: "var(--color-surface)",
+            border: "1px solid var(--color-border)",
+            borderRadius: 0,
           }}
-          maskColor="rgba(20 17 13 / 0.8)"
-          className="!rounded-md"
-          pannable
-          zoomable
+          className="[&>button]:!border-0 [&>button]:!rounded-none [&>button]:!bg-transparent [&>button]:!fill-[#888] [&>button:hover]:!bg-[#1a1a1a]"
         />
+        {!readonly && (
+          <MiniMap
+            nodeColor={(n) => {
+              const nd = n.data as { highlight?: TerritoryHighlight; units?: { factionId: string }[] };
+              const h = nd?.highlight;
+              if (h === "valid") return "#c8941a";
+              if (h === "current") return "#555";
+              if (h === "invalid") return "#111";
+              const u = nd?.units;
+              if (u && u.length > 0) {
+                return u[0]!.factionId === "rohan" ? "#2d6a35" : "#8b1a1a";
+              }
+              return "#1a1a1a";
+            }}
+            maskColor="rgba(10,10,10,0.75)"
+            style={{
+              background: "#0a0a0a",
+              border: "1px solid #242424",
+              borderRadius: 0,
+            }}
+            pannable
+            zoomable
+          />
+        )}
       </ReactFlow>
     </section>
   );

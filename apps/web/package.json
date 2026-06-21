@@ -11,6 +11,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.39.0",
     "@wargame/db": "workspace:*",
     "@wargame/engine": "workspace:*",
     "@wargame/server": "workspace:*",

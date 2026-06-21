@@ -96,87 +96,103 @@ interface EdgePartProps {
   markerEnd?: string;
 }
 
-/** Road: thick amber glow underlay + thinner solid line giving a "paved road" look */
-function RoadEdge({ id, path, labelX, labelY, label, style, markerEnd }: EdgePartProps) {
+/** Road: thick amber — main supply route */
+function RoadEdge({ id, path, labelX, labelY, label, markerEnd }: EdgePartProps) {
   return (
     <>
-      {/* Wide amber glow */}
+      {/* Soft outer glow */}
       <BaseEdge
         id={`${id}-glow`}
         path={path}
-        style={{ stroke: "#92400e", strokeWidth: 8, strokeOpacity: 0.4 }}
-        interactionWidth={16}
+        style={{ stroke: "#7c3a00", strokeWidth: 12, strokeOpacity: 0.25 }}
+        interactionWidth={20}
       />
-      {/* Outer amber line */}
+      {/* Dark border */}
+      <BaseEdge
+        id={`${id}-border`}
+        path={path}
+        style={{ stroke: "#3a1a00", strokeWidth: 6, strokeOpacity: 1 }}
+        interactionWidth={20}
+      />
+      {/* Main amber fill */}
       <BaseEdge
         id={`${id}-outer`}
         path={path}
-        style={{ stroke: "#d97706", strokeWidth: 4, strokeOpacity: 0.9 }}
-        interactionWidth={16}
+        style={{ stroke: "#c8941a", strokeWidth: 4, strokeOpacity: 1 }}
+        interactionWidth={20}
       />
-      {/* Inner lighter centre stripe */}
+      {/* Bright centre stripe */}
       <BaseEdge
         id={id}
         path={path}
-        style={{ stroke: "#fbbf24", strokeWidth: 1.5, strokeOpacity: 0.7 }}
+        style={{ stroke: "#f0b429", strokeWidth: 1.5, strokeOpacity: 0.6 }}
         markerEnd={markerEnd}
-        interactionWidth={16}
+        interactionWidth={20}
       />
       {label && <EdgeLabel x={labelX} y={labelY} text={label} />}
     </>
   );
 }
 
-/** River: wide blue glow + wavy dashed line */
-function RiverEdge({ id, path, labelX, labelY, label, style, markerEnd }: EdgePartProps) {
+/** River: deep blue with crossing indicator */
+function RiverEdge({ id, path, labelX, labelY, label, markerEnd }: EdgePartProps) {
   return (
     <>
-      {/* Wide glow */}
+      {/* Wide deep glow */}
       <BaseEdge
         id={`${id}-glow`}
         path={path}
-        style={{ stroke: "#0369a1", strokeWidth: 8, strokeOpacity: 0.3 }}
-        interactionWidth={16}
+        style={{ stroke: "#023e5a", strokeWidth: 12, strokeOpacity: 0.4 }}
+        interactionWidth={18}
       />
-      {/* Main river line */}
+      {/* Dark border */}
+      <BaseEdge
+        id={`${id}-border`}
+        path={path}
+        style={{ stroke: "#012535", strokeWidth: 6, strokeOpacity: 1 }}
+        interactionWidth={18}
+      />
+      {/* Main river */}
       <BaseEdge
         id={id}
         path={path}
         style={{
-          stroke: "#38bdf8",
-          strokeWidth: 3,
-          strokeDasharray: "10 4",
+          stroke: "#2d9ccd",
+          strokeWidth: 3.5,
+          strokeDasharray: "12 5",
+          strokeOpacity: 0.9,
+        }}
+        markerEnd={markerEnd}
+        interactionWidth={18}
+      />
+      {label && <EdgeLabel x={labelX} y={labelY} text={label} />}
+    </>
+  );
+}
+
+/** Rugged trail: earthy dashed path */
+function TrailEdge({ id, path, labelX, labelY, label, markerEnd }: EdgePartProps) {
+  return (
+    <>
+      {/* Soft outer shadow */}
+      <BaseEdge
+        id={`${id}-glow`}
+        path={path}
+        style={{ stroke: "#2a2318", strokeWidth: 8, strokeOpacity: 0.5 }}
+        interactionWidth={16}
+      />
+      {/* Main trail */}
+      <BaseEdge
+        id={id}
+        path={path}
+        style={{
+          stroke: "#6b5e4a",
+          strokeWidth: 2.5,
+          strokeDasharray: "8 6",
           strokeOpacity: 0.85,
         }}
         markerEnd={markerEnd}
         interactionWidth={16}
-      />
-      {label && <EdgeLabel x={labelX} y={labelY} text={label} />}
-    </>
-  );
-}
-
-/** Rugged trail: thin dashed grey */
-function TrailEdge({ id, path, labelX, labelY, label, style, markerEnd }: EdgePartProps) {
-  return (
-    <>
-      <BaseEdge
-        id={`${id}-under`}
-        path={path}
-        style={{ stroke: "#57534e", strokeWidth: 5, strokeOpacity: 0.25 }}
-        interactionWidth={14}
-      />
-      <BaseEdge
-        id={id}
-        path={path}
-        style={{
-          stroke: "#a8a29e",
-          strokeWidth: 2,
-          strokeDasharray: "7 5",
-          strokeOpacity: 0.7,
-        }}
-        markerEnd={markerEnd}
-        interactionWidth={14}
       />
       {label && <EdgeLabel x={labelX} y={labelY} text={label} />}
     </>

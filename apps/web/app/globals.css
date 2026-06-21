@@ -107,22 +107,22 @@ body {
 /* React Flow — wargame map */
 .game-map {
   @apply absolute inset-0;
-  background-color: #14110d;
+  background-color: #0c0b09;
 }
 
 .game-map .react-flow {
   width: 100%;
   height: 100%;
-  background-color: #14110d;
+  background-color: #0c0b09;
 }
 
 /* Parchment-toned viewport background */
 .game-map .react-flow__renderer {
-  background-color: #14110d;
+  background-color: #0c0b09;
 }
 
 .game-map .react-flow__background {
-  background-color: #14110d;
+  background-color: #0c0b09;
 }
 
 /* Road edges get the marching animation on the centre highlight stripe */

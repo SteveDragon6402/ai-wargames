@@ -46,6 +46,7 @@ export function createInitialState(
       defense: number;
       strength: number;
       morale?: number;
+      tiredness?: number;
       unitType?: import("@wargame/shared").UnitType;
     }>;
   }
@@ -65,19 +66,23 @@ export function createInitialState(
       attack: t.attack,
       defense: t.defense,
       strength: t.strength,
-      tiredness: 0,
+      tiredness: t.tiredness ?? 0,
       dugIn: fortified ? 0.3 : 0,
       morale: t.morale ?? 80,
       engaged: false,
       ...(t.unitType ? { unitType: t.unitType } : {}),
     };
   }
+  const factions = Object.keys(scenario.capitalNodes) as FactionId[];
+  const abandonCapitalUsed = Object.fromEntries(
+    factions.map((f) => [f, false])
+  ) as Record<FactionId, boolean>;
   const state: GameState = {
     map,
     meta: {
       scenarioId: scenario.id,
       capitalNodes: { ...scenario.capitalNodes },
-      abandonCapitalUsed: { rohan: false, isengard: false },
+      abandonCapitalUsed,
       winnerFactionId: null,
     },
     units,
@@ -89,12 +94,17 @@ export function createInitialState(
 }
 
 export function checkVictory(state: GameState): FactionId | null {
-  for (const faction of ["rohan", "isengard"] as FactionId[]) {
-    const enemy: FactionId = faction === "rohan" ? "isengard" : "rohan";
-    const enemyAlive = Object.values(state.units).some(
-      (u) => u.factionId === enemy && u.strength > 0
+  const allFactions = [
+    ...new Set(Object.values(state.units).map((u) => u.factionId)),
+  ] as FactionId[];
+  for (const faction of allFactions) {
+    const enemies = allFactions.filter((f) => f !== faction);
+    const allEnemiesDead = enemies.every((enemy) =>
+      Object.values(state.units).every(
+        (u) => u.factionId !== enemy || u.strength <= 0
+      )
     );
-    if (!enemyAlive) return faction;
+    if (allEnemiesDead) return faction;
   }
   return null;
 }

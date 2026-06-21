@@ -44,7 +44,7 @@ export function OptionChips<T extends string>({
               {opt.replace(/_/g, " ")}
             </button>
           );
-          return hint && !isDisabled ? (
+          return hint ? (
             <Tooltip key={opt} content={hint}>
               {btn}
             </Tooltip>
