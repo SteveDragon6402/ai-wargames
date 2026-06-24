@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { SwordIcon } from "@phosphor-icons/react";
 import { factionDisplayName } from "@/lib/unit-labels";
 
 interface ScenarioMeta {
@@ -216,14 +217,9 @@ export default function HomePage() {
       <main className="flex min-h-screen flex-col items-center justify-center bg-canvas p-6">
         {/* Logo / title block */}
         <div className="mb-10 flex flex-col items-center gap-3 text-center">
-          {/* Lightning emblem */}
+          {/* Sword emblem */}
           <div className="mb-2 flex h-16 w-16 items-center justify-center rounded-full border border-hairline">
-            <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
-              <path
-                d="M18 3 L8 18 H15 L13 29 L24 14 H17 L18 3 Z"
-                fill="#00d992"
-              />
-            </svg>
+            <SwordIcon size={32} color="#00d992" />
           </div>
           <h1 className="text-2xl font-normal tracking-tight text-ink-strong">
             AI Wargames

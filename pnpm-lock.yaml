@@ -23,6 +23,9 @@ importers:
       '@anthropic-ai/sdk':
         specifier: ^0.39.0
         version: 0.39.0
+      '@phosphor-icons/react':
+        specifier: ^2.1.10
+        version: 2.1.10(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
       '@wargame/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -649,6 +652,13 @@ packages:
 
   '@petamoriken/float16@3.9.3':
     resolution: {integrity: sha512-8awtpHXCx/bNpFt4mt2xdkgtgVvKqty8VbjHI/WWWQuEw+KLzFot3f4+LkQY9YmOtq7A5GdOnqoIC8Pdygjk2g==}
+
+  '@phosphor-icons/react@2.1.10':
+    resolution: {integrity: sha512-vt8Tvq8GLjheAZZYa+YG/pW7HDbov8El/MANW8pOAz4eGxrwhnbfrQZq0Cp4q8zBEu8NIhHdnr+r8thnfRSNYA==}
+    engines: {node: '>=10'}
+    peerDependencies:
+      react: '>= 16.8'
+      react-dom: '>= 16.8'
 
   '@rollup/rollup-android-arm-eabi@4.60.4':
     resolution: {integrity: sha512-F5QXMSiFebS9hKZj02XhWLLnRpJ3B3AROP0tWbFBSj+6kCbg5m9j5JoHKd4mmSVy5mS/IMQloYgYxCuJC0fxEQ==}
@@ -3249,6 +3259,11 @@ snapshots:
   '@nolyfill/is-core-module@1.0.39': {}
 
   '@petamoriken/float16@3.9.3': {}
+
+  '@phosphor-icons/react@2.1.10(react-dom@19.2.5(react@19.2.5))(react@19.2.5)':
+    dependencies:
+      react: 19.2.5
+      react-dom: 19.2.5(react@19.2.5)
 
   '@rollup/rollup-android-arm-eabi@4.60.4':
     optional: true

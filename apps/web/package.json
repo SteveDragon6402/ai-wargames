@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
+    "@phosphor-icons/react": "^2.1.10",
     "@wargame/db": "workspace:*",
     "@wargame/engine": "workspace:*",
     "@wargame/server": "workspace:*",
