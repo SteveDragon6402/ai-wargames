@@ -51,42 +51,33 @@ export function TurnHeader({
   const urgent = secondsLeft > 0 && secondsLeft <= 15;
 
   return (
-    <header
-      className="flex shrink-0 items-center justify-between px-4 py-2 text-[11px]"
-      style={{
-        background: "var(--color-surface)",
-        borderBottom: "1px solid var(--color-border)",
-        fontFamily: "var(--font-mono), monospace",
-      }}
-    >
+    <header className="flex shrink-0 items-center justify-between border-b border-hairline bg-canvas-soft px-4 py-2 text-xs font-mono">
       {/* Left: logo + room context */}
       <div className="flex items-center gap-4">
         <Link
           href="/"
-          className="text-[10px] font-bold uppercase tracking-widest transition-opacity hover:opacity-70"
-          style={{ color: "var(--color-gold)" }}
+          className="text-xs font-semibold tracking-tight text-primary-soft transition-opacity hover:opacity-70"
         >
-          ✕ WAR ROOM: MIDDLE-EARTH
+          War Room: Middle-earth
         </Link>
-        <span style={{ color: "var(--color-border)" }}>|</span>
-        <span className="font-bold tracking-widest" style={{ color: "#555" }}>
-          CODE:{" "}
-          <span style={{ color: "#ccc" }}>{code}</span>
+        <span className="text-hairline">|</span>
+        <span className="font-medium text-mute">
+          CODE: <span className="text-body">{code}</span>
         </span>
-        <span style={{ color: "#444" }}>
-          TURN <span style={{ color: "#ccc" }}>{turn}</span>
+        <span className="text-mute">
+          TURN <span className="text-body">{turn}</span>
         </span>
 
         {/* Faction badge / switcher */}
         {soloDualFaction && onFactionChange ? (
           <div className="flex items-center gap-1">
-            <span style={{ color: "#444" }}>CMD:</span>
+            <span className="text-mute">CMD:</span>
             {(["rohan", "isengard"] as const).map((f) => (
               <button
                 key={f}
                 type="button"
                 onClick={() => onFactionChange(f)}
-                className="rounded px-2 py-px text-[9px] font-bold uppercase tracking-wider transition-all"
+                className="rounded-xs px-2 py-px text-xs font-semibold uppercase tracking-wide transition-all"
                 style={{
                   color: displayFaction === f ? FACTION_COLOR[f] : "#444",
                   border: `1px solid ${displayFaction === f ? FACTION_COLOR[f] : "#2a2a2a"}`,
@@ -99,7 +90,7 @@ export function TurnHeader({
           </div>
         ) : (
           <span
-            className="rounded px-2 py-px text-[9px] font-bold uppercase tracking-wider"
+            className="rounded-xs px-2 py-px text-xs font-semibold uppercase tracking-wide"
             style={{
               color: FACTION_COLOR[displayFaction] ?? "#888",
               border: `1px solid ${FACTION_COLOR[displayFaction] ?? "#444"}`,
@@ -113,41 +104,32 @@ export function TurnHeader({
       {/* Right: turn deadline + submit */}
       <div className="flex items-center gap-4">
         {winner ? (
-          <span
-            className="text-sm font-bold uppercase tracking-widest"
-            style={{ color: "var(--color-gold)" }}
-          >
+          <span className="text-sm font-semibold uppercase tracking-wide text-primary-soft">
             {(FACTION_LABEL[winner] ?? winner)} WINS
           </span>
         ) : resolving ? (
           <div className="flex items-center gap-2">
-            <span
-              className="inline-block h-2 w-2 animate-pulse rounded-full"
-              style={{ background: "var(--color-gold)" }}
-            />
-            <span style={{ color: "#888" }} className="uppercase tracking-widest text-[10px]">
+            <span className="inline-block h-2 w-2 animate-pulse rounded-full bg-primary" />
+            <span className="text-xs uppercase tracking-wide text-mute">
               Resolving orders…
             </span>
           </div>
         ) : (
           <>
             <div className="text-right">
-              <div
-                className="text-[9px] uppercase tracking-widest"
-                style={{ color: "#444" }}
-              >
+              <div className="text-xs uppercase tracking-wide text-mute">
                 Turn Deadline
               </div>
               <div
-                className="font-bold tabular-nums text-xl leading-none"
-                style={{ color: urgent ? "#e05555" : "#e8e8e8" }}
+                className="text-xl font-semibold leading-none tabular-nums"
+                style={{ color: urgent ? "var(--stat-bad)" : "#e8e8e8" }}
               >
                 {mm}:{ss}
               </div>
             </div>
 
             <div className="flex flex-col items-end gap-1">
-              <span className="text-[9px] uppercase tracking-widest" style={{ color: "#444" }}>
+              <span className="text-xs uppercase tracking-wide text-mute">
                 Ready {readyPlayerIds.length}/{totalPlayers}
                 {mySubmitted ? " · Locked" : ""}
               </span>
@@ -155,8 +137,8 @@ export function TurnHeader({
                 type="button"
                 disabled={submitting || mySubmitted}
                 onClick={onSubmit}
-                className="btn-gold"
-                style={{ padding: "6px 16px", fontSize: "10px" }}
+                className="btn-primary"
+                style={{ padding: "6px 16px", fontSize: "11px" }}
               >
                 {mySubmitted ? "Orders Locked" : "Submit Turn"}
               </button>

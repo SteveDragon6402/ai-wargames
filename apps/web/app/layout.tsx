@@ -1,18 +1,18 @@
 import type { Metadata } from "next";
-import { Space_Mono, Playfair_Display } from "next/font/google";
+import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 
-const spaceMono = Space_Mono({
-  weight: ["400", "700"],
+const inter = Inter({
+  weight: ["400", "500", "600", "700"],
   subsets: ["latin"],
-  variable: "--font-mono",
+  variable: "--font-sans",
   display: "swap",
 });
 
-const playfair = Playfair_Display({
-  weight: ["400", "700"],
+const jetbrainsMono = JetBrains_Mono({
+  weight: ["400", "500", "700"],
   subsets: ["latin"],
-  variable: "--font-serif",
+  variable: "--font-mono",
   display: "swap",
 });
 
@@ -25,7 +25,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${spaceMono.variable} ${playfair.variable}`}>
+    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable}`}>
       <body>{children}</body>
     </html>
   );

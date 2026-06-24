@@ -26,8 +26,8 @@ const FACTION_ICON: Record<string, string> = {
 };
 
 const FACTION_TEXT: Record<string, string> = {
-  rohan: "#5ecb6b",
-  isengard: "#e05555",
+  rohan: "var(--faction-rohan)",
+  isengard: "var(--faction-isengard)",
 };
 
 export function GameOver({ winner, myFaction, totalUnitsLost, finalMorale, turn }: GameOverProps) {
@@ -35,36 +35,26 @@ export function GameOver({ winner, myFaction, totalUnitsLost, finalMorale, turn 
   const winnerLabel = FACTION_DISPLAY[winner] ?? winner.toUpperCase();
   const subtitle = FACTION_SUBTITLE[winner] ?? `${winnerLabel} wins the field`;
   const icon = FACTION_ICON[winner] ?? "⚔";
-  const accentColor = FACTION_TEXT[winner] ?? "var(--color-gold)";
+  const accentColor = FACTION_TEXT[winner] ?? "var(--color-primary)";
 
   return (
     <div
       className="fixed inset-0 z-50 flex flex-col items-center justify-center"
-      style={{ background: "radial-gradient(ellipse at center, #1a1a1a 0%, #0a0a0a 70%)" }}
+      style={{ background: "radial-gradient(ellipse at center, #1a1a1a 0%, #101010 70%)" }}
     >
       {/* Winner heading */}
-      <h1
-        className="mb-2 text-center font-narrative text-6xl font-bold tracking-widest"
-        style={{ color: "var(--color-gold)" }}
-      >
+      <h1 className="mb-2 text-center font-narrative text-6xl font-semibold tracking-wide text-primary-soft">
         THE WAR IS {isVictor ? "WON" : "LOST"}
       </h1>
 
-      <p
-        className="mb-10 text-center text-[11px] uppercase tracking-[0.25em]"
-        style={{ color: "#888" }}
-      >
+      <p className="mb-10 text-center text-xs uppercase tracking-[0.25em] text-mute">
         {subtitle}
       </p>
 
       {/* Faction emblem card */}
       <div
-        className="mb-10 flex h-48 w-80 items-center justify-center"
-        style={{
-          background: "#141414",
-          border: `1px solid #2a2a2a`,
-          boxShadow: `0 0 60px ${accentColor}22`,
-        }}
+        className="mb-10 flex h-48 w-80 items-center justify-center rounded-md border border-hairline bg-canvas-soft"
+        style={{ boxShadow: `0 0 60px ${accentColor}22` }}
       >
         <div className="text-center">
           <div
@@ -74,7 +64,7 @@ export function GameOver({ winner, myFaction, totalUnitsLost, finalMorale, turn 
             {icon}
           </div>
           <div
-            className="text-xs font-bold uppercase tracking-widest"
+            className="text-xs font-semibold uppercase tracking-wide"
             style={{ color: accentColor }}
           >
             {winnerLabel}
@@ -101,27 +91,16 @@ export function GameOver({ winner, myFaction, totalUnitsLost, finalMorale, turn 
           .map((stat, i) => (
             <div
               key={i}
-              className="flex flex-col items-center px-8 py-4"
-              style={{
-                background: i === 1 ? "#161616" : "#111",
-                border: "1px solid #2a2a2a",
-                borderLeft: i > 0 ? "none" : "1px solid #2a2a2a",
-                minWidth: 120,
-              }}
+              className={`flex flex-col items-center border border-hairline px-8 py-4 ${
+                i === 1 ? "bg-canvas-soft" : "bg-canvas"
+              } ${i > 0 ? "border-l-0" : ""}`}
+              style={{ minWidth: 120 }}
             >
-              <span className="mb-1 text-xl" style={{ color: "#555" }}>
-                {stat!.icon}
-              </span>
-              <span
-                className="text-2xl font-bold tabular-nums"
-                style={{ color: "#ddd", fontFamily: "var(--font-mono), monospace" }}
-              >
+              <span className="mb-1 text-xl text-mute">{stat!.icon}</span>
+              <span className="text-2xl font-semibold tabular-nums text-ink font-mono">
                 {stat!.value}
               </span>
-              <span
-                className="mt-1 text-[8px] font-bold uppercase tracking-widest"
-                style={{ color: "#444" }}
-              >
+              <span className="mt-1 text-xs font-semibold uppercase tracking-wide text-mute">
                 {stat!.label}
               </span>
             </div>
@@ -129,15 +108,12 @@ export function GameOver({ winner, myFaction, totalUnitsLost, finalMorale, turn 
       </div>
 
       {/* Ticker */}
-      <div
-        className="mb-8 text-[9px] uppercase tracking-[0.2em]"
-        style={{ color: "#2a2a2a" }}
-      >
+      <div className="mb-8 text-xs uppercase tracking-[0.2em] text-hairline-dim">
         &gt; ENGAGEMENT CONCLUDED · AWAITING NEW ORDERS FROM THE COMMANDER…
       </div>
 
       {/* Return link */}
-      <Link href="/" className="btn-gold">
+      <Link href="/" className="btn-primary">
         Return to Command →
       </Link>
     </div>

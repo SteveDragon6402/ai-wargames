@@ -24,29 +24,20 @@ export function OrderStrip({
   const nodeNames = nodeNameMap(state.map.nodes);
 
   return (
-    <section
-      className="px-3 py-2"
-      style={{ fontFamily: "var(--font-mono), monospace" }}
-    >
+    <section className="px-3 py-2 font-mono">
       <div className="mb-1.5 flex items-center justify-between">
-        <h3
-          className="text-[9px] font-bold uppercase tracking-widest"
-          style={{ color: "#444" }}
-        >
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-mute">
           Order Queue
         </h3>
         {locked && (
-          <span
-            className="text-[8px] font-bold uppercase tracking-widest px-1.5 py-px"
-            style={{ color: "var(--color-gold)", border: "1px solid #8b6914" }}
-          >
+          <span className="rounded-xs border border-primary-deep px-1.5 py-px text-xs font-semibold uppercase tracking-wide text-primary-soft">
             Locked
           </span>
         )}
       </div>
 
       {orders.length === 0 ? (
-        <p className="text-[9px] uppercase tracking-wide" style={{ color: "#2a2a2a" }}>
+        <p className="text-xs uppercase tracking-wide text-hairline-dim">
           No orders drafted
         </p>
       ) : (
@@ -61,14 +52,14 @@ export function OrderStrip({
               borderColor = "#1a1a1a";
               bgColor = "#0a0a0a";
             } else if (active) {
-              borderColor = "#8b6914";
-              bgColor = "rgba(200,148,26,0.08)";
+              borderColor = "#10b981";
+              bgColor = "rgba(0,217,146,0.08)";
             }
 
             return (
               <li
                 key={uid ?? i}
-                className="flex items-center justify-between gap-2 px-2 py-1.5 text-[9px] transition"
+                className="flex items-center justify-between gap-2 px-2 py-1.5 text-xs transition"
                 style={{
                   border: `1px solid ${borderColor}`,
                   background: bgColor,
@@ -79,8 +70,7 @@ export function OrderStrip({
                   type="button"
                   onClick={locked ? undefined : () => onSelect(cmd)}
                   disabled={locked}
-                  className="min-w-0 flex-1 text-left disabled:cursor-default uppercase tracking-wide"
-                  style={{ color: "#999" }}
+                  className="min-w-0 flex-1 text-left uppercase tracking-wide text-body disabled:cursor-default"
                 >
                   {orderLabel(cmd, state, nodeNames)}
                 </button>
@@ -88,10 +78,7 @@ export function OrderStrip({
                   <button
                     type="button"
                     onClick={() => onDelete(uid)}
-                    className="shrink-0 px-1 py-px text-[10px] transition-colors"
-                    style={{ color: "#444" }}
-                    onMouseEnter={(e) => (e.currentTarget.style.color = "#e05555")}
-                    onMouseLeave={(e) => (e.currentTarget.style.color = "#444")}
+                    className="shrink-0 px-1 py-px text-xs text-mute transition-colors hover:text-faction-isengard"
                     aria-label="Remove order"
                   >
                     ×

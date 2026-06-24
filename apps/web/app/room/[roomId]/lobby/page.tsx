@@ -58,58 +58,46 @@ export default function LobbyPage() {
 
   if (!roomId) {
     return (
-      <main className="flex min-h-screen items-center justify-center" style={{ background: "var(--color-bg)" }}>
-        <div style={{ color: "#e05555", fontFamily: "var(--font-mono), monospace" }}>
-          &gt; ERROR: Invalid room link.{" "}
-          <Link href="/" style={{ color: "var(--color-gold)" }}>← Return</Link>
+      <main className="flex min-h-screen items-center justify-center bg-canvas">
+        <div className="text-sm text-faction-isengard">
+          Invalid room link.{" "}
+          <Link href="/" className="text-primary-soft">← Return</Link>
         </div>
       </main>
     );
   }
 
   const players = snapshot?.players ?? [];
-  const playerFactions = new Set(players.map((p) => p.factionId));
   const allFactions = ["rohan", "isengard"];
 
   return (
-    <main
-      className="flex min-h-screen flex-col items-center justify-center p-6"
-      style={{ background: "var(--color-bg)", fontFamily: "var(--font-mono), monospace" }}
-    >
+    <main className="flex min-h-screen flex-col items-center justify-center bg-canvas p-6">
       {/* Header */}
       <div className="mb-1 flex items-center gap-3">
         <Link
           href="/"
-          className="text-[9px] uppercase tracking-widest transition-colors"
-          style={{ color: "#444" }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "#888")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "#444")}
+          className="text-xs text-mute transition-colors hover:text-body"
         >
           ← Home
         </Link>
-        <span style={{ color: "#2a2a2a" }}>|</span>
-        <span className="text-[9px] uppercase tracking-widest" style={{ color: "var(--color-gold)" }}>
-          WAR ROOM: MIDDLE-EARTH
+        <span className="text-hairline">|</span>
+        <span className="text-xs font-medium text-primary-soft">
+          AI Wargames
         </span>
       </div>
 
-      <h1
-        className="mb-1 text-center text-3xl font-bold uppercase tracking-widest"
-        style={{ color: "#ddd", letterSpacing: "0.2em" }}
-      >
+      <h1 className="mb-1 text-center text-2xl font-normal tracking-tight text-ink-strong">
         Command Center Lobby
       </h1>
 
       {/* Status beacon */}
       <div className="mb-8 flex items-center gap-2">
         <span
-          className="inline-block h-1.5 w-1.5 rounded-full"
-          style={{ background: players.length >= 2 ? "var(--color-gold)" : "#5ecb6b", animation: "pulse 2s infinite" }}
+          className={`inline-block h-1.5 w-1.5 animate-pulse rounded-full ${
+            players.length >= 2 ? "bg-primary" : "bg-faction-rohan"
+          }`}
         />
-        <span
-          className="text-[9px] uppercase tracking-widest"
-          style={{ color: "#444" }}
-        >
+        <span className="text-xs text-mute">
           {players.length >= 2
             ? "Secure uplink established"
             : "Searching for commanders…"}
@@ -118,21 +106,14 @@ export default function LobbyPage() {
       </div>
 
       {loading && !snapshot && (
-        <p className="mb-6 text-[10px] uppercase tracking-widest" style={{ color: "#444" }}>
-          Establishing uplink…
-        </p>
+        <p className="mb-6 text-sm text-mute">Establishing uplink…</p>
       )}
 
       {/* Room code prominent display */}
       {snapshot?.room?.code && (
         <div className="mb-8 text-center">
-          <div className="text-[9px] uppercase tracking-widest mb-1" style={{ color: "#444" }}>
-            Room Code
-          </div>
-          <div
-            className="text-4xl font-bold tracking-[0.3em]"
-            style={{ color: "var(--color-gold)", fontFamily: "var(--font-mono), monospace" }}
-          >
+          <div className="mb-1 text-xs text-mute">Room code</div>
+          <div className="font-mono text-4xl tracking-[0.3em] text-primary-soft">
             {snapshot.room.code}
           </div>
         </div>
@@ -150,10 +131,9 @@ export default function LobbyPage() {
           return (
             <div
               key={faction}
-              className="flex-1"
+              className="flex-1 overflow-hidden rounded-md bg-canvas-soft"
               style={{
-                border: `1px solid ${isMe ? textColor : "#2a2a2a"}`,
-                background: "var(--color-surface)",
+                border: `1px solid ${isMe ? textColor : "#3d3a39"}`,
               }}
             >
               {/* Faction color bar */}
@@ -163,25 +143,17 @@ export default function LobbyPage() {
                 {player ? (
                   <>
                     <div
-                      className="mb-1 text-xs font-bold uppercase tracking-widest"
+                      className="mb-1 text-sm font-semibold"
                       style={{ color: textColor }}
                     >
-                      {factionDisplayName(faction).toUpperCase()}
+                      {factionDisplayName(faction)}
                     </div>
-                    <div
-                      className="text-[9px] uppercase tracking-wider mb-3"
-                      style={{ color: "#444" }}
-                    >
-                      {tagline}
-                    </div>
-                    <div
-                      className="text-[10px] uppercase tracking-widest"
-                      style={{ color: "#888" }}
-                    >
+                    <div className="mb-3 text-xs text-mute">{tagline}</div>
+                    <div className="text-sm text-body">
                       {player.displayName}
                       {isMe && (
                         <span
-                          className="ml-2 text-[8px] rounded px-1 py-px"
+                          className="ml-2 rounded-pill px-1.5 py-px text-xs"
                           style={{ color: textColor, border: `1px solid ${topColor}` }}
                         >
                           You
@@ -192,27 +164,14 @@ export default function LobbyPage() {
                 ) : (
                   <>
                     <div
-                      className="mb-1 text-xs font-bold uppercase tracking-widest"
+                      className="mb-1 text-sm font-semibold"
                       style={{ color: textColor }}
                     >
-                      {factionDisplayName(faction).toUpperCase()}
+                      {factionDisplayName(faction)}
                     </div>
-                    <div
-                      className="text-[9px] uppercase tracking-wider mb-3"
-                      style={{ color: "#444" }}
-                    >
-                      {tagline}
-                    </div>
-                    <div
-                      className="text-[10px] uppercase tracking-widest mb-3"
-                      style={{ color: "#333" }}
-                    >
-                      Slot Open
-                    </div>
-                    <div
-                      className="text-[9px] leading-snug"
-                      style={{ color: "#333" }}
-                    >
+                    <div className="mb-3 text-xs text-mute">{tagline}</div>
+                    <div className="mb-3 text-sm text-hairline-dim">Slot open</div>
+                    <div className="text-xs leading-snug text-hairline-dim">
                       Searching for a suitable commander…
                     </div>
                   </>
@@ -225,9 +184,9 @@ export default function LobbyPage() {
 
       {/* Host controls */}
       {snapshot?.viewer && (
-        <p className="mb-4 text-[9px] uppercase tracking-widest" style={{ color: "#444" }}>
+        <p className="mb-4 text-sm text-mute">
           You are{" "}
-          <span style={{ color: "#ccc" }}>{snapshot.viewer.displayName}</span>{" "}
+          <span className="text-ink">{snapshot.viewer.displayName}</span>{" "}
           commanding{" "}
           <span style={{ color: FACTION_TEXT[snapshot.viewer.factionId ?? ""] ?? "#888" }}>
             {factionDisplayName(snapshot.viewer.factionId ?? "")}
@@ -240,54 +199,35 @@ export default function LobbyPage() {
           type="button"
           disabled={starting}
           onClick={startGame}
-          className="btn-gold"
-          style={{ padding: "12px 40px", fontSize: "11px" }}
+          className="btn-primary"
+          style={{ padding: "12px 40px", fontSize: "14px" }}
         >
-          {starting ? "Initiating…" : "Launch Operation →"}
+          {starting ? "Initiating…" : "Launch operation →"}
         </button>
       ) : (snapshot?.players?.length ?? 0) < 2 ? (
-        <p
-          className="text-[10px] uppercase tracking-widest"
-          style={{ color: "#444" }}
-        >
+        <p className="text-sm text-mute">
           Host control restricted · Awaiting opponent readiness
         </p>
       ) : !isHost ? (
-        <p
-          className="text-[10px] uppercase tracking-widest"
-          style={{ color: "#444" }}
-        >
-          Awaiting host to launch operation…
-        </p>
+        <p className="text-sm text-mute">Awaiting host to launch operation…</p>
       ) : null}
 
       {(startError || error) && (
-        <p
-          className="mt-4 text-[10px] uppercase tracking-widest"
-          style={{ color: "#e05555" }}
-        >
-          &gt; {startError || error}
-        </p>
+        <p className="mt-4 text-sm text-faction-isengard">{startError || error}</p>
       )}
 
       {/* Refresh */}
       <button
         type="button"
         onClick={() => refresh()}
-        className="mt-6 text-[9px] uppercase tracking-widest transition-colors"
-        style={{ color: "#2a2a2a" }}
-        onMouseEnter={(e) => (e.currentTarget.style.color = "#555")}
-        onMouseLeave={(e) => (e.currentTarget.style.color = "#2a2a2a")}
+        className="mt-6 text-xs text-hairline-dim transition-colors hover:text-mute"
       >
         ↻ Refresh uplink
       </button>
 
       {/* Ticker */}
-      <div
-        className="mt-10 text-[8px] uppercase tracking-widest"
-        style={{ color: "#1a1a1a" }}
-      >
-        &gt; AI-ADJUDICATED NODE WARFARE · LINK SECURE
+      <div className="mt-10 text-xs text-hairline-dim">
+        AI-adjudicated node warfare · link secure
       </div>
     </main>
   );

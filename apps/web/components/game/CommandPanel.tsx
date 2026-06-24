@@ -67,14 +67,14 @@ export function CommandPanelBody({
       <header className="flex items-start justify-between gap-2">
         <div>
           <p className="game-label">Order — {ACTION_LABELS[draft.action]}</p>
-          <h3 className="text-sm font-semibold text-slate-100">{unit.name}</h3>
+          <h3 className="text-sm font-semibold text-ink">{unit.name}</h3>
           {groupCount > 1 && (
-            <p className="mt-1 text-[9px] font-bold uppercase tracking-widest" style={{ color: "#c8941a" }}>
+            <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-contested">
               Group · {groupCount} units
             </p>
           )}
           {autoSaveHint ? (
-            <p className="mt-0.5 text-[10px] text-slate-500">
+            <p className="mt-0.5 text-xs text-mute">
               {complete
                 ? "Saved to queue — adjust options anytime"
                 : "Select targets on the map…"}
@@ -85,7 +85,7 @@ export function CommandPanelBody({
           <button
             type="button"
             onClick={onCancel}
-            className="shrink-0 rounded-md border border-slate-600 px-2 py-1 text-[10px] text-slate-400 hover:bg-slate-800"
+            className="shrink-0 rounded-sm border border-hairline px-2 py-1 text-xs text-mute hover:bg-canvas-soft"
           >
             Close
           </button>
@@ -263,9 +263,9 @@ function TargetHint({
     <section className="game-panel px-2 py-1.5">
       <p className="game-label">{label}</p>
       {value ? (
-        <p className="mt-0.5 text-xs font-medium text-amber-200">{value}</p>
+        <p className="mt-0.5 text-xs font-medium text-primary-soft">{value}</p>
       ) : (
-        <p className="mt-0.5 text-[11px] italic text-slate-500">{hint}</p>
+        <p className="mt-0.5 text-xs italic text-mute">{hint}</p>
       )}
     </section>
   );
@@ -286,7 +286,7 @@ function EnemyPicker({
     return (
       <section className="game-panel px-2 py-1.5">
         <p className="game-label">{label}</p>
-        <p className="mt-0.5 text-[11px] italic text-slate-500">No enemies on this node</p>
+        <p className="mt-0.5 text-xs italic text-mute">No enemies on this node</p>
       </section>
     );
   }
@@ -299,21 +299,21 @@ function EnemyPicker({
           const selected = e.id === selectedId;
           const str = Math.round(e.strength * 100);
           const strColor =
-            str >= 70 ? "text-emerald-400" : str >= 40 ? "text-amber-400" : "text-red-400";
+            str >= 70 ? "text-stat-good" : str >= 40 ? "text-stat-warn" : "text-stat-bad";
           return (
             <button
               key={e.id}
               type="button"
               onClick={() => onSelect(e.id)}
-              className={`flex w-full items-center gap-2 rounded px-2 py-1 text-left text-xs transition ${
+              className={`flex w-full items-center gap-2 rounded-xs px-2 py-1 text-left text-xs transition ${
                 selected
-                  ? "bg-red-900/50 ring-1 ring-red-500/60 text-red-200"
-                  : "bg-slate-800/60 hover:bg-red-900/30 hover:text-red-200 text-slate-300"
+                  ? "bg-faction-isengard-deep/40 ring-1 ring-faction-isengard/60 text-faction-isengard"
+                  : "bg-canvas-soft hover:bg-faction-isengard-deep/20 hover:text-faction-isengard text-body"
               }`}
             >
-              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-red-500" />
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-faction-isengard" />
               <span className="flex-1 truncate">{e.name}</span>
-              <span className={`shrink-0 text-[10px] tabular-nums font-medium ${strColor}`}>
+              <span className={`shrink-0 text-xs tabular-nums font-medium ${strColor}`}>
                 {str}%
               </span>
             </button>

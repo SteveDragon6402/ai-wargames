@@ -55,33 +55,20 @@ function GroupInspector({
   const units = unitIds.map((id) => gameState.units[id]).filter(Boolean);
   const nodeName = units[0] ? nodeNames[units[0].nodeId] ?? units[0].nodeId : "";
   return (
-    <div
-      className="p-3 space-y-2"
-      style={{ fontFamily: "var(--font-mono), monospace" }}
-    >
+    <div className="space-y-2 p-3 font-mono">
       <div className="flex items-start justify-between gap-2">
         <div>
-          <p
-            className="text-[9px] font-bold uppercase tracking-widest"
-            style={{ color: "var(--color-gold)" }}
-          >
+          <p className="text-xs font-semibold uppercase tracking-wide text-primary-soft">
             Group Command
           </p>
-          <p className="mt-0.5 text-[11px] font-semibold" style={{ color: "#ccc" }}>
+          <p className="mt-0.5 text-xs font-semibold text-body">
             {units.length} units · {nodeName}
           </p>
         </div>
         <button
           type="button"
           onClick={onClear}
-          className="shrink-0 rounded border px-2 py-0.5 text-[9px] transition-colors"
-          style={{
-            border: "1px solid #333",
-            color: "#555",
-            background: "transparent",
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.borderColor = "#555")}
-          onMouseLeave={(e) => (e.currentTarget.style.borderColor = "#333")}
+          className="shrink-0 rounded-xs border border-hairline px-2 py-0.5 text-xs text-mute transition-colors hover:border-body hover:text-body"
         >
           Clear
         </button>
@@ -91,32 +78,27 @@ function GroupInspector({
           u ? (
             <div
               key={u.id}
-              className="flex items-center gap-1.5 rounded px-1.5 py-0.5"
-              style={{ background: "#0d0d0d", border: "1px solid #1a1a1a" }}
+              className="flex items-center gap-1.5 rounded-xs border border-hairline-dim bg-canvas px-1.5 py-0.5"
             >
               <span
                 className="h-1.5 w-1.5 shrink-0 rounded-full"
                 style={{
                   background:
-                    u.factionId === "rohan" ? "#5ecb6b" : "#e05555",
+                    u.factionId === "rohan" ? "var(--faction-rohan)" : "var(--faction-isengard)",
                 }}
               />
-              <span
-                className="flex-1 truncate font-bold uppercase"
-                style={{ fontSize: "9px", color: "#aaa", letterSpacing: "0.06em" }}
-              >
+              <span className="flex-1 truncate text-xs font-semibold uppercase tracking-wide text-body">
                 {u.name}
               </span>
               <span
-                className="tabular-nums"
+                className="text-xs tabular-nums"
                 style={{
-                  fontSize: "8px",
                   color:
                     u.strength >= 0.7
-                      ? "#5ecb6b"
+                      ? "var(--stat-good)"
                       : u.strength >= 0.4
-                        ? "#c8941a"
-                        : "#e05555",
+                        ? "var(--stat-warn)"
+                        : "var(--stat-bad)",
                 }}
               >
                 {Math.round(u.strength * 100)}%
@@ -125,7 +107,7 @@ function GroupInspector({
           ) : null
         )}
       </div>
-      <p className="text-[8px] italic" style={{ color: "#444" }}>
+      <p className="text-xs italic text-mute">
         Pick an order below — it will be issued to all units above.
       </p>
     </div>
@@ -656,12 +638,12 @@ export default function GamePage() {
         }
         sidebarScroll={
           snapshot.mySubmitted ? (
-            <div className="flex flex-col items-center justify-center gap-2 p-6 text-center" style={{ fontFamily: "var(--font-mono), monospace" }}>
-              <div style={{ color: "var(--color-gold)", fontSize: 20 }}>⊘</div>
-              <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: "#555" }}>
+            <div className="flex flex-col items-center justify-center gap-2 p-6 text-center font-mono">
+              <div className="text-xl text-primary-soft">⊘</div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-mute">
                 Orders Locked
               </p>
-              <p className="text-[8px] uppercase tracking-wider" style={{ color: "#333" }}>
+              <p className="text-xs uppercase tracking-wide text-hairline-dim">
                 Awaiting opponent confirmation
               </p>
             </div>

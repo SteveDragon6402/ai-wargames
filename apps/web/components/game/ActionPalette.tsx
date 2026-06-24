@@ -34,10 +34,7 @@ export function ActionPalette({ actions, activeAction, onPick }: ActionPalettePr
 
   if (actions.length === 0) {
     return (
-      <p
-        className="p-4 text-center text-[9px] uppercase tracking-widest"
-        style={{ color: "#2a2a2a", fontFamily: "var(--font-mono), monospace" }}
-      >
+      <p className="p-4 text-center text-xs uppercase tracking-wide text-hairline-dim font-mono">
         No orders available
       </p>
     );
@@ -46,11 +43,8 @@ export function ActionPalette({ actions, activeAction, onPick }: ActionPalettePr
   const groups = ["movement", "combat", "special"] as const;
 
   return (
-    <section className="p-3" style={{ fontFamily: "var(--font-mono), monospace" }}>
-      <h3
-        className="mb-3 text-[9px] font-bold uppercase tracking-widest"
-        style={{ color: "#444" }}
-      >
+    <section className="p-3 font-mono">
+      <h3 className="mb-3 text-xs font-semibold uppercase tracking-wide text-mute">
         Draft Orders
       </h3>
 
@@ -60,10 +54,7 @@ export function ActionPalette({ actions, activeAction, onPick }: ActionPalettePr
           if (items.length === 0) return null;
           return (
             <div key={group}>
-              <p
-                className="mb-1.5 text-[8px] uppercase tracking-widest"
-                style={{ color: "#333" }}
-              >
+              <p className="mb-1.5 text-xs uppercase tracking-wide text-hairline-dim">
                 {GROUP_LABEL[group]}
               </p>
               <ul className="flex flex-col gap-1">
@@ -75,32 +66,20 @@ export function ActionPalette({ actions, activeAction, onPick }: ActionPalettePr
                         <button
                           type="button"
                           onClick={() => onPick(a.id)}
-                          className="w-full px-3 py-2 text-left transition-all"
-                          style={{
-                            border: `1px solid ${active ? "var(--color-gold)" : "#1a1a1a"}`,
-                            background: active ? "rgba(200,148,26,0.1)" : "#0d0d0d",
-                          }}
-                          onMouseEnter={(e) => {
-                            if (!active) {
-                              e.currentTarget.style.borderColor = "#444";
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (!active) {
-                              e.currentTarget.style.borderColor = "#1a1a1a";
-                            }
-                          }}
+                          className={`w-full rounded-xs px-3 py-2 text-left transition-all ${
+                            active
+                              ? "border border-primary bg-primary/10"
+                              : "border border-hairline-dim bg-canvas-soft hover:border-hairline"
+                          }`}
                         >
                           <span
-                            className="block text-[10px] font-bold uppercase tracking-wider"
-                            style={{ color: active ? "var(--color-gold)" : "#ccc" }}
+                            className={`block text-xs font-semibold uppercase tracking-wide ${
+                              active ? "text-primary-soft" : "text-body"
+                            }`}
                           >
                             {a.label}
                           </span>
-                          <span
-                            className="mt-0.5 block text-[8px] uppercase tracking-wide"
-                            style={{ color: "#444" }}
-                          >
+                          <span className="mt-0.5 block text-xs uppercase tracking-wide text-mute">
                             {a.desc}
                           </span>
                         </button>

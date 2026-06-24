@@ -33,12 +33,12 @@ export function OptionChips<T extends string>({
               type="button"
               disabled={isDisabled}
               onClick={() => onChange(opt)}
-              className={`rounded-md px-2 py-1 text-[11px] font-medium capitalize transition ${
+              className={`rounded-sm px-2 py-1 text-xs font-medium capitalize transition ${
                 active
-                  ? "bg-amber-500 text-slate-950 ring-1 ring-amber-300"
+                  ? "bg-primary text-canvas ring-1 ring-primary-soft"
                   : isDisabled
-                    ? "cursor-not-allowed bg-slate-800/40 text-slate-600"
-                    : "bg-slate-800 text-slate-300 hover:bg-slate-700"
+                    ? "cursor-not-allowed bg-canvas-soft/40 text-hairline-dim"
+                    : "bg-canvas-soft text-body hover:bg-hairline-dim"
               }`}
             >
               {opt.replace(/_/g, " ")}

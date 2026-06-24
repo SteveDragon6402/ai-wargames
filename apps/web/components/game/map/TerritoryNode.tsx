@@ -123,15 +123,15 @@ function UnitRow({ unit, selected, pickable, mine, onSelect }: UnitRowProps) {
     .join(" · ");
 
   const rowBg = selected
-    ? "rgba(200,148,26,0.15)"
+    ? "rgba(0,217,146,0.15)"
     : pickable
-      ? "rgba(200,148,26,0.08)"
+      ? "rgba(0,217,146,0.08)"
       : "transparent";
 
   const rowBorder = selected
-    ? "1px solid rgba(200,148,26,0.5)"
+    ? "1px solid rgba(0,217,146,0.5)"
     : pickable
-      ? "1px solid rgba(200,148,26,0.3)"
+      ? "1px solid rgba(0,217,146,0.3)"
       : "1px solid transparent";
 
   return (
@@ -160,13 +160,8 @@ function UnitRow({ unit, selected, pickable, mine, onSelect }: UnitRowProps) {
             style={{ background: factionTextColor(unit.factionId) }}
           />
           <span
-            className="min-w-0 flex-1 truncate font-bold uppercase"
-            style={{
-              fontSize: "9px",
-              letterSpacing: "0.06em",
-              color: "#ccc",
-              fontFamily: "var(--font-mono), monospace",
-            }}
+            className="min-w-0 flex-1 truncate font-bold uppercase font-mono"
+            style={{ fontSize: "9px", letterSpacing: "0.06em", color: "#ccc" }}
           >
             {unit.name}
           </span>
@@ -206,11 +201,11 @@ export function TerritoryNode({ data }: NodeProps) {
   const control = d.contested ? null : controlFaction(d.units);
   const topColor = factionTopColor(control, d.contested);
 
-  let borderColor = "#242424";
+  let borderColor = "#3d3a39";
   let glowStyle = "";
   if (d.highlight === "valid") {
-    borderColor = "#c8941a";
-    glowStyle = "0 0 16px rgba(200,148,26,0.4)";
+    borderColor = "#00d992";
+    glowStyle = "0 0 16px rgba(0,217,146,0.4)";
   } else if (d.highlight === "selected") {
     borderColor = "#5ecb6b";
     glowStyle = "0 0 10px rgba(94,203,107,0.3)";

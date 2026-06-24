@@ -197,23 +197,14 @@ export function TurnDebrief({
   const sorted = sortEvents(viewingEvents);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex flex-col"
-      style={{ background: "var(--color-bg)", fontFamily: "var(--font-mono), monospace" }}
-    >
+    <div className="fixed inset-0 z-50 flex flex-col bg-canvas font-mono">
       {/* ── Header ── */}
-      <div
-        className="flex shrink-0 items-center justify-between px-5 py-3"
-        style={{ borderBottom: "1px solid var(--color-border)" }}
-      >
+      <div className="flex shrink-0 items-center justify-between border-b border-hairline px-5 py-3">
         <div>
-          <h1
-            className="text-lg font-bold uppercase tracking-widest"
-            style={{ color: "#ddd" }}
-          >
+          <h1 className="text-lg font-semibold uppercase tracking-wide text-ink">
             Tactical Resolution
           </h1>
-          <p className="text-[9px] uppercase tracking-widest" style={{ color: "#444" }}>
+          <p className="text-xs uppercase tracking-wide text-mute">
             Turn {viewingTurn} · Cycle complete · Awaiting orders
           </p>
         </div>
@@ -225,35 +216,23 @@ export function TurnDebrief({
               type="button"
               disabled={!prevTurn || loading}
               onClick={() => prevTurn && loadTurn(prevTurn)}
-              className="text-[9px] uppercase tracking-widest transition-colors disabled:opacity-30"
-              style={{ color: "#555" }}
-              onMouseEnter={(e) => !prevTurn || (e.currentTarget.style.color = "var(--color-gold)")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "#555")}
+              className="text-xs uppercase tracking-wide text-mute transition-colors hover:text-primary-soft disabled:opacity-30"
             >
               ← T{prevTurn ?? "—"}
             </button>
             <div className="flex flex-col items-center gap-1">
-              <div className="flex items-center gap-1 text-[8px]" style={{ color: "#333" }}>
+              <div className="flex items-center gap-1 text-xs text-hairline-dim">
                 <span>T{minTurn}</span>
-                <div
-                  className="relative h-1 w-32"
-                  style={{ background: "#2a2a2a", borderRadius: 2 }}
-                >
+                <div className="relative h-1 w-32 rounded-xs bg-hairline-dim">
                   <div
-                    className="absolute h-full"
-                    style={{
-                      width: `${sliderPct}%`,
-                      background: "#8b6914",
-                      borderRadius: 2,
-                    }}
+                    className="absolute h-full rounded-xs bg-primary-deep"
+                    style={{ width: `${sliderPct}%` }}
                   />
                   <div
-                    className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full"
+                    className="absolute top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border border-canvas bg-primary"
                     style={{
                       left: `${sliderPct}%`,
                       transform: "translate(-50%, -50%)",
-                      background: "var(--color-gold)",
-                      border: "1px solid #0a0a0a",
                     }}
                   />
                 </div>
@@ -264,10 +243,7 @@ export function TurnDebrief({
               type="button"
               disabled={!nextTurn || loading}
               onClick={() => nextTurn && loadTurn(nextTurn)}
-              className="text-[9px] uppercase tracking-widest transition-colors disabled:opacity-30"
-              style={{ color: "#555" }}
-              onMouseEnter={(e) => !nextTurn || (e.currentTarget.style.color = "var(--color-gold)")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "#555")}
+              className="text-xs uppercase tracking-wide text-mute transition-colors hover:text-primary-soft disabled:opacity-30"
             >
               T{nextTurn ?? "—"} →
             </button>
@@ -275,10 +251,10 @@ export function TurnDebrief({
         )}
 
         <div className="text-right">
-          <p className="text-[9px] uppercase tracking-widest" style={{ color: "var(--color-gold)" }}>
+          <p className="text-xs uppercase tracking-wide text-primary-soft">
             Code: Epsilon-Nine
           </p>
-          <p className="text-[8px] uppercase tracking-widest" style={{ color: "#2a2a2a" }}>
+          <p className="text-xs uppercase tracking-wide text-hairline-dim">
             ● Link Secure
           </p>
         </div>
@@ -290,10 +266,7 @@ export function TurnDebrief({
         {/* Left — live map of historical state */}
         <div className="relative flex min-h-0 flex-1 flex-col">
           {loading && (
-            <div
-              className="absolute inset-0 z-10 flex items-center justify-center text-[10px] uppercase tracking-widest"
-              style={{ background: "rgba(10,10,10,0.7)", color: "#555" }}
-            >
+            <div className="absolute inset-0 z-10 flex items-center justify-center bg-canvas/70 text-xs uppercase tracking-wide text-mute">
               Loading turn {viewingTurn}…
             </div>
           )}
@@ -311,40 +284,25 @@ export function TurnDebrief({
         </div>
 
         {/* Right — AI summary + event list */}
-        <div
-          className="flex w-72 shrink-0 flex-col"
-          style={{ borderLeft: "1px solid var(--color-border)" }}
-        >
+        <div className="flex w-72 shrink-0 flex-col border-l border-hairline">
           {/* AI summary box */}
-          <div
-            className="shrink-0 p-4"
-            style={{ borderBottom: "1px solid var(--color-border)" }}
-          >
-            <p
-              className="mb-2 text-[9px] font-bold uppercase tracking-widest"
-              style={{ color: "var(--color-gold)" }}
-            >
+          <div className="shrink-0 border-b border-hairline p-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-primary-soft">
               ▲ Situation Report
             </p>
             {summaryLoading ? (
               <div className="flex items-center gap-2">
-                <span
-                  className="inline-block h-1.5 w-1.5 animate-pulse rounded-full"
-                  style={{ background: "var(--color-gold)" }}
-                />
-                <span className="text-[9px] uppercase tracking-widest" style={{ color: "#444" }}>
+                <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+                <span className="text-xs uppercase tracking-wide text-mute">
                   Generating…
                 </span>
               </div>
             ) : summary ? (
-              <p
-                className="font-narrative text-sm leading-relaxed"
-                style={{ color: "#bbb" }}
-              >
+              <p className="font-narrative text-sm leading-relaxed text-body">
                 {summary}
               </p>
             ) : (
-              <p className="text-[9px] italic uppercase tracking-widest" style={{ color: "#333" }}>
+              <p className="text-xs italic uppercase tracking-wide text-hairline-dim">
                 No events to summarise.
               </p>
             )}
@@ -352,18 +310,15 @@ export function TurnDebrief({
 
           {/* Event list */}
           <div className="flex-1 min-h-0 overflow-y-auto">
-            <div
-              className="px-4 py-2 text-[9px] font-bold uppercase tracking-widest"
-              style={{ borderBottom: "1px solid var(--color-border)", color: "#444" }}
-            >
+            <div className="border-b border-hairline px-4 py-2 text-xs font-semibold uppercase tracking-wide text-mute">
               &gt;&gt; Action Log
             </div>
             {sorted.length === 0 ? (
-              <p className="p-4 text-[9px] uppercase tracking-widest" style={{ color: "#2a2a2a" }}>
+              <p className="p-4 text-xs uppercase tracking-wide text-hairline-dim">
                 No events recorded.
               </p>
             ) : (
-              <ul className="divide-y" style={{ borderColor: "var(--color-border-dim)" }}>
+              <ul className="divide-y divide-hairline-dim">
                 {sorted.map((e, i) => {
                   const line = eventLine(e);
                   if (!line) return null;
@@ -374,12 +329,20 @@ export function TurnDebrief({
                       style={{ opacity: line.dim ? 0.5 : 1 }}
                     >
                       <span
-                        className="shrink-0 text-[10px]"
-                        style={{ color: e.type === "victory" ? "var(--color-gold)" : e.type === "rout" ? "#e05555" : "#555", marginTop: 1 }}
+                        className="shrink-0 text-xs"
+                        style={{
+                          color:
+                            e.type === "victory"
+                              ? "var(--color-primary)"
+                              : e.type === "rout"
+                                ? "var(--stat-bad)"
+                                : "#555",
+                          marginTop: 1,
+                        }}
                       >
                         {line.icon}
                       </span>
-                      <span className="text-[9px] uppercase tracking-wide leading-relaxed" style={{ color: "#888" }}>
+                      <span className="text-xs uppercase tracking-wide leading-relaxed text-body">
                         {line.text}
                       </span>
                     </li>
@@ -392,21 +355,15 @@ export function TurnDebrief({
       </div>
 
       {/* ── Footer ── */}
-      <div
-        className="flex shrink-0 items-center justify-between px-5 py-3"
-        style={{ borderTop: "1px solid var(--color-border)" }}
-      >
-        <div className="text-[9px] uppercase tracking-widest" style={{ color: "#2a2a2a" }}>
+      <div className="flex shrink-0 items-center justify-between border-t border-hairline px-5 py-3">
+        <div className="text-xs uppercase tracking-wide text-hairline-dim">
           &gt; Press Enter to continue
         </div>
         {viewingTurn !== completedTurn ? (
           <button
             type="button"
             onClick={() => loadTurn(completedTurn)}
-            className="text-[9px] uppercase tracking-widest transition-colors"
-            style={{ color: "#444" }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "var(--color-gold)")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#444")}
+            className="text-xs uppercase tracking-wide text-mute transition-colors hover:text-primary-soft"
           >
             ↩ Jump to Turn {completedTurn}
           </button>
@@ -414,7 +371,7 @@ export function TurnDebrief({
           <button
             type="button"
             onClick={onDismiss}
-            className="btn-gold"
+            className="btn-primary"
           >
             Begin Turn {completedTurn + 1} →
           </button>

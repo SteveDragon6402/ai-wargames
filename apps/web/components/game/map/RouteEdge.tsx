@@ -208,7 +208,7 @@ function EdgeLabel({ x, y, text }: { x: number; y: number; text: string }) {
           transform: `translate(-50%, -50%) translate(${x}px,${y}px)`,
           pointerEvents: "none",
         }}
-        className="rounded bg-[#14110d]/90 px-1 py-px text-[7px] font-medium uppercase tracking-wide text-slate-500 ring-1 ring-slate-800/60"
+        className="rounded-xs bg-canvas-soft/90 px-1 py-px text-[7px] font-medium uppercase tracking-wide text-mute ring-1 ring-hairline/60"
       >
         {text}
       </span>

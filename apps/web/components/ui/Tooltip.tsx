@@ -52,7 +52,7 @@ export function Tooltip({ content, children, side = "top" }: TooltipProps) {
           <span
             role="tooltip"
             style={tooltipStyle}
-            className="w-max max-w-[260px] rounded-md border border-slate-600 bg-slate-800 px-2 py-1 text-[11px] leading-snug text-slate-200 shadow-xl"
+            className="w-max max-w-[260px] rounded-md border border-hairline bg-canvas-soft px-2 py-1 text-xs leading-snug text-ink shadow-xl"
           >
             {content}
           </span>,

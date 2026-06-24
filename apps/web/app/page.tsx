@@ -213,66 +213,40 @@ export default function HomePage() {
 
   return (
     <>
-      <main
-        className="flex min-h-screen flex-col items-center justify-center p-6"
-        style={{ background: "var(--color-bg)" }}
-      >
+      <main className="flex min-h-screen flex-col items-center justify-center bg-canvas p-6">
         {/* Logo / title block */}
         <div className="mb-10 flex flex-col items-center gap-3 text-center">
-          {/* Crosshair emblem */}
-          <div className="mb-2 flex h-16 w-16 items-center justify-center rounded-full" style={{ border: "1px solid #2a2a2a" }}>
-            <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
-              <line x1="16" y1="2" x2="16" y2="30" stroke="#c8941a" strokeWidth="1.5" />
-              <line x1="2" y1="16" x2="30" y2="16" stroke="#c8941a" strokeWidth="1.5" />
-              <path d="M16 6 Q22 10 22 16 Q22 22 16 26 Q10 22 10 16 Q10 10 16 6Z" stroke="#c8941a" strokeWidth="1" fill="none" />
-              <circle cx="16" cy="16" r="2" fill="#c8941a" />
+          {/* Lightning emblem */}
+          <div className="mb-2 flex h-16 w-16 items-center justify-center rounded-full border border-hairline">
+            <svg width="28" height="28" viewBox="0 0 32 32" fill="none">
+              <path
+                d="M18 3 L8 18 H15 L13 29 L24 14 H17 L18 3 Z"
+                fill="#00d992"
+              />
             </svg>
           </div>
-          <h1
-            className="text-2xl font-bold uppercase tracking-widest"
-            style={{ color: "var(--color-gold)", letterSpacing: "0.25em" }}
-          >
+          <h1 className="text-2xl font-normal tracking-tight text-ink-strong">
             AI Wargames
           </h1>
-          <p
-            className="text-[10px] uppercase tracking-widest"
-            style={{ color: "#444", letterSpacing: "0.2em" }}
-          >
-            AI-Adjudicated Node Warfare
+          <p className="text-sm text-mute">
+            AI-adjudicated node warfare
           </p>
         </div>
 
         {/* Command panel */}
-        <div
-          className="w-full max-w-sm"
-          style={{ border: "1px solid var(--color-border)", background: "var(--color-surface)" }}
-        >
+        <div className="w-full max-w-sm rounded-md border border-hairline bg-canvas">
           {/* Panel header */}
-          <div
-            className="px-4 py-2 text-[9px] font-bold uppercase tracking-widest"
-            style={{ borderBottom: "1px solid var(--color-border)", color: "#444" }}
-          >
-            &gt;&gt; COMMAND UPLINK
+          <div className="border-b border-hairline px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-mute">
+            Command Uplink
           </div>
 
           <div className="flex flex-col gap-4 p-5">
             <div>
-              <label
-                className="mb-1 block text-[9px] font-bold uppercase tracking-widest"
-                style={{ color: "#555" }}
-              >
-                Commander Designation
+              <label className="mb-1.5 block text-xs font-medium text-body">
+                Commander name
               </label>
               <input
-                className="w-full px-3 py-2 text-sm outline-none transition-all"
-                style={{
-                  background: "#0a0a0a",
-                  border: "1px solid #2a2a2a",
-                  color: "#ddd",
-                  fontFamily: "var(--font-mono), monospace",
-                }}
-                onFocus={(e) => (e.target.style.borderColor = "var(--color-gold)")}
-                onBlur={(e) => (e.target.style.borderColor = "#2a2a2a")}
+                className="w-full rounded-sm border border-hairline bg-canvas-soft px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-primary"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="Commander"
@@ -284,11 +258,8 @@ export default function HomePage() {
             {/* Scenario picker */}
             {scenarios.length > 0 && (
               <div>
-                <label
-                  className="mb-1.5 block text-[9px] font-bold uppercase tracking-widest"
-                  style={{ color: "#555" }}
-                >
-                  Theatre of War
+                <label className="mb-1.5 block text-xs font-medium text-body">
+                  Theatre of war
                 </label>
                 <div className="flex flex-col gap-1">
                   {scenarios.map((s) => {
@@ -298,41 +269,25 @@ export default function HomePage() {
                         key={s.id}
                         type="button"
                         onClick={() => setSelectedScenarioId(s.id)}
-                        className="w-full px-3 py-2 text-left transition-all"
-                        style={{
-                          background: selected ? "#0f0d04" : "#060606",
-                          border: selected
-                            ? "1px solid var(--color-gold)"
-                            : "1px solid #1e1e1e",
-                          fontFamily: "var(--font-mono), monospace",
-                        }}
-                        onMouseEnter={(e) => {
-                          if (!selected) e.currentTarget.style.borderColor = "#333";
-                        }}
-                        onMouseLeave={(e) => {
-                          if (!selected) e.currentTarget.style.borderColor = "#1e1e1e";
-                        }}
+                        className={`w-full rounded-sm border px-3 py-2 text-left transition-colors ${
+                          selected
+                            ? "border-primary bg-canvas-soft"
+                            : "border-hairline bg-canvas hover:border-hairline-dim"
+                        }`}
                       >
                         <div className="flex items-center justify-between gap-2">
                           <span
-                            className="truncate text-[10px] font-bold uppercase tracking-wide"
-                            style={{ color: selected ? "var(--color-gold)" : "#888" }}
+                            className={`truncate text-sm font-medium ${
+                              selected ? "text-primary-soft" : "text-ink"
+                            }`}
                           >
                             {s.name}
                           </span>
                           {selected && (
-                            <span
-                              className="shrink-0 text-[8px] font-bold uppercase tracking-widest"
-                              style={{ color: "var(--color-gold)" }}
-                            >
-                              ✓
-                            </span>
+                            <span className="shrink-0 text-xs text-primary-soft">✓</span>
                           )}
                         </div>
-                        <div
-                          className="mt-0.5 text-[8px] uppercase tracking-widest"
-                          style={{ color: "#444" }}
-                        >
+                        <div className="mt-0.5 text-xs text-mute">
                           {s.factions.map((f) => factionDisplayName(f)).join(" vs ")}
                         </div>
                       </button>
@@ -346,35 +301,21 @@ export default function HomePage() {
               type="button"
               disabled={loading}
               onClick={createRoom}
-              className="btn-gold w-full"
+              className="btn-primary w-full"
             >
-              {loading ? "Establishing uplink…" : "Initiate New Operation"}
+              {loading ? "Establishing uplink…" : "Initiate new operation"}
             </button>
 
             <div className="flex items-center gap-3">
-              <div className="h-px flex-1" style={{ background: "var(--color-border)" }} />
-              <span
-                className="text-[9px] uppercase tracking-widest"
-                style={{ color: "#333" }}
-              >
-                or join existing
-              </span>
-              <div className="h-px flex-1" style={{ background: "var(--color-border)" }} />
+              <div className="h-px flex-1 bg-hairline" />
+              <span className="text-xs text-mute">or join existing</span>
+              <div className="h-px flex-1 bg-hairline" />
             </div>
 
             <div className="flex gap-2">
               <input
                 ref={codeRef}
-                className="flex-1 px-3 py-2 text-center text-lg uppercase tracking-widest outline-none transition-all"
-                style={{
-                  background: "#0a0a0a",
-                  border: "1px solid #2a2a2a",
-                  color: "#ddd",
-                  fontFamily: "var(--font-mono), monospace",
-                  letterSpacing: "0.3em",
-                }}
-                onFocus={(e) => (e.target.style.borderColor = "var(--color-gold)")}
-                onBlur={(e) => (e.target.style.borderColor = "#2a2a2a")}
+                className="flex-1 rounded-sm border border-hairline bg-canvas-soft px-3 py-2 text-center text-lg uppercase tracking-[0.3em] text-ink outline-none transition-colors focus:border-primary"
                 value={code}
                 onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
                 placeholder="XXXXXX"
@@ -393,66 +334,40 @@ export default function HomePage() {
           </div>
 
           {error && (
-            <div
-              className="mx-5 mb-4 px-3 py-2 text-[10px] uppercase tracking-wide"
-              style={{ border: "1px solid #5a1a1a", background: "#1a0a0a", color: "#e05555" }}
-            >
-              &gt; ERROR: {error}
+            <div className="mx-5 mb-4 rounded-sm border border-faction-isengard-deep bg-canvas-soft px-3 py-2 text-sm text-faction-isengard">
+              {error}
             </div>
           )}
 
           {/* Admin link */}
-          <div
-            className="px-4 py-2 text-center"
-            style={{ borderTop: "1px solid var(--color-border)" }}
-          >
+          <div className="border-t border-hairline px-4 py-2 text-center">
             <button
               type="button"
               onClick={() => setAdminOpen(true)}
-              className="text-[9px] uppercase tracking-widest transition-colors"
-              style={{ color: "#333" }}
-              onMouseEnter={(e) => (e.currentTarget.style.color = "#555")}
-              onMouseLeave={(e) => (e.currentTarget.style.color = "#333")}
+              className="text-xs text-mute transition-colors hover:text-body"
             >
-              Admin Access
+              Admin access
             </button>
           </div>
         </div>
 
         {/* Ticker line */}
-        <div
-          className="mt-8 text-[9px] uppercase tracking-widest"
-          style={{ color: "#2a2a2a" }}
-        >
-          &gt; AI-ADJUDICATED NODE WARFARE · SECURE CHANNEL
+        <div className="mt-8 text-xs text-hairline-dim">
+          AI-adjudicated node warfare · secure channel
         </div>
       </main>
 
       {/* Admin overlay */}
       {adminOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto" style={{ background: "rgba(0,0,0,0.92)" }}>
-          <div
-            className="my-8 w-full max-w-3xl shadow-2xl"
-            style={{ border: "1px solid var(--color-border)", background: "var(--color-surface)" }}
-          >
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/80">
+          <div className="my-8 w-full max-w-3xl rounded-md border border-hairline bg-canvas shadow-2xl">
             {/* Header */}
-            <header
-              className="flex items-center justify-between px-5 py-3"
-              style={{ borderBottom: "1px solid var(--color-border)" }}
-            >
-              <h2
-                className="text-[10px] font-bold uppercase tracking-widest"
-                style={{ color: "var(--color-gold)" }}
-              >
-                &gt;&gt; Admin Panel
-              </h2>
+            <header className="flex items-center justify-between border-b border-hairline px-5 py-3">
+              <h2 className="text-sm font-semibold text-ink">Admin panel</h2>
               <button
                 type="button"
                 onClick={closeAdmin}
-                className="text-xs transition-colors"
-                style={{ color: "#444" }}
-                onMouseEnter={(e) => (e.currentTarget.style.color = "#ccc")}
-                onMouseLeave={(e) => (e.currentTarget.style.color = "#444")}
+                className="text-sm text-mute transition-colors hover:text-ink"
               >
                 ✕
               </button>
@@ -462,12 +377,11 @@ export default function HomePage() {
               {!adminAuthed ? (
                 /* Password gate */
                 <div className="flex flex-col gap-3">
-                  <p className="text-[10px] uppercase tracking-widest" style={{ color: "#555" }}>Enter the admin password to continue.</p>
+                  <p className="text-sm text-body">Enter the admin password to continue.</p>
                   <div className="flex gap-2">
                     <input
                       type="password"
-                      className="flex-1 px-3 py-2 text-sm outline-none"
-                      style={{ background: "#0a0a0a", border: "1px solid #2a2a2a", color: "#ddd", fontFamily: "var(--font-mono), monospace" }}
+                      className="flex-1 rounded-sm border border-hairline bg-canvas-soft px-3 py-2 text-sm text-ink outline-none focus:border-primary"
                       placeholder="Password"
                       value={adminPw}
                       onChange={(e) => setAdminPw(e.target.value)}
@@ -478,20 +392,20 @@ export default function HomePage() {
                       type="button"
                       disabled={adminLoading || !adminPw}
                       onClick={adminLogin}
-                      className="btn-gold"
+                      className="btn-primary"
                     >
                       {adminLoading ? "Checking…" : "Login"}
                     </button>
                   </div>
                   {adminPwError && (
-                    <p className="text-[10px] uppercase tracking-widest" style={{ color: "#e05555" }}>&gt; {adminPwError}</p>
+                    <p className="text-sm text-faction-isengard">{adminPwError}</p>
                   )}
                 </div>
               ) : (
                 /* Room list */
                 <div className="flex flex-col gap-4">
                   <div className="flex items-center justify-between">
-                    <p className="text-[10px] uppercase tracking-widest" style={{ color: "#555" }}>
+                    <p className="text-sm text-body">
                       {adminRooms.length} room{adminRooms.length !== 1 ? "s" : ""}
                     </p>
                     <div className="flex items-center gap-2">
@@ -499,8 +413,8 @@ export default function HomePage() {
                         type="button"
                         disabled={soloCreating || adminLoading}
                         onClick={adminCreateSoloGame}
-                        className="btn-gold"
-                        style={{ padding: "6px 12px", fontSize: "9px" }}
+                        className="btn-primary"
+                        style={{ padding: "6px 12px", fontSize: "12px" }}
                       >
                         {soloCreating ? "Starting…" : "Play both sides"}
                       </button>
@@ -508,7 +422,7 @@ export default function HomePage() {
                         type="button"
                         disabled={adminLoading}
                         onClick={adminRefresh}
-                        className="text-xs text-slate-500 hover:text-slate-300 disabled:opacity-50"
+                        className="text-xs text-mute hover:text-body disabled:opacity-50"
                       >
                         {adminLoading ? "Refreshing…" : "↻ Refresh"}
                       </button>
@@ -516,9 +430,9 @@ export default function HomePage() {
                   </div>
 
                   {adminRooms.length === 0 ? (
-                    <p className="py-8 text-center text-[10px] uppercase tracking-widest" style={{ color: "#333" }}>No rooms found.</p>
+                    <p className="py-8 text-center text-sm text-mute">No rooms found.</p>
                   ) : (
-                    <div style={{ border: "1px solid var(--color-border)" }}>
+                    <div className="rounded-sm border border-hairline">
                       {adminRooms.map((room) => (
                         <RoomRow
                           key={room.id}
@@ -552,58 +466,41 @@ function RoomRow({
 }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const statusColor =
+  const statusColorClass =
     room.status === "playing"
-      ? "var(--color-gold)"
+      ? "text-primary-soft"
       : room.status === "finished"
-        ? "#444"
-        : "#5ecb6b";
+        ? "text-mute"
+        : "text-faction-rohan";
 
   const createdAgo = timeAgo(new Date(room.createdAt));
 
   return (
-    <div
-      className="flex items-start justify-between gap-3 px-4 py-3"
-      style={{ borderBottom: "1px solid var(--color-border)" }}
-    >
+    <div className="flex items-start justify-between gap-3 border-b border-hairline px-4 py-3 last:border-b-0">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
-          <span
-            className="text-sm font-bold tracking-widest"
-            style={{ fontFamily: "var(--font-mono), monospace", color: "#ddd" }}
-          >
-            {room.code}
-          </span>
-          <span
-            className="text-[10px] font-bold uppercase tracking-wider"
-            style={{ color: statusColor }}
-          >
+          <span className="font-mono text-sm tracking-wide text-ink">{room.code}</span>
+          <span className={`text-xs font-medium uppercase tracking-wide ${statusColorClass}`}>
             {room.status}
           </span>
           {room.soloDualFaction && (
-            <span
-              className="rounded px-1.5 py-px text-[8px] font-bold uppercase tracking-wider"
-              style={{ color: "#5ecb6b", border: "1px solid #2d6a35" }}
-            >
+            <span className="rounded-pill border border-faction-rohan-deep px-1.5 py-px text-xs text-faction-rohan">
               Solo
             </span>
           )}
           {room.game && (
-            <span
-              className="text-[9px] uppercase tracking-wider"
-              style={{ color: "#444" }}
-            >
+            <span className="text-xs text-mute">
               T{room.game.turn}
               {room.game.winnerFactionId
                 ? ` · ${factionDisplayName(room.game.winnerFactionId)} won`
                 : ` · ${room.game.phase}`}
             </span>
           )}
-          <span className="text-[9px]" style={{ color: "#333" }}>{createdAgo}</span>
+          <span className="text-xs text-hairline-dim">{createdAgo}</span>
         </div>
 
         {room.players.length > 0 && (
-          <p className="mt-0.5 text-[9px] uppercase tracking-wider" style={{ color: "#444" }}>
+          <p className="mt-0.5 text-xs text-mute">
             {room.players
               .map((p) => `${p.displayName} (${factionDisplayName(p.factionId)})`)
               .join(" vs ")}
@@ -614,21 +511,19 @@ function RoomRow({
       <div className="shrink-0">
         {confirmDelete ? (
           <div className="flex items-center gap-1.5">
-            <span className="text-[9px] uppercase" style={{ color: "#555" }}>Sure?</span>
+            <span className="text-xs text-body">Sure?</span>
             <button
               type="button"
               disabled={deleting}
               onClick={onDelete}
-              className="px-2 py-1 text-[9px] font-bold uppercase tracking-wider disabled:opacity-50"
-              style={{ border: "1px solid #8b1a1a", color: "#e05555", background: "#1a0a0a" }}
+              className="rounded-sm border border-faction-isengard-deep bg-canvas-soft px-2 py-1 text-xs font-medium text-faction-isengard disabled:opacity-50"
             >
               {deleting ? "Deleting…" : "Yes, delete"}
             </button>
             <button
               type="button"
               onClick={() => setConfirmDelete(false)}
-              className="px-2 py-1 text-[9px] uppercase"
-              style={{ color: "#444" }}
+              className="px-2 py-1 text-xs text-mute"
             >
               Cancel
             </button>
@@ -637,16 +532,7 @@ function RoomRow({
           <button
             type="button"
             onClick={() => setConfirmDelete(true)}
-            className="px-2 py-1 text-[9px] font-bold uppercase tracking-wider transition-colors"
-            style={{ border: "1px solid #2a2a2a", color: "#444" }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = "#8b1a1a";
-              e.currentTarget.style.color = "#e05555";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = "#2a2a2a";
-              e.currentTarget.style.color = "#444";
-            }}
+            className="rounded-sm border border-hairline px-2 py-1 text-xs font-medium text-mute transition-colors hover:border-faction-isengard-deep hover:text-faction-isengard"
           >
             Delete
           </button>

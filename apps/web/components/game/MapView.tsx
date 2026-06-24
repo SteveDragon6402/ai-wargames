@@ -199,7 +199,7 @@ export function MapView({
   }, []);
 
   return (
-    <section className="game-map rounded-lg border border-[#3f3a33] shadow-inner">
+    <section className="game-map rounded-md border border-hairline shadow-inner">
       {pickMode !== "none" && (
         <p className="pick-hint">
           {pickMode === "destination" && "Click a highlighted territory to move or retreat."}
@@ -222,13 +222,13 @@ export function MapView({
         onNodeClick={readonly ? undefined : (_, node) => onSelectNode(node.id)}
         proOptions={{ hideAttribution: true }}
       >
-        <Background variant={BackgroundVariant.Dots} color="#1e1c18" gap={32} size={1.5} />
+        <Background variant={BackgroundVariant.Dots} color="#222220" gap={32} size={1.5} />
         <Controls
           showInteractive={false}
           style={{
             background: "var(--color-surface)",
             border: "1px solid var(--color-border)",
-            borderRadius: 0,
+            borderRadius: 6,
           }}
           className="[&>button]:!border-0 [&>button]:!rounded-none [&>button]:!bg-transparent [&>button]:!fill-[#888] [&>button:hover]:!bg-[#1a1a1a]"
         />
@@ -237,7 +237,7 @@ export function MapView({
             nodeColor={(n) => {
               const nd = n.data as { highlight?: TerritoryHighlight; units?: { factionId: string }[] };
               const h = nd?.highlight;
-              if (h === "valid") return "#c8941a";
+              if (h === "valid") return "#00d992";
               if (h === "current") return "#555";
               if (h === "invalid") return "#111";
               const u = nd?.units;
@@ -246,11 +246,11 @@ export function MapView({
               }
               return "#1a1a1a";
             }}
-            maskColor="rgba(10,10,10,0.75)"
+            maskColor="rgba(16,16,16,0.75)"
             style={{
-              background: "#0a0a0a",
-              border: "1px solid #242424",
-              borderRadius: 0,
+              background: "#101010",
+              border: "1px solid #3d3a39",
+              borderRadius: 6,
             }}
             pannable
             zoomable
