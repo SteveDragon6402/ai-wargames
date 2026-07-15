@@ -347,6 +347,54 @@ export default function HomePage() {
           </div>
         </div>
 
+        {/* Alternative game modes */}
+        <div className="mt-6 w-full max-w-sm">
+          <div
+            className="mb-2 text-[8px] uppercase tracking-widest text-center"
+            style={{ color: "#2a2a2a" }}
+          >
+            Other Theatres
+          </div>
+          <a
+            href="/got-houses"
+            className="flex w-full items-center justify-between px-4 py-3 transition-all"
+            style={{
+              border: "1px solid #1e1e1e",
+              background: "#060606",
+              textDecoration: "none",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "#3a2a00";
+              e.currentTarget.style.background = "#0a0800";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = "#1e1e1e";
+              e.currentTarget.style.background = "#060606";
+            }}
+          >
+            <div>
+              <div
+                className="text-[10px] font-bold uppercase tracking-wide"
+                style={{ color: "#888", fontFamily: "var(--font-mono), monospace" }}
+              >
+                Game of Thrones Houses Mode
+              </div>
+              <div
+                className="mt-0.5 text-[8px] uppercase tracking-widest"
+                style={{ color: "#333" }}
+              >
+                Westeros Theatre
+              </div>
+            </div>
+            <span
+              className="text-[9px] uppercase tracking-widest"
+              style={{ color: "#2a2a2a" }}
+            >
+              →
+            </span>
+          </a>
+        </div>
+
         {/* Ticker line */}
         <div className="mt-8 text-xs text-hairline-dim">
           AI-adjudicated node warfare · secure channel
