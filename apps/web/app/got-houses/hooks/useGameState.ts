@@ -1,5 +1,16 @@
 import { useReducer } from "react";
-import type { GameState, GameAction, Faction, MoveOrder, Army } from "../types";
+import type {
+  GameState,
+  GameAction,
+  Faction,
+  MoveOrder,
+  Army,
+  BattleContext,
+  BattleReport,
+  RetreatEntry,
+  Casualty,
+  FallenFigure,
+} from "../types";
 import { INITIAL_GAME_STATE } from "../data/initial-state";
 import { HOLDS_MAP } from "../data/holds";
 
@@ -22,29 +33,127 @@ function setFactionOrders(
   return { ...state, westerlands: { ...state.westerlands, ...patch } };
 }
 
-/** Execute all queued move orders and advance the turn. */
-function adjudicate(state: GameState): GameState {
-  const allOrders: MoveOrder[] = [
-    ...state.north.orders,
-    ...state.westerlands.orders,
-  ];
+/** After moves are applied, find holds with armies from both factions. */
+function detectBattles(
+  armies: Army[],
+  allOrders: MoveOrder[]
+): BattleContext[] {
+  // Group armies by holdId
+  const byHold = new Map<string, Army[]>();
+  for (const army of armies) {
+    const list = byHold.get(army.holdId) ?? [];
+    list.push(army);
+    byHold.set(army.holdId, list);
+  }
 
-  const updatedArmies = state.armies.map((army) => {
-    const order = allOrders.find((o) => o.armyId === army.id);
-    if (order) return { ...army, holdId: order.toHoldId };
-    return army;
+  const battles: BattleContext[] = [];
+  for (const [holdId, armiesHere] of byHold) {
+    const northHere = armiesHere.filter((a) => a.faction === "north");
+    const westHere = armiesHere.filter((a) => a.faction === "westerlands");
+    if (northHere.length === 0 || westHere.length === 0) continue;
+
+    // Determine where each army came from
+    const northFrom = allOrders.find(
+      (o) => northHere.some((a) => a.id === o.armyId) && o.toHoldId === holdId
+    )?.fromHoldId;
+    const westFrom = allOrders.find(
+      (o) => westHere.some((a) => a.id === o.armyId) && o.toHoldId === holdId
+    )?.fromHoldId;
+
+    battles.push({
+      holdId,
+      northArmies: northHere,
+      westArmies: westHere,
+      northFromHoldId: northFrom,
+      westFromHoldId: westFrom,
+    });
+  }
+  return battles;
+}
+
+/** Apply casualties to the army list. Returns updated armies (removes depleted units/armies). */
+function applyCasualties(armies: Army[], casualties: Casualty[]): Army[] {
+  return armies
+    .map((army) => {
+      const armyCasualties = casualties.filter((c) => c.armyId === army.id);
+      if (armyCasualties.length === 0) return army;
+
+      const updatedUnits = army.units
+        .map((unit) => {
+          const loss = armyCasualties.find(
+            (c) => c.unitType === unit.type && c.house === unit.house
+          );
+          if (!loss) return unit;
+          return { ...unit, count: Math.max(0, unit.count - loss.count) };
+        })
+        .filter((u) => u.count > 0);
+
+      return { ...army, units: updatedUnits };
+    })
+    .filter((army) => army.units.length > 0);
+}
+
+/** Remove fallen leaders and notables from armies. */
+function applyFallen(armies: Army[], fallen: FallenFigure[]): Army[] {
+  return armies.map((army) => {
+    const armyFallen = fallen.filter((f) => f.armyId === army.id);
+    if (armyFallen.length === 0) return army;
+
+    const leaderNames = new Set(
+      armyFallen.filter((f) => f.isLeader).map((f) => f.name)
+    );
+    const notableNames = new Set(
+      armyFallen.filter((f) => !f.isLeader).map((f) => f.name)
+    );
+
+    return {
+      ...army,
+      leaders: army.leaders.filter((l) => !leaderNames.has(l.name)),
+      notables: army.notables?.filter((n) => !notableNames.has(n.name)) ?? [],
+    };
   });
+}
 
-  return {
-    ...state,
-    turn: state.turn + 1,
-    armies: updatedArmies,
-    north: { orders: [], submitted: false },
-    westerlands: { orders: [], submitted: false },
-    selectedHoldId: null,
-    selectedArmyIds: [],
-    moveMode: { active: false, validTargets: [] },
-  };
+/** Build retreat entries for armies that must retreat after battles. */
+function buildRetreats(
+  retreatingArmyIds: string[],
+  armies: Army[],
+  battles: BattleContext[]
+): RetreatEntry[] {
+  return retreatingArmyIds
+    .map((armyId) => {
+      const army = armies.find((a) => a.id === armyId);
+      if (!army) return null;
+
+      // Find which battle this army was involved in
+      const battle = battles.find(
+        (b) =>
+          b.northArmies.some((a) => a.id === armyId) ||
+          b.westArmies.some((a) => a.id === armyId)
+      );
+      if (!battle) return null;
+
+      const isNorth = army.faction === "north";
+
+      // Forbidden: the hold the opposing faction's armies came from
+      const forbiddenHoldIds: string[] = [];
+      if (isNorth && battle.westFromHoldId) forbiddenHoldIds.push(battle.westFromHoldId);
+      if (!isNorth && battle.northFromHoldId) forbiddenHoldIds.push(battle.northFromHoldId);
+
+      const adjacentHolds = getAdjacentHolds(army.holdId);
+      const validTargets = adjacentHolds.filter(
+        (h) => !forbiddenHoldIds.includes(h)
+      );
+
+      return {
+        armyId,
+        fromHoldId: army.holdId,
+        forbiddenHoldIds,
+        validTargets,
+        chosenHoldId: validTargets.length === 1 ? validTargets[0] : null,
+      } satisfies RetreatEntry;
+    })
+    .filter(Boolean) as RetreatEntry[];
 }
 
 function gameReducer(state: GameState, action: GameAction): GameState {
@@ -60,9 +169,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
     case "SELECT_ARMY": {
       const armyFaction = state.armies.find((a) => a.id === action.armyId)?.faction;
-      // In non-admin mode, can only select own armies
       if (!state.adminMode && armyFaction !== state.activeFaction) return state;
-      // Can't select if faction has already submitted
       if (armyFaction && getFactionOrders(state, armyFaction).submitted) return state;
 
       let next: string[];
@@ -100,21 +207,16 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case "BEGIN_MOVE": {
       if (state.selectedArmyIds.length === 0) return state;
 
-      // Collect valid targets = holds adjacent to ALL selected armies' current holds
-      // (they may be at different holds — the intersection is what's reachable by all)
       const selectedArmies = state.selectedArmyIds
         .map((id) => state.armies.find((a) => a.id === id))
         .filter(Boolean) as Army[];
 
       if (selectedArmies.length === 0) return state;
 
-      // For multi-hold selection: valid target = adjacent to at least one selected army
-      // (each army moves independently — we validate per-army at QUEUE_MOVE)
-      const allAdjacentSets = selectedArmies.map((a) =>
-        new Set(getAdjacentHolds(a.holdId))
-      );
       const union = new Set<string>();
-      allAdjacentSets.forEach((s) => s.forEach((id) => union.add(id)));
+      selectedArmies.forEach((a) =>
+        getAdjacentHolds(a.holdId).forEach((h) => union.add(h))
+      );
 
       return {
         ...state,
@@ -129,7 +231,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         .map((id) => state.armies.find((a) => a.id === id))
         .filter(Boolean) as Army[];
 
-      // Build orders for armies that can actually reach the target
       const newOrders: MoveOrder[] = selectedArmies
         .filter((army) => getAdjacentHolds(army.holdId).includes(action.toHoldId))
         .map((army) => ({
@@ -140,7 +241,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
       if (newOrders.length === 0) return state;
 
-      // Group by faction and add to pending orders (replace if army already has order)
       let nextState = state;
       for (const order of newOrders) {
         const army = state.armies.find((a) => a.id === order.armyId)!;
@@ -161,23 +261,134 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case "CANCEL_MOVE": {
-      return {
-        ...state,
-        moveMode: { active: false, validTargets: [] },
-      };
+      return { ...state, moveMode: { active: false, validTargets: [] } };
     }
 
     case "SUBMIT_FACTION": {
       const nextState = setFactionOrders(state, action.faction, { submitted: true });
-      // Auto-adjudicate if both factions have submitted
       if (nextState.north.submitted && nextState.westerlands.submitted) {
-        return adjudicate(nextState);
+        // Both submitted — trigger move application and battle detection
+        return gameReducer(nextState, { type: "ADJUDICATE_MOVES" });
       }
       return nextState;
     }
 
-    case "ADJUDICATE": {
-      return adjudicate(state);
+    case "ADJUDICATE_MOVES": {
+      const allOrders: MoveOrder[] = [
+        ...state.north.orders,
+        ...state.westerlands.orders,
+      ];
+
+      // Apply moves
+      const updatedArmies = state.armies.map((army) => {
+        const order = allOrders.find((o) => o.armyId === army.id);
+        if (order) return { ...army, holdId: order.toHoldId };
+        return army;
+      });
+
+      // Detect battles
+      const pendingBattles = detectBattles(updatedArmies, allOrders);
+
+      if (pendingBattles.length === 0) {
+        // No battles — advance turn immediately
+        return {
+          ...state,
+          turn: state.turn + 1,
+          phase: "planning",
+          armies: updatedArmies,
+          north: { orders: [], submitted: false },
+          westerlands: { orders: [], submitted: false },
+          selectedHoldId: null,
+          selectedArmyIds: [],
+          moveMode: { active: false, validTargets: [] },
+          pendingBattles: [],
+        };
+      }
+
+      // Battles to resolve — enter resolving phase
+      return {
+        ...state,
+        phase: "resolving",
+        armies: updatedArmies,
+        north: { orders: [], submitted: false },
+        westerlands: { orders: [], submitted: false },
+        selectedHoldId: null,
+        selectedArmyIds: [],
+        moveMode: { active: false, validTargets: [] },
+        pendingBattles,
+      };
+    }
+
+    case "BATTLES_RESOLVED": {
+      const { reports } = action;
+
+      // Gather all casualties and fallen across all battles
+      const allCasualties = reports.flatMap((r) => r.casualties);
+      const allFallen = reports.flatMap((r) => r.fallen);
+      const allRetreatingIds = reports.flatMap((r) => r.retreatingArmyIds);
+
+      // Apply casualties and fallen figures
+      let updatedArmies = applyCasualties(state.armies, allCasualties);
+      updatedArmies = applyFallen(updatedArmies, allFallen);
+
+      // Build retreat entries
+      const retreats = buildRetreats(allRetreatingIds, updatedArmies, state.pendingBattles);
+
+      const newBattleReports = [...state.battleReports, ...reports];
+
+      if (retreats.length === 0) {
+        return {
+          ...state,
+          turn: state.turn + 1,
+          phase: "planning",
+          armies: updatedArmies,
+          pendingBattles: [],
+          battleReports: newBattleReports,
+          retreats: [],
+        };
+      }
+
+      return {
+        ...state,
+        phase: "retreat",
+        armies: updatedArmies,
+        pendingBattles: [],
+        battleReports: newBattleReports,
+        retreats,
+      };
+    }
+
+    case "SET_RETREAT": {
+      return {
+        ...state,
+        retreats: state.retreats.map((r) =>
+          r.armyId === action.armyId ? { ...r, chosenHoldId: action.toHoldId } : r
+        ),
+      };
+    }
+
+    case "COMMIT_RETREATS": {
+      let updatedArmies = [...state.armies];
+
+      for (const retreat of state.retreats) {
+        const dest =
+          retreat.chosenHoldId ??
+          retreat.validTargets[0] ??
+          null;
+        if (!dest) continue;
+
+        updatedArmies = updatedArmies.map((a) =>
+          a.id === retreat.armyId ? { ...a, holdId: dest } : a
+        );
+      }
+
+      return {
+        ...state,
+        turn: state.turn + 1,
+        phase: "planning",
+        armies: updatedArmies,
+        retreats: [],
+      };
     }
 
     case "COMBINE_ARMIES": {
@@ -187,14 +398,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         .map((id) => state.armies.find((a) => a.id === id))
         .filter(Boolean) as Army[];
 
-      // Must all be at same hold, same faction
       const holdId = selected[0].holdId;
       const faction = selected[0].faction;
       if (!selected.every((a) => a.holdId === holdId && a.faction === faction)) {
         return state;
       }
 
-      // Largest army is the base (most total units)
       const totalUnits = (a: Army) => a.units.reduce((s, u) => s + u.count, 0);
       const [base, ...rest] = [...selected].sort((a, b) => totalUnits(b) - totalUnits(a));
 
@@ -212,15 +421,14 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         }
       }
 
-      const mergedLeaders = [
-        ...base.leaders,
-        ...rest.flatMap((a) => a.leaders),
-      ];
-
       const merged: Army = {
         ...base,
         units: mergedUnits,
-        leaders: mergedLeaders,
+        leaders: [...base.leaders, ...rest.flatMap((a) => a.leaders)],
+        notables: [
+          ...(base.notables ?? []),
+          ...rest.flatMap((a) => a.notables ?? []),
+        ],
       };
 
       const remainingIds = new Set(rest.map((a) => a.id));
@@ -247,6 +455,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         selectedArmyIds: [],
         moveMode: { active: false, validTargets: [] },
       };
+    }
+
+    case "TOGGLE_BATTLE_LOG": {
+      return { ...state, battleLogOpen: !state.battleLogOpen };
     }
 
     default:

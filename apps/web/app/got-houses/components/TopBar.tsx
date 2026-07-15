@@ -24,7 +24,8 @@ const FACTION_COLORS: Record<Faction, { bg: string; border: string; text: string
 };
 
 export default function TopBar({ state, dispatch }: Props) {
-  const { turn, north, westerlands, adminMode, activeFaction } = state;
+  const { turn, north, westerlands, adminMode, activeFaction, phase } = state;
+  const inPlanningPhase = phase === "planning";
 
   const northSubmitted = north.submitted;
   const westSubmitted = westerlands.submitted;
@@ -234,10 +235,41 @@ export default function TopBar({ state, dispatch }: Props) {
       {/* Submit orders button */}
       <SubmitButton
         faction={activeFaction}
-        submitted={currentSubmitted}
+        submitted={currentSubmitted || !inPlanningPhase}
         orderCount={currentOrders.orders.length}
         onSubmit={() => handleSubmit(activeFaction)}
+        locked={!inPlanningPhase}
       />
+
+      {/* Battle Log toggle */}
+      <button
+        type="button"
+        onClick={() => dispatch({ type: "TOGGLE_BATTLE_LOG" })}
+        style={{
+          fontFamily: "var(--font-mono), monospace",
+          fontSize: 9,
+          color: state.battleLogOpen ? "#c8941a" : state.battleReports.length > 0 ? "#888" : "#333",
+          background: state.battleLogOpen ? "#1a1200" : "transparent",
+          border: `1px solid ${state.battleLogOpen ? "#3a2a00" : "#222"}`,
+          padding: "4px 10px",
+          marginLeft: 8,
+          cursor: "pointer",
+          textTransform: "uppercase",
+          letterSpacing: "0.1em",
+          transition: "color 0.12s, border-color 0.12s",
+          position: "relative",
+        }}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.color = "#c8941a";
+          e.currentTarget.style.borderColor = "#3a2a00";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.color = state.battleLogOpen ? "#c8941a" : state.battleReports.length > 0 ? "#888" : "#333";
+          e.currentTarget.style.borderColor = state.battleLogOpen ? "#3a2a00" : "#222";
+        }}
+      >
+        ⚔ Battles{state.battleReports.length > 0 ? ` (${state.battleReports.length})` : ""}
+      </button>
 
       {/* Admin toggle */}
       <button
@@ -311,13 +343,17 @@ function SubmitButton({
   submitted,
   orderCount,
   onSubmit,
+  locked,
 }: {
   faction: Faction;
   submitted: boolean;
   orderCount: number;
   onSubmit: () => void;
+  locked?: boolean;
 }) {
-  const label = submitted
+  const label = locked
+    ? "⚔ Battle in Progress"
+    : submitted
     ? "Orders Locked ✓"
     : `Submit Orders (${faction === "north" ? "North" : "West"})`;
 

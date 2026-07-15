@@ -1,5 +1,6 @@
 import type { Army, GameState } from "../types";
 
+
 export const INITIAL_ARMIES: Army[] = [
   // ── Northern armies ────────────────────────────────────────────────────
   {
@@ -8,6 +9,12 @@ export const INITIAL_ARMIES: Army[] = [
     holdId: "01",
     faction: "north",
     leaders: [{ name: "Robb Stark", title: "Lord of Winterfell" }],
+    notables: [
+      { name: "Grey Wind", description: "Robb's direwolf — enormous, swift, and utterly fearless in battle." },
+      { name: "Catelyn Tully", description: "Lady Stark; rides with the host as advisor and her son's conscience." },
+      { name: "Theon Greyjoy", description: "Ward of Winterfell; archer and would-be ally of the Iron Islands." },
+      { name: "Ser Rodrik Cassel", description: "Master-at-Arms of Winterfell; veteran knight and loyal guardian." },
+    ],
     units: [
       { house: "Stark", type: "cavalry", count: 1000 },
       { house: "Stark", type: "infantry", count: 2000 },
@@ -22,6 +29,10 @@ export const INITIAL_ARMIES: Army[] = [
     holdId: "02",
     faction: "north",
     leaders: [{ name: "Roose Bolton", title: "Lord of the Dreadfort" }],
+    notables: [
+      { name: "Ramsay Snow", description: "Roose's bastard; a cruel and capable hunter who commands the Dreadfort's kennel-men." },
+      { name: "Locke", description: "Bolton's finest tracker and enforcer — ruthless and efficient." },
+    ],
     units: [
       { house: "Bolton", type: "cavalry", count: 200 },
       { house: "Bolton", type: "infantry", count: 1500 },
@@ -35,6 +46,10 @@ export const INITIAL_ARMIES: Army[] = [
     holdId: "03",
     faction: "north",
     leaders: [{ name: "Wyman Manderly", title: "Lord of White Harbor" }],
+    notables: [
+      { name: "Ser Wylis Manderly", description: "Wyman's heir; a capable if portly knight commanding the household guard." },
+      { name: "Robett Glover", description: "Galbart's brother; present with the harbor forces as liaison to the Glovers." },
+    ],
     units: [
       { house: "Manderly", type: "cavalry", count: 300 },
       { house: "Manderly", type: "infantry", count: 800 },
@@ -51,6 +66,10 @@ export const INITIAL_ARMIES: Army[] = [
     leaders: [
       { name: "Jon Umber", title: "Lord of Last Hearth, 'the Greatjon'" },
     ],
+    notables: [
+      { name: "Smalljon Umber", description: "The Greatjon's son; nearly as large as his father and just as fierce." },
+      { name: "Mors 'Crowfood' Umber", description: "The Greatjon's uncle; old, scarred, and not to be underestimated." },
+    ],
     units: [
       { house: "Umber", type: "cavalry", count: 400 },
       { house: "Umber", type: "infantry", count: 1200 },
@@ -65,6 +84,9 @@ export const INITIAL_ARMIES: Army[] = [
     holdId: "07",
     faction: "north",
     leaders: [{ name: "Galbart Glover", title: "Master of Deepwood Motte" }],
+    notables: [
+      { name: "Larence Snow", description: "Lord Hornwood's bastard; rides with the Glovers as a ward and scout." },
+    ],
     units: [
       { house: "Glover", type: "cavalry", count: 100 },
       { house: "Glover", type: "infantry", count: 600 },
@@ -81,6 +103,11 @@ export const INITIAL_ARMIES: Army[] = [
     holdId: "23",
     faction: "westerlands",
     leaders: [{ name: "Tywin Lannister", title: "Lord of Casterly Rock, Hand of the King" }],
+    notables: [
+      { name: "Ser Kevan Lannister", description: "Tywin's loyal brother and most trusted lieutenant; commands the infantry formations." },
+      { name: "Ser Addam Marbrand", description: "Swift cavalry commander from Ashemark; Tywin's favoured outrider." },
+      { name: "Ser Harys Swyft", description: "Father-in-law to Kevan; manages supply lines for the host." },
+    ],
     units: [
       { house: "Lannister", type: "cavalry", count: 2000 },
       { house: "Lannister", type: "infantry", count: 5000 },
@@ -95,6 +122,11 @@ export const INITIAL_ARMIES: Army[] = [
     holdId: "24",
     faction: "westerlands",
     leaders: [{ name: "Jaime Lannister", title: "Ser, the Kingslayer" }],
+    notables: [
+      { name: "Ser Ilyn Payne", description: "The King's Justice; mute and deadly, rides at Jaime's side." },
+      { name: "Bronn", description: "A sellsword of remarkable skill; attached to the vanguard as Jaime's personal retainer." },
+      { name: "Ser Balon Swann", description: "A knight of the Kingsguard assigned to the vanguard; honourable and capable." },
+    ],
     units: [
       { house: "Lannister", type: "cavalry", count: 1500 },
       { house: "Lannister", type: "infantry", count: 2000 },
@@ -107,6 +139,7 @@ export const INITIAL_ARMIES: Army[] = [
 
 export const INITIAL_GAME_STATE: GameState = {
   turn: 1,
+  phase: "planning",
   armies: INITIAL_ARMIES,
   selectedHoldId: null,
   selectedArmyIds: [],
@@ -115,4 +148,8 @@ export const INITIAL_GAME_STATE: GameState = {
   westerlands: { orders: [], submitted: false },
   adminMode: true,
   activeFaction: "north",
+  pendingBattles: [],
+  battleReports: [],
+  retreats: [],
+  battleLogOpen: false,
 };

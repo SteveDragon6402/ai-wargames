@@ -126,6 +126,57 @@ export default function ArmyCard({ army, isSelected, hasOrder, isLocked, onClick
         ))}
       </div>
 
+      {/* Notables */}
+      {army.notables && army.notables.length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          <div
+            style={{
+              fontFamily: "var(--font-mono), monospace",
+              fontSize: 8,
+              color: "#444",
+              textTransform: "uppercase",
+              letterSpacing: "0.1em",
+              marginBottom: 4,
+              borderBottom: "1px solid #181818",
+              paddingBottom: 3,
+            }}
+          >
+            Notable figures
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            {army.notables.map((n) => (
+              <div key={n.name}>
+                <span
+                  style={{
+                    fontFamily: "var(--font-mono), monospace",
+                    fontSize: 9,
+                    fontWeight: 700,
+                    color: "#888",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.06em",
+                  }}
+                >
+                  {n.name}
+                </span>
+                <span
+                  style={{
+                    fontFamily: "var(--font-mono), monospace",
+                    fontSize: 8,
+                    color: "#555",
+                    display: "block",
+                    marginTop: 1,
+                    fontStyle: "italic",
+                    lineHeight: 1.5,
+                  }}
+                >
+                  {n.description}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Unit breakdown */}
       <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 6 }}>
         {(["cavalry", "infantry", "archers"] as UnitType[]).map((type) => {
