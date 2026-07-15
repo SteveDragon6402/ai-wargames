@@ -166,6 +166,8 @@ export async function POST(req: NextRequest) {
       .join("");
 
     console.log("[got-houses/battle] Raw response length:", rawText.length, "stop_reason:", response.stop_reason);
+    // Also embed full raw text in response so browser console can display it
+    const _rawFull = rawText;
 
     // Strip any markdown fences Claude might still add
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
@@ -218,6 +220,7 @@ export async function POST(req: NextRequest) {
       casualties: Array.isArray(parsed.casualties) ? parsed.casualties : [],
       fallen: Array.isArray(parsed.fallen) ? parsed.fallen : [],
       retreatingArmyIds,
+      _rawFull,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

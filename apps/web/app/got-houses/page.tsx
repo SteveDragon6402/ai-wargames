@@ -49,15 +49,17 @@ export default function GotHousesPage() {
             _debug?: string;
             _error?: string;
             _raw?: string;
+            _rawFull?: string;
           };
 
           if (data._debug) {
             console.warn("⚠ Fallback triggered — reason:", data._debug);
             if (data._error) console.error("  Error detail:", data._error);
-            if (data._raw)   console.log("  Raw Claude output:", data._raw);
+            if (data._raw)   console.log("  Raw Claude output:\n", data._raw);
           } else {
             console.log("✓ Claude response — holdResult:", data.holdResult);
-            console.log("  Narrative preview:", data.narrative?.slice(0, 120) + "…");
+            if (data._rawFull) console.log("  Raw Sonnet output:\n\n" + data._rawFull);
+            console.log("  Narrative:\n\n" + data.narrative);
             console.log("  Casualties:", data.casualties);
             console.log("  Fallen:", data.fallen);
             console.log("  Retreating:", data.retreatingArmyIds);
