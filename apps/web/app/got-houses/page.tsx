@@ -44,8 +44,13 @@ export default function GotHousesPage() {
 
           console.log("← HTTP status:", res.status, res.statusText);
 
-          // Read body regardless of status so we can log it
-          const data = await res.json() as Omit<BattleReport, "id" | "turn" | "holdId"> & {
+          // Capture raw text FIRST before any parsing
+          const rawBody = await res.text();
+          console.log("=== RAW API RESPONSE (full) ===");
+          console.log(rawBody);
+          console.log("=== END RAW RESPONSE ===");
+
+          const data = JSON.parse(rawBody) as Omit<BattleReport, "id" | "turn" | "holdId"> & {
             _debug?: string;
             _error?: string;
             _raw?: string;
@@ -55,11 +60,8 @@ export default function GotHousesPage() {
           if (data._debug) {
             console.warn("⚠ Fallback triggered — reason:", data._debug);
             if (data._error) console.error("  Error detail:", data._error);
-            if (data._raw)   console.log("  Raw Claude output:\n", data._raw);
           } else {
-            console.log("✓ Claude response — holdResult:", data.holdResult);
-            if (data._rawFull) console.log("  Raw Sonnet output:\n\n" + data._rawFull);
-            console.log("  Narrative:\n\n" + data.narrative);
+            console.log("✓ Parsed — holdResult:", data.holdResult);
             console.log("  Casualties:", data.casualties);
             console.log("  Fallen:", data.fallen);
             console.log("  Retreating:", data.retreatingArmyIds);
