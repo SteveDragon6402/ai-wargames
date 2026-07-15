@@ -13,7 +13,6 @@ export interface HoldNodeData {
   isSelected: boolean;
   isMoveTarget: boolean;
   isInMoveMode: boolean;
-  onClick: (holdId: string) => void;
   [key: string]: unknown;
 }
 
@@ -39,7 +38,7 @@ function ArmyDot({ faction }: { faction: "north" | "westerlands" }) {
 }
 
 function HoldNode({ data }: { data: HoldNodeData }) {
-  const { id, label, region, armies, isSelected, isMoveTarget, isInMoveMode, onClick } = data;
+  const { label, region, armies, isSelected, isMoveTarget, isInMoveMode } = data;
 
   const northArmies = armies.filter((a) => a.faction === "north");
   const westArmies = armies.filter((a) => a.faction === "westerlands");
@@ -64,20 +63,19 @@ function HoldNode({ data }: { data: HoldNodeData }) {
     <>
       <Handle type="target" position={Position.Top} style={{ opacity: 0 }} />
       <div
-        onClick={() => onClick(id)}
         style={{
           background: bg,
           border: `1px solid ${borderColor}`,
           boxShadow: glowStyle || undefined,
           borderRadius: 2,
           padding: "4px 7px",
-          minWidth: 80,
-          maxWidth: 110,
+          minWidth: 90,
+          maxWidth: 130,
           cursor: "pointer",
           userSelect: "none",
           transition: "border-color 0.15s, box-shadow 0.15s",
           position: "relative",
-          opacity: isInMoveMode && !isMoveTarget && !isSelected ? 0.5 : 1,
+          opacity: isInMoveMode && !isMoveTarget && !isSelected ? 0.4 : 1,
         }}
       >
         {/* Hold name */}

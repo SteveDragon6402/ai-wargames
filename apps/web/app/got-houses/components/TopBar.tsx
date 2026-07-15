@@ -118,46 +118,66 @@ export default function TopBar({ state, dispatch }: Props) {
         <div
           style={{
             display: "flex",
-            height: "100%",
+            flexDirection: "column",
             borderRight: "1px solid #1e1e1e",
+            height: "100%",
           }}
         >
-          {(["north", "westerlands"] as Faction[]).map((f) => {
-            const active = activeFaction === f;
-            const c = FACTION_COLORS[f];
-            const submitted = f === "north" ? northSubmitted : westSubmitted;
-            return (
-              <button
-                key={f}
-                type="button"
-                onClick={() => handleSwitchFaction(f)}
-                style={{
-                  fontFamily: "var(--font-mono), monospace",
-                  fontSize: 9,
-                  fontWeight: 700,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  color: active ? c.text : "#444",
-                  background: active ? c.activeBg : "transparent",
-                  border: "none",
-                  borderRight: "1px solid #1e1e1e",
-                  padding: "0 14px",
-                  height: "100%",
-                  cursor: "pointer",
-                  borderBottom: active ? `2px solid ${c.text}` : "2px solid transparent",
-                  transition: "color 0.12s, background 0.12s",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-              >
-                {f === "north" ? "The North" : "Westerlands"}
-                {submitted && (
-                  <span style={{ color: "#5ecb6b", fontSize: 8 }}>✓</span>
-                )}
-              </button>
-            );
-          })}
+          <div style={{ display: "flex", height: "100%" }}>
+            {(["north", "westerlands"] as Faction[]).map((f) => {
+              const active = activeFaction === f;
+              const c = FACTION_COLORS[f];
+              const submitted = f === "north" ? northSubmitted : westSubmitted;
+              return (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => handleSwitchFaction(f)}
+                  style={{
+                    fontFamily: "var(--font-mono), monospace",
+                    fontSize: 10,
+                    fontWeight: active ? 700 : 400,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.1em",
+                    color: active ? c.text : "#333",
+                    background: active ? c.activeBg : "transparent",
+                    border: "none",
+                    borderRight: "1px solid #1e1e1e",
+                    padding: "0 18px",
+                    height: "100%",
+                    cursor: submitted ? "default" : "pointer",
+                    borderBottom: active ? `2px solid ${c.text}` : "2px solid transparent",
+                    transition: "color 0.12s, background 0.12s",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                  onMouseEnter={(e) => {
+                    if (!active) e.currentTarget.style.color = c.text;
+                  }}
+                  onMouseLeave={(e) => {
+                    if (!active) e.currentTarget.style.color = "#333";
+                  }}
+                >
+                  <div
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: "50%",
+                      background: active ? c.text : "#333",
+                      flexShrink: 0,
+                    }}
+                  />
+                  {f === "north" ? "The North" : "Westerlands"}
+                  {submitted ? (
+                    <span style={{ color: "#5ecb6b", fontSize: 9, fontWeight: 700 }}>✓ Locked</span>
+                  ) : active ? (
+                    <span style={{ color: c.text, fontSize: 8, opacity: 0.6 }}>▶ ordering</span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
 

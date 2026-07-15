@@ -462,6 +462,13 @@ export default function HomePage() {
                       >
                         {soloCreating ? "Starting…" : "Play both sides"}
                       </button>
+                      <a
+                        href="/got-houses"
+                        className="btn-primary"
+                        style={{ padding: "6px 12px", fontSize: "12px", textDecoration: "none" }}
+                      >
+                        GoT Houses Mode
+                      </a>
                       <button
                         type="button"
                         disabled={adminLoading}

@@ -113,6 +113,6 @@ export const INITIAL_GAME_STATE: GameState = {
   moveMode: { active: false, validTargets: [] },
   north: { orders: [], submitted: false },
   westerlands: { orders: [], submitted: false },
-  adminMode: false,
+  adminMode: true,
   activeFaction: "north",
 };

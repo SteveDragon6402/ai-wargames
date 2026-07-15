@@ -21,8 +21,8 @@ import type { GameState, GameAction, Army, MoveOrder } from "../types";
 import HoldNode, { type HoldNodeData } from "./HoldNode";
 
 // Scale factors: (x: 0–80) → rfX, (y: 0–100, north=up) → rfY
-const SCALE_X = 14;
-const SCALE_Y = 11;
+const SCALE_X = 32;
+const SCALE_Y = 28;
 
 function toRf(x: number, y: number) {
   return { x: x * SCALE_X, y: (100 - y) * SCALE_Y };
@@ -117,7 +117,6 @@ function MapInner({ state, dispatch }: Props) {
         isSelected,
         isMoveTarget,
         isInMoveMode,
-        onClick: handleHoldClick,
       };
 
       return {
@@ -183,13 +182,14 @@ function MapInner({ state, dispatch }: Props) {
       nodeTypes={nodeTypes}
       fitView
       fitViewOptions={{ padding: 0.08 }}
-      minZoom={0.2}
+      minZoom={0.1}
       maxZoom={3}
       nodesDraggable={false}
       nodesConnectable={false}
       elementsSelectable={false}
       panOnScroll={true}
       zoomOnScroll={true}
+      onNodeClick={(_event, node) => handleHoldClick(node.id)}
       style={{ background: "#080808" }}
     >
       <Background
