@@ -150,7 +150,7 @@ export async function POST(req: NextRequest) {
     try {
       response = await client.messages.create({
         model: "claude-sonnet-5",
-        max_tokens: 4000,
+        max_tokens: 8000,
         system: SYSTEM_PROMPT,
         messages: [{ role: "user", content: userMessage }],
       });
@@ -173,7 +173,7 @@ export async function POST(req: NextRequest) {
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       console.error("[got-houses/battle] No JSON found. Raw (first 800 chars):", rawText.slice(0, 800));
-      return NextResponse.json({ ...fallbackReport(battle), _debug: "no_json", _raw: rawText.slice(0, 800) });
+      return NextResponse.json({ ...fallbackReport(battle), _debug: "no_json", _raw: rawText });
     }
 
     let parsed: {
