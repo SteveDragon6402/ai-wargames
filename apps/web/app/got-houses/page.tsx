@@ -28,16 +28,43 @@ export default function GotHousesPage() {
       const reports: BattleReport[] = [];
 
       for (const battle of state.pendingBattles) {
+        console.group(`%c⚔ Battle: hold ${battle.holdId} — turn ${state.turn}`, "color:#c8941a;font-weight:bold");
+        console.log("North armies:", battle.northArmies.map((a) => `${a.name} (${a.id})`));
+        console.log("West armies:", battle.westArmies.map((a) => `${a.name} (${a.id})`));
+        console.log("North from:", battle.northFromHoldId ?? "(defender)");
+        console.log("West from:", battle.westFromHoldId ?? "(defender)");
+
         try {
+          console.log("→ POSTing to /api/got-houses/battle …");
           const res = await fetch("/api/got-houses/battle", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ battle, holds: HOLDS }),
           });
 
-          if (!res.ok) throw new Error(`Battle API ${res.status}`);
+          console.log("← HTTP status:", res.status, res.statusText);
 
-          const data = await res.json() as Omit<BattleReport, "id" | "turn" | "holdId">;
+          // Read body regardless of status so we can log it
+          const data = await res.json() as Omit<BattleReport, "id" | "turn" | "holdId"> & {
+            _debug?: string;
+            _error?: string;
+            _raw?: string;
+          };
+
+          if (data._debug) {
+            console.warn("⚠ Fallback triggered — reason:", data._debug);
+            if (data._error) console.error("  Error detail:", data._error);
+            if (data._raw)   console.log("  Raw Claude output:", data._raw);
+          } else {
+            console.log("✓ Claude response — holdResult:", data.holdResult);
+            console.log("  Narrative preview:", data.narrative?.slice(0, 120) + "…");
+            console.log("  Casualties:", data.casualties);
+            console.log("  Fallen:", data.fallen);
+            console.log("  Retreating:", data.retreatingArmyIds);
+          }
+
+          if (!res.ok) throw new Error(`Battle API ${res.status}: ${data._error ?? res.statusText}`);
+
           reports.push({
             ...data,
             id: crypto.randomUUID(),
@@ -45,8 +72,7 @@ export default function GotHousesPage() {
             holdId: battle.holdId,
           });
         } catch (err) {
-          console.error("Battle adjudication failed:", err);
-          // Fallback: contested with no losses
+          console.error("✗ Fetch/parse error:", err);
           reports.push({
             id: crypto.randomUUID(),
             turn: state.turn,
@@ -58,6 +84,8 @@ export default function GotHousesPage() {
             fallen: [],
             retreatingArmyIds: [],
           });
+        } finally {
+          console.groupEnd();
         }
       }
 
