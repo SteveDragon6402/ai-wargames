@@ -53,7 +53,7 @@ export default function GotHousesPage() {
             holdId: battle.holdId,
             narrative:
               "The two forces clashed in a bloody but inconclusive engagement. Both sides withdrew to regroup, neither willing to press the advantage.",
-            holdResult: "contested",
+            holdResult: "abandoned",
             casualties: [],
             fallen: [],
             retreatingArmyIds: [],

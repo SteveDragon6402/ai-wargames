@@ -325,7 +325,30 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       // Gather all casualties and fallen across all battles
       const allCasualties = reports.flatMap((r) => r.casualties);
       const allFallen = reports.flatMap((r) => r.fallen);
-      const allRetreatingIds = reports.flatMap((r) => r.retreatingArmyIds);
+
+      // Enforce retreat logic from holdResult — no enemies may share a location
+      const correctedReports = reports.map((report) => {
+        const battle = state.pendingBattles.find((b) => b.holdId === report.holdId);
+        if (!battle) return report;
+
+        const northIds = battle.northArmies.map((a) => a.id);
+        const westIds = battle.westArmies.map((a) => a.id);
+        let retreating = [...report.retreatingArmyIds];
+
+        if (report.holdResult === "north") {
+          for (const id of westIds) if (!retreating.includes(id)) retreating.push(id);
+          retreating = retreating.filter((id) => !northIds.includes(id));
+        } else if (report.holdResult === "westerlands") {
+          for (const id of northIds) if (!retreating.includes(id)) retreating.push(id);
+          retreating = retreating.filter((id) => !westIds.includes(id));
+        } else {
+          // abandoned (or any unknown/contested value) → both retreat
+          retreating = [...northIds, ...westIds];
+        }
+        return { ...report, retreatingArmyIds: retreating };
+      });
+
+      const allRetreatingIds = correctedReports.flatMap((r) => r.retreatingArmyIds);
 
       // Apply casualties and fallen figures
       let updatedArmies = applyCasualties(state.armies, allCasualties);
@@ -334,7 +357,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       // Build retreat entries
       const retreats = buildRetreats(allRetreatingIds, updatedArmies, state.pendingBattles);
 
-      const newBattleReports = [...state.battleReports, ...reports];
+      const newBattleReports = [...state.battleReports, ...correctedReports];
 
       if (retreats.length === 0) {
         return {

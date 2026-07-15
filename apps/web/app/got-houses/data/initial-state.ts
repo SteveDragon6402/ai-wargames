@@ -6,7 +6,7 @@ export const INITIAL_ARMIES: Army[] = [
   {
     id: "army-robb",
     name: "Robb Stark's Host",
-    holdId: "01",
+    holdId: "08",
     faction: "north",
     leaders: [{ name: "Robb Stark", title: "Lord of Winterfell" }],
     notables: [
@@ -26,7 +26,7 @@ export const INITIAL_ARMIES: Army[] = [
   {
     id: "army-bolton",
     name: "Bolton Spearmen",
-    holdId: "02",
+    holdId: "08",
     faction: "north",
     leaders: [{ name: "Roose Bolton", title: "Lord of the Dreadfort" }],
     notables: [
@@ -43,7 +43,7 @@ export const INITIAL_ARMIES: Army[] = [
   {
     id: "army-manderly",
     name: "Manderly Fleet-Guard",
-    holdId: "03",
+    holdId: "08",
     faction: "north",
     leaders: [{ name: "Wyman Manderly", title: "Lord of White Harbor" }],
     notables: [
@@ -61,7 +61,7 @@ export const INITIAL_ARMIES: Army[] = [
   {
     id: "army-greatjon",
     name: "Greatjon's Umbers",
-    holdId: "05",
+    holdId: "08",
     faction: "north",
     leaders: [
       { name: "Jon Umber", title: "Lord of Last Hearth, 'the Greatjon'" },
@@ -81,7 +81,7 @@ export const INITIAL_ARMIES: Army[] = [
   {
     id: "army-glover",
     name: "Glover's Wardens",
-    holdId: "07",
+    holdId: "08",
     faction: "north",
     leaders: [{ name: "Galbart Glover", title: "Master of Deepwood Motte" }],
     notables: [
@@ -100,7 +100,7 @@ export const INITIAL_ARMIES: Army[] = [
   {
     id: "army-tywin",
     name: "Tywin's Host",
-    holdId: "23",
+    holdId: "18",
     faction: "westerlands",
     leaders: [{ name: "Tywin Lannister", title: "Lord of Casterly Rock, Hand of the King" }],
     notables: [
@@ -119,7 +119,7 @@ export const INITIAL_ARMIES: Army[] = [
   {
     id: "army-jaime",
     name: "Jaime's Vanguard",
-    holdId: "24",
+    holdId: "16",
     faction: "westerlands",
     leaders: [{ name: "Jaime Lannister", title: "Ser, the Kingslayer" }],
     notables: [

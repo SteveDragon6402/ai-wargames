@@ -94,7 +94,7 @@ export interface BattleReport {
   holdId: string;
   /** Claude's ASOIAF-style narrative (2–3 paragraphs) */
   narrative: string;
-  holdResult: Faction | "contested" | "abandoned";
+  holdResult: Faction | "abandoned";
   casualties: Casualty[];
   fallen: FallenFigure[];
   retreatingArmyIds: string[];

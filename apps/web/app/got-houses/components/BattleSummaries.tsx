@@ -12,15 +12,13 @@ interface Props {
 const HOLD_RESULT_LABELS: Record<BattleReport["holdResult"], string> = {
   north: "North holds",
   westerlands: "Westerlands holds",
-  contested: "Contested",
-  abandoned: "Abandoned",
+  abandoned: "Both sides withdraw",
 };
 
 const HOLD_RESULT_COLORS: Record<BattleReport["holdResult"], string> = {
   north: "#3a6ea8",
   westerlands: "#b03030",
-  contested: "#8b6914",
-  abandoned: "#444",
+  abandoned: "#555",
 };
 
 /** Highlight names of commanders and notables in a narrative paragraph. */
