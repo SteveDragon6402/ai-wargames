@@ -127,46 +127,67 @@ function fallbackReport(battle: BattleContext): Omit<BattleReport, "id" | "turn"
 }
 
 export async function POST(req: NextRequest) {
+  let battle: BattleContext | null = null;
   try {
     const body = await req.json() as { battle: BattleContext; holds: Hold[] };
-    const { battle, holds } = body;
+    battle = body.battle;
+    const { holds } = body;
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
-      console.warn("ANTHROPIC_API_KEY not set — returning fallback battle result");
-      return NextResponse.json(fallbackReport(battle));
+      console.warn("[got-houses/battle] ANTHROPIC_API_KEY not set — using fallback");
+      return NextResponse.json({ ...fallbackReport(battle), _debug: "no_api_key" });
     }
 
     const holdsMap = new Map(holds.map((h) => [h.id, h]));
     const userMessage = buildBattleMessage(battle, holdsMap);
 
-    const client = new Anthropic({ apiKey });
-    const response = await client.messages.create({
-      model: "claude-sonnet-5",
-      max_tokens: 4000,
-      system: SYSTEM_PROMPT,
-      messages: [{ role: "user", content: userMessage }],
-    });
+    console.log("[got-houses/battle] Calling claude-sonnet-5 for hold:", battle.holdId);
 
-    const rawText = response.content
+    const client = new Anthropic({ apiKey });
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let response: any;
+    try {
+      response = await client.messages.create({
+        model: "claude-sonnet-5",
+        max_tokens: 4000,
+        system: SYSTEM_PROMPT,
+        messages: [{ role: "user", content: userMessage }],
+      });
+    } catch (apiErr) {
+      const msg = apiErr instanceof Error ? apiErr.message : String(apiErr);
+      console.error("[got-houses/battle] Anthropic API error:", msg);
+      return NextResponse.json({ ...fallbackReport(battle), _debug: "api_error", _error: msg });
+    }
+
+    const rawText = (response.content as Array<{ type: string; text?: string }>)
       .filter((b) => b.type === "text")
-      .map((b) => (b as { type: "text"; text: string }).text)
+      .map((b) => b.text ?? "")
       .join("");
+
+    console.log("[got-houses/battle] Raw response length:", rawText.length, "stop_reason:", response.stop_reason);
 
     // Strip any markdown fences Claude might still add
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.error("No JSON found in Claude response:", rawText.slice(0, 500));
-      return NextResponse.json(fallbackReport(battle));
+      console.error("[got-houses/battle] No JSON found. Raw (first 800 chars):", rawText.slice(0, 800));
+      return NextResponse.json({ ...fallbackReport(battle), _debug: "no_json", _raw: rawText.slice(0, 800) });
     }
 
-    const parsed = JSON.parse(jsonMatch[0]) as {
+    let parsed: {
       narrative: string;
       holdResult: BattleReport["holdResult"];
       casualties: Casualty[];
       fallen: FallenFigure[];
       retreatingArmyIds: string[];
     };
+    try {
+      parsed = JSON.parse(jsonMatch[0]);
+    } catch (parseErr) {
+      const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
+      console.error("[got-houses/battle] JSON parse error:", msg, "\nExtracted:", jsonMatch[0].slice(0, 400));
+      return NextResponse.json({ ...fallbackReport(battle), _debug: "json_parse_error", _error: msg });
+    }
 
     // Enforce retreat logic: make sure the right armies are in retreatingArmyIds
     const northIds = battle.northArmies.map((a) => a.id);
@@ -174,22 +195,20 @@ export async function POST(req: NextRequest) {
     let retreatingArmyIds = Array.isArray(parsed.retreatingArmyIds) ? parsed.retreatingArmyIds : [];
 
     if (parsed.holdResult === "north") {
-      // All westerlands armies must retreat
       for (const id of westIds) {
         if (!retreatingArmyIds.includes(id)) retreatingArmyIds.push(id);
       }
-      // North armies should NOT be retreating
       retreatingArmyIds = retreatingArmyIds.filter((id) => !northIds.includes(id));
     } else if (parsed.holdResult === "westerlands") {
-      // All north armies must retreat
       for (const id of northIds) {
         if (!retreatingArmyIds.includes(id)) retreatingArmyIds.push(id);
       }
       retreatingArmyIds = retreatingArmyIds.filter((id) => !westIds.includes(id));
     } else {
-      // abandoned (or any unknown value) — both sides retreat
       retreatingArmyIds = [...northIds, ...westIds];
     }
+
+    console.log("[got-houses/battle] Success — holdResult:", parsed.holdResult, "retreating:", retreatingArmyIds);
 
     return NextResponse.json({
       narrative: parsed.narrative ?? "",
@@ -201,7 +220,11 @@ export async function POST(req: NextRequest) {
       retreatingArmyIds,
     });
   } catch (err) {
-    console.error("Battle adjudication error:", err);
-    return NextResponse.json({ error: "Adjudication failed" }, { status: 500 });
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[got-houses/battle] Unexpected error:", msg);
+    if (battle) {
+      return NextResponse.json({ ...fallbackReport(battle), _debug: "unexpected_error", _error: msg });
+    }
+    return NextResponse.json({ error: "Adjudication failed", _debug: "unexpected_error", _error: msg }, { status: 500 });
   }
 }
