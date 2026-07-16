@@ -189,26 +189,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ...fallbackReport(battle), _debug: "api_error", _error: lastError });
     }
 
-    // Log the full content array so we can see every block type Sonnet 5 returns
-    console.log("[got-houses/battle] stop_reason:", response.stop_reason, "content blocks:", JSON.stringify(response.content));
+    // Dump the entire response so we can see exactly what Sonnet 5 returned
+    const _responseDebug = JSON.stringify(response);
+    console.log("[got-houses/battle] full response:", _responseDebug);
 
     // Extract text from ALL block types (text + thinking + any other)
     const rawText = (response.content as Array<Record<string, unknown>>)
       .map((b) => {
         if (typeof b.text === "string") return b.text;
         if (typeof b.thinking === "string") return b.thinking;
-        return "";
+        // Capture anything else with string values
+        return Object.values(b).filter((v) => typeof v === "string").join("");
       })
       .join("");
 
-    console.log("[got-houses/battle] rawText length:", rawText.length);
+    console.log("[got-houses/battle] rawText length:", rawText.length, "stop_reason:", response.stop_reason);
     const _rawFull = rawText;
 
     // Strip any markdown fences Claude might still add
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       console.error("[got-houses/battle] No JSON found. Raw (first 800 chars):", rawText.slice(0, 800));
-      return NextResponse.json({ ...fallbackReport(battle), _debug: "no_json", _raw: rawText });
+      return NextResponse.json({ ...fallbackReport(battle), _debug: "no_json", _raw: rawText, _responseDebug });
     }
 
     let parsed: {
@@ -224,7 +226,7 @@ export async function POST(req: NextRequest) {
     } catch (parseErr) {
       const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
       console.error("[got-houses/battle] JSON parse error:", msg);
-      return NextResponse.json({ ...fallbackReport(battle), _debug: "json_parse_error", _error: msg, _raw: rawText });
+      return NextResponse.json({ ...fallbackReport(battle), _debug: "json_parse_error", _error: msg, _raw: rawText, _responseDebug });
     }
 
     // Enforce retreat logic: make sure the right armies are in retreatingArmyIds

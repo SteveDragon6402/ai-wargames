@@ -122,12 +122,14 @@ export default function GotHousesPage() {
             _error?: string;
             _raw?: string;
             _rawFull?: string;
+            _responseDebug?: string;
           };
 
           if (data._debug) {
             console.warn("⚠ Fallback triggered — reason:", data._debug);
             if (data._error) console.error("  Error detail:", data._error);
-            if (data._raw) { console.log("=== RAW CLAUDE TEXT ==="); console.log(data._raw); console.log("=== END CLAUDE TEXT ==="); }
+            if (data._raw) { console.log("=== RAW CLAUDE TEXT ==="); console.log(data._raw); console.log("=== END ==="); }
+            if (data._responseDebug) { console.log("=== FULL ANTHROPIC RESPONSE OBJECT ==="); console.log(data._responseDebug); console.log("=== END ==="); }
           } else {
             console.log("✓ Parsed — holdResult:", data.holdResult);
             console.log("  Casualties:", data.casualties);
