@@ -193,8 +193,8 @@ export async function POST(req: NextRequest) {
       parsed = JSON.parse(jsonMatch[0]);
     } catch (parseErr) {
       const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
-      console.error("[got-houses/battle] JSON parse error:", msg, "\nExtracted:", jsonMatch[0].slice(0, 400));
-      return NextResponse.json({ ...fallbackReport(battle), _debug: "json_parse_error", _error: msg });
+      console.error("[got-houses/battle] JSON parse error:", msg);
+      return NextResponse.json({ ...fallbackReport(battle), _debug: "json_parse_error", _error: msg, _raw: rawText });
     }
 
     // Enforce retreat logic: make sure the right armies are in retreatingArmyIds
