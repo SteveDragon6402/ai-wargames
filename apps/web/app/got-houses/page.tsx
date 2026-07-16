@@ -113,9 +113,15 @@ export default function GotHousesPage() {
 
           // Capture raw text FIRST before any parsing
           const rawBody = await res.text();
-          console.log("=== RAW API RESPONSE (full) ===");
+          console.log("=== RAW API RESPONSE BODY ===");
           console.log(rawBody);
-          console.log("=== END RAW RESPONSE ===");
+          console.log("=== END RAW API RESPONSE BODY ===");
+
+          let parsedForInspect: unknown;
+          try { parsedForInspect = JSON.parse(rawBody); } catch { parsedForInspect = rawBody; }
+          console.log("=== PARSED RESPONSE OBJECT ===");
+          console.log(parsedForInspect);
+          console.log("=== END PARSED RESPONSE OBJECT ===");
 
           const data = JSON.parse(rawBody) as Omit<BattleReport, "id" | "turn" | "holdId"> & {
             _debug?: string;
