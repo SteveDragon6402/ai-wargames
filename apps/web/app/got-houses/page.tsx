@@ -121,6 +121,7 @@ export default function GotHousesPage() {
           if (data._debug) {
             console.warn("⚠ Fallback triggered — reason:", data._debug);
             if (data._error) console.error("  Error detail:", data._error);
+            if (data._raw) { console.log("=== RAW CLAUDE TEXT ==="); console.log(data._raw); console.log("=== END CLAUDE TEXT ==="); }
           } else {
             console.log("✓ Parsed — holdResult:", data.holdResult);
             console.log("  Casualties:", data.casualties);
