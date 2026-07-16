@@ -81,7 +81,7 @@ This turn: ${army.moveType} (moves since last rest: ${army.movesSinceRest})`;
 
     const client = new Anthropic({ apiKey });
     const response = await client.messages.create({
-      model: "claude-haiku-4-5-20251001",
+      model: "claude-haiku-4-5",
       max_tokens: 2000,
       system: [
         {

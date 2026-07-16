@@ -17,7 +17,7 @@ export default function GotHousesPage() {
   const tirednessUpdatedRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (state.phase !== "resolving" || state.pendingBattles.length === 0) {
+    if (state.phase !== "resolving") {
       resolvingRef.current = false;
       return;
     }
@@ -84,6 +84,12 @@ export default function GotHousesPage() {
     }
 
     resolvingRef.current = true;
+
+    // Peaceful turn — tiredness already updated, no battles to fight
+    if (state.pendingBattles.length === 0) {
+      dispatch({ type: "BATTLES_RESOLVED", reports: [] });
+      return;
+    }
 
     async function runBattles() {
       const reports: BattleReport[] = [];

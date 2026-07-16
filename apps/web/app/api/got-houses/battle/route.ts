@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import type { BattleContext, BattleReport, Casualty, FallenFigure, Hold } from "@/app/got-houses/types";
+import type { BattleContext, BattleReport, Casualty, FallenFigure, Hold, ArmyConditionUpdate } from "@/app/got-houses/types";
 
 const SYSTEM_PROMPT = `You are a deep scholar of George R.R. Martin's A Song of Ice and Fire and an expert in medieval military history. You have encyclopaedic knowledge of every house, lord, commander, character, and creature in Westeros — their psychology, their fighting style, and their history. You reason about battles using authentic medieval military doctrine: terrain advantage, troop-type matchups (cavalry shock, archer range, infantry mass), supply lines, morale cascades, leadership quality, and the fog of war. You understand how GRRM's characters think and fight: Robb's wolf-pack instinct and speed, Tywin's cold, patient precision and use of reserves, Jaime's reckless brilliance and personal courage, Roose's icy patience and calculated treachery. You write in the voice of a Westerosi maester chronicling events for the Citadel — vivid, measured, specific, and unflinching. Always respond with valid JSON only — no prose, no markdown fences, no commentary outside the JSON object.`;
 
@@ -90,8 +90,13 @@ Respond with this exact JSON object — no other text, no markdown fences:
   "fallen": [
     {"armyId": "exact-id", "name": "exact name as listed above", "isLeader": true or false}
   ],
-  "retreatingArmyIds": ["exact-id", ...]
-}`;
+  "retreatingArmyIds": ["exact-id", ...],
+  "conditionUpdates": [
+    {"armyId": "exact-id", "morale": "one vivid sentence describing morale after this battle", "tiredness": "one vivid sentence describing physical condition after this battle"}
+  ]
+}
+
+conditionUpdates must include one entry for every army involved. Morale and tiredness should be qualitative, vivid, and specific to the outcome — winners feel pride or grim satisfaction, losers feel broken or shamed. Tired men who fought all day should feel it. Fresh troops who routed an enemy feel elated. Never use numbers.`;
 }
 
 function fallbackReport(battle: BattleContext): Omit<BattleReport, "id" | "turn" | "holdId"> {
@@ -182,6 +187,7 @@ export async function POST(req: NextRequest) {
       casualties: Casualty[];
       fallen: FallenFigure[];
       retreatingArmyIds: string[];
+      conditionUpdates?: ArmyConditionUpdate[];
     };
     try {
       parsed = JSON.parse(jsonMatch[0]);
@@ -220,6 +226,7 @@ export async function POST(req: NextRequest) {
       casualties: Array.isArray(parsed.casualties) ? parsed.casualties : [],
       fallen: Array.isArray(parsed.fallen) ? parsed.fallen : [],
       retreatingArmyIds,
+      conditionUpdates: Array.isArray(parsed.conditionUpdates) ? parsed.conditionUpdates : [],
       _rawFull,
     });
   } catch (err) {

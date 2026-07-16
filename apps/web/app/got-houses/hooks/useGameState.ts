@@ -11,6 +11,7 @@ import type {
   Casualty,
   FallenFigure,
   Hold,
+  ArmyConditionUpdate,
 } from "../types";
 import { INITIAL_GAME_STATE } from "../data/initial-state";
 import { HOLDS_MAP } from "../data/holds";
@@ -326,22 +327,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
       const pendingBattles = detectBattles(updatedArmies, allOrders);
 
-      if (pendingBattles.length === 0) {
-        return {
-          ...state,
-          turn: state.turn + 1,
-          phase: "planning",
-          armies: updatedArmies,
-          north: { orders: [], submitted: false },
-          westerlands: { orders: [], submitted: false },
-          selectedHoldId: null,
-          selectedArmyIds: [],
-          moveMode: { active: false, validTargets: [] },
-          pendingBattles: [],
-          turnHistory: [...(state.turnHistory ?? []), newTurnHistory],
-        };
-      }
-
+      // Always enter "resolving" so tiredness runs every turn before advancing
       return {
         ...state,
         phase: "resolving",
@@ -386,10 +372,20 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       });
 
       const allRetreatingIds = correctedReports.flatMap((r) => r.retreatingArmyIds);
+      const allConditionUpdates = correctedReports.flatMap((r) => r.conditionUpdates ?? []);
 
       // Apply casualties and fallen figures
       let updatedArmies = applyCasualties(state.armies, allCasualties);
       updatedArmies = applyFallen(updatedArmies, allFallen);
+
+      // Apply post-battle qualitative morale + tiredness
+      if (allConditionUpdates.length > 0) {
+        updatedArmies = updatedArmies.map((army) => {
+          const upd = allConditionUpdates.find((u: ArmyConditionUpdate) => u.armyId === army.id);
+          if (!upd) return army;
+          return { ...army, morale: upd.morale, tiredness: upd.tiredness };
+        });
+      }
 
       // Build retreat entries
       const retreats = buildRetreats(allRetreatingIds, updatedArmies, state.pendingBattles);

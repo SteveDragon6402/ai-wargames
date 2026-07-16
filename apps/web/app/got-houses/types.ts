@@ -90,6 +90,13 @@ export interface FallenFigure {
   isLeader: boolean;
 }
 
+/** Post-battle qualitative morale + tiredness update for one army */
+export interface ArmyConditionUpdate {
+  armyId: string;
+  morale: string;
+  tiredness: string;
+}
+
 export interface BattleReport {
   id: string;
   turn: number;
@@ -100,6 +107,8 @@ export interface BattleReport {
   casualties: Casualty[];
   fallen: FallenFigure[];
   retreatingArmyIds: string[];
+  /** Qualitative morale + tiredness after the battle for each involved army */
+  conditionUpdates?: ArmyConditionUpdate[];
 }
 
 export interface BattleContext {
