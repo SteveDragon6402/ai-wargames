@@ -218,6 +218,25 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ...fallbackReport(battle), _debug: "no_json", _raw: rawText, _responseDebug });
     }
 
+    // Sanitise: replace any literal newlines/carriage-returns inside JSON string
+    // values with their escape sequences (Claude occasionally emits a bare \n
+    // instead of \\n inside a quoted value, which breaks JSON.parse).
+    function sanitiseJson(str: string): string {
+      let inString = false;
+      let escaped = false;
+      let out = "";
+      for (let i = 0; i < str.length; i++) {
+        const ch = str[i];
+        if (escaped) { escaped = false; out += ch; continue; }
+        if (ch === "\\" && inString) { escaped = true; out += ch; continue; }
+        if (ch === '"') { inString = !inString; out += ch; continue; }
+        if (inString && ch === "\n") { out += "\\n"; continue; }
+        if (inString && ch === "\r") { out += "\\r"; continue; }
+        out += ch;
+      }
+      return out;
+    }
+
     let parsed: {
       narrative: string;
       holdResult: BattleReport["holdResult"];
@@ -227,7 +246,7 @@ export async function POST(req: NextRequest) {
       conditionUpdates?: ArmyConditionUpdate[];
     };
     try {
-      parsed = JSON.parse(jsonMatch[0]);
+      parsed = JSON.parse(sanitiseJson(jsonMatch[0]));
     } catch (parseErr) {
       const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
       console.error("[got-houses/battle] JSON parse error:", msg);
