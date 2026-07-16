@@ -168,13 +168,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ...fallbackReport(battle), _debug: "api_error", _error: msg });
     }
 
-    const rawText = (response.content as Array<{ type: string; text?: string }>)
-      .filter((b) => b.type === "text")
-      .map((b) => b.text ?? "")
+    // Log the full content array so we can see every block type Sonnet 5 returns
+    console.log("[got-houses/battle] stop_reason:", response.stop_reason, "content blocks:", JSON.stringify(response.content));
+
+    // Extract text from ALL block types (text + thinking + any other)
+    const rawText = (response.content as Array<Record<string, unknown>>)
+      .map((b) => {
+        if (typeof b.text === "string") return b.text;
+        if (typeof b.thinking === "string") return b.thinking;
+        return "";
+      })
       .join("");
 
-    console.log("[got-houses/battle] Raw response length:", rawText.length, "stop_reason:", response.stop_reason);
-    // Also embed full raw text in response so browser console can display it
+    console.log("[got-houses/battle] rawText length:", rawText.length);
     const _rawFull = rawText;
 
     // Strip any markdown fences Claude might still add
