@@ -171,6 +171,9 @@ export async function POST(req: NextRequest) {
         response = await client.messages.create({
           model,
           max_tokens: MAX_TOKENS,
+          // Disable adaptive thinking — all tokens go to output, not internal reasoning
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          thinking: { type: "disabled" } as any,
           system: SYSTEM_PROMPT,
           messages: [{ role: "user", content: userMessage }],
         });
