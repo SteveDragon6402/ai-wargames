@@ -155,17 +155,38 @@ export async function POST(req: NextRequest) {
     const client = new Anthropic({ apiKey });
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     let response: any;
-    try {
-      response = await client.messages.create({
-        model: "claude-sonnet-5",
-        max_tokens: MAX_TOKENS,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: userMessage }],
-      });
-    } catch (apiErr) {
-      const msg = apiErr instanceof Error ? apiErr.message : String(apiErr);
-      console.error("[got-houses/battle] Anthropic API error:", msg);
-      return NextResponse.json({ ...fallbackReport(battle), _debug: "api_error", _error: msg });
+
+    // Try Sonnet 5 up to 3 times (with backoff), then fall back to Haiku
+    const MODELS = ["claude-sonnet-5", "claude-sonnet-5", "claude-haiku-4-5"];
+    let lastError = "";
+    let succeeded = false;
+    for (let attempt = 0; attempt < MODELS.length; attempt++) {
+      const model = MODELS[attempt];
+      if (attempt > 0) {
+        const delay = attempt * 1500;
+        console.log(`[got-houses/battle] Retrying with ${model} in ${delay}ms (attempt ${attempt + 1})`);
+        await new Promise((r) => setTimeout(r, delay));
+      }
+      try {
+        response = await client.messages.create({
+          model,
+          max_tokens: MAX_TOKENS,
+          system: SYSTEM_PROMPT,
+          messages: [{ role: "user", content: userMessage }],
+        });
+        console.log(`[got-houses/battle] Success with ${model} on attempt ${attempt + 1}`);
+        succeeded = true;
+        break;
+      } catch (apiErr) {
+        lastError = apiErr instanceof Error ? apiErr.message : String(apiErr);
+        const isOverloaded = lastError.includes("529") || lastError.toLowerCase().includes("overload");
+        console.warn(`[got-houses/battle] ${model} attempt ${attempt + 1} failed (overloaded=${isOverloaded}):`, lastError);
+        if (!isOverloaded) break; // non-overload errors won't be fixed by retrying
+      }
+    }
+    if (!succeeded) {
+      console.error("[got-houses/battle] All attempts failed:", lastError);
+      return NextResponse.json({ ...fallbackReport(battle), _debug: "api_error", _error: lastError });
     }
 
     // Log the full content array so we can see every block type Sonnet 5 returns
