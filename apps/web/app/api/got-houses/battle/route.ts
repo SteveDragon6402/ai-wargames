@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import type { BattleContext, BattleReport, Casualty, FallenFigure, Hold, ArmyConditionUpdate } from "@/app/got-houses/types";
 
-const SYSTEM_PROMPT = `You are a deep scholar of George R.R. Martin's A Song of Ice and Fire and an expert in medieval military history. You have encyclopaedic knowledge of every house, lord, commander, character, and creature in Westeros — their psychology, their fighting style, and their history. You reason about battles using authentic medieval military doctrine: terrain advantage, troop-type matchups (cavalry shock, archer range, infantry mass), supply lines, morale cascades, leadership quality, and the fog of war. You understand how GRRM's characters think and fight: Robb's wolf-pack instinct and speed, Tywin's cold, patient precision and use of reserves, Jaime's reckless brilliance and personal courage, Roose's icy patience and calculated treachery. You write in the voice of a Westerosi maester chronicling events for the Citadel — vivid, measured, specific, and unflinching. Always respond with valid JSON only — no prose, no markdown fences, no commentary outside the JSON object.`;
+const SYSTEM_PROMPT = `You are a scholar of George R.R. Martin's A Song of Ice and Fire with deep knowledge of medieval military history. You know every commander's character and fighting style. Write battle narratives that are brief, clear, and direct — no flowery prose, no purple language. State what each commander decided, why, and what happened as a result. Cause and effect. Always respond with valid JSON only — no prose, no markdown fences, no commentary outside the JSON object.`;
 
 function buildBattleMessage(battle: BattleContext, holdsMap: Map<string, Hold>, maxTokens: number): string {
   const hold = holdsMap.get(battle.holdId);
@@ -80,11 +80,13 @@ hold_result rules:
 
 Army IDs for the response: ${allArmyIds}
 
-IMPORTANT: Your entire response must fit within ${maxTokens} tokens. Keep the narrative to 3–4 paragraphs and be concise in casualties/conditionUpdates. Do not truncate the JSON — it must be complete and valid.
+IMPORTANT: Your entire response must fit within ${maxTokens} tokens. Do not truncate the JSON — it must be complete and valid.
+
+Narrative style: brief and clear. 2–3 short paragraphs max. No flowery language. State what each commander decided, why, and what happened. Cause and effect. Name the key figures and their choices. Skip atmospheric description unless it directly affected the outcome.
 
 Respond with this exact JSON object — no other text, no markdown fences:
 {
-  "narrative": "4–6 paragraphs. Use \\n\\n to separate paragraphs.",
+  "narrative": "2–3 paragraphs. Use \\n\\n to separate. Direct, factual, no purple prose.",
   "holdResult": "north OR westerlands OR abandoned",
   "casualties": [
     {"faction": "north OR westerlands", "armyId": "exact-id", "unitType": "cavalry OR infantry OR archers", "house": "exact house name from above", "count": NUMBER}
@@ -146,7 +148,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ...fallbackReport(battle), _debug: "no_api_key" });
     }
 
-    const MAX_TOKENS = 4000;
+    const MAX_TOKENS = 6000;
     const holdsMap = new Map(holds.map((h) => [h.id, h]));
     const userMessage = buildBattleMessage(battle, holdsMap, MAX_TOKENS);
 
