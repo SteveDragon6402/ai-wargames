@@ -1,20 +1,20 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useGameState } from "./hooks/useGameState";
+import { useGameState, determineTerritory } from "./hooks/useGameState";
 import TopBar from "./components/TopBar";
 import WesterosMap from "./components/WesterosMap";
 import SidePanel from "./components/SidePanel";
 import RetreatPanel from "./components/RetreatPanel";
 import BattleSummaries from "./components/BattleSummaries";
-import { HOLDS } from "./data/holds";
-import type { BattleReport } from "./types";
+import { HOLDS, HOLDS_MAP } from "./data/holds";
+import type { BattleReport, TirednessRequest, TirednessUpdate } from "./types";
 
 export default function GotHousesPage() {
   const { state, dispatch } = useGameState();
 
-  // Prevent re-triggering if the same pendingBattles reference hasn't changed
   const resolvingRef = useRef(false);
+  const tirednessUpdatedRef = useRef<number | null>(null);
 
   useEffect(() => {
     if (state.phase !== "resolving" || state.pendingBattles.length === 0) {
@@ -22,6 +22,67 @@ export default function GotHousesPage() {
       return;
     }
     if (resolvingRef.current) return;
+
+    if (tirednessUpdatedRef.current !== state.turn) {
+      tirednessUpdatedRef.current = state.turn;
+      
+      async function updateTiredness() {
+        console.group(`%c⚡ Tiredness Update — turn ${state.turn}`, "color:#4a9eff;font-weight:bold");
+        
+        const turnHistory = state.turnHistory ?? [];
+        const lastTurnHistory = turnHistory[turnHistory.length - 1];
+        
+        const tirednessRequest: TirednessRequest = {
+          armies: state.armies.map((army) => {
+            const hold = HOLDS_MAP.get(army.holdId);
+            const territory = hold ? determineTerritory(army, hold) : "neutral";
+            const moved = lastTurnHistory?.armyMoves.find(m => m.armyId === army.id)?.moved ?? false;
+            
+            return {
+              armyId: army.id,
+              name: army.name,
+              units: army.units,
+              leaders: army.leaders,
+              notables: army.notables,
+              currentTiredness: army.tiredness,
+              moveType: moved ? "march" : "rest",
+              movesSinceRest: army.movesSinceRest ?? 0,
+              territory,
+              holdName: hold?.name ?? "Unknown",
+            };
+          }),
+        };
+
+        console.log(`→ Updating tiredness for ${tirednessRequest.armies.length} armies`);
+
+        try {
+          const res = await fetch("/api/got-houses/tiredness", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(tirednessRequest),
+          });
+
+          if (!res.ok) {
+            console.warn("⚠ Tiredness API failed, continuing with current values");
+            console.groupEnd();
+            return;
+          }
+
+          const updates = await res.json() as TirednessUpdate[];
+          console.log("✓ Received", updates.length, "tiredness updates");
+          
+          dispatch({ type: "UPDATE_TIREDNESS", updates });
+        } catch (err) {
+          console.error("✗ Tiredness update error:", err);
+        } finally {
+          console.groupEnd();
+        }
+      }
+
+      updateTiredness();
+      return;
+    }
+
     resolvingRef.current = true;
 
     async function runBattles() {
@@ -97,7 +158,7 @@ export default function GotHousesPage() {
     }
 
     runBattles();
-  }, [state.phase, state.pendingBattles, state.turn, dispatch]);
+  }, [state.phase, state.pendingBattles, state.turn, state.armies, state.turnHistory, dispatch]);
 
   const isResolving = state.phase === "resolving";
   const isRetreat = state.phase === "retreat";

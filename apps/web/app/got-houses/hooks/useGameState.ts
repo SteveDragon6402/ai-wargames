@@ -10,12 +10,34 @@ import type {
   RetreatEntry,
   Casualty,
   FallenFigure,
+  Hold,
 } from "../types";
 import { INITIAL_GAME_STATE } from "../data/initial-state";
 import { HOLDS_MAP } from "../data/holds";
 
 function getAdjacentHolds(holdId: string): string[] {
   return HOLDS_MAP.get(holdId)?.links ?? [];
+}
+
+function determineTerritory(army: Army, hold: Hold): "home" | "neutral" {
+  const holdHouse = hold.house.toLowerCase();
+  
+  const leaderHouses = army.leaders.map((leader) => {
+    const nameParts = leader.name.split(" ");
+    return nameParts[nameParts.length - 1].toLowerCase();
+  });
+  
+  const unitHouses = army.units.map((unit) => unit.house.toLowerCase());
+  
+  const allHouses = [...leaderHouses, ...unitHouses];
+  
+  for (const house of allHouses) {
+    if (holdHouse.includes(house) || house.includes(holdHouse)) {
+      return "home";
+    }
+  }
+  
+  return "neutral";
 }
 
 function getFactionOrders(state: GameState, faction: Faction) {
@@ -279,18 +301,32 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         ...state.westerlands.orders,
       ];
 
-      // Apply moves
+      const movedArmyIds = new Set(allOrders.map((o) => o.armyId));
+
       const updatedArmies = state.armies.map((army) => {
         const order = allOrders.find((o) => o.armyId === army.id);
-        if (order) return { ...army, holdId: order.toHoldId };
-        return army;
+        const moved = !!order;
+        const movesSinceRest = moved 
+          ? (army.movesSinceRest ?? 0) + 1 
+          : 0;
+        
+        if (order) {
+          return { ...army, holdId: order.toHoldId, movesSinceRest };
+        }
+        return { ...army, movesSinceRest };
       });
 
-      // Detect battles
+      const newTurnHistory = {
+        turn: state.turn,
+        armyMoves: state.armies.map((army) => ({
+          armyId: army.id,
+          moved: movedArmyIds.has(army.id),
+        })),
+      };
+
       const pendingBattles = detectBattles(updatedArmies, allOrders);
 
       if (pendingBattles.length === 0) {
-        // No battles — advance turn immediately
         return {
           ...state,
           turn: state.turn + 1,
@@ -302,10 +338,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           selectedArmyIds: [],
           moveMode: { active: false, validTargets: [] },
           pendingBattles: [],
+          turnHistory: [...(state.turnHistory ?? []), newTurnHistory],
         };
       }
 
-      // Battles to resolve — enter resolving phase
       return {
         ...state,
         phase: "resolving",
@@ -316,6 +352,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         selectedArmyIds: [],
         moveMode: { active: false, validTargets: [] },
         pendingBattles,
+        turnHistory: [...(state.turnHistory ?? []), newTurnHistory],
       };
     }
 
@@ -484,6 +521,16 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return { ...state, battleLogOpen: !state.battleLogOpen };
     }
 
+    case "UPDATE_TIREDNESS": {
+      return {
+        ...state,
+        armies: state.armies.map((army) => {
+          const update = action.updates.find((u) => u.armyId === army.id);
+          return update ? { ...army, tiredness: update.tiredness } : army;
+        }),
+      };
+    }
+
     default:
       return state;
   }
@@ -493,3 +540,5 @@ export function useGameState() {
   const [state, dispatch] = useReducer(gameReducer, INITIAL_GAME_STATE);
   return { state, dispatch };
 }
+
+export { determineTerritory };

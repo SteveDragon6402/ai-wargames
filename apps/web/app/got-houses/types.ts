@@ -58,6 +58,8 @@ export interface Army {
   morale: string;
   /** Qualitative one-liner */
   tiredness: string;
+  /** Number of consecutive moves without rest */
+  movesSinceRest?: number;
 }
 
 export interface MoveOrder {
@@ -119,6 +121,35 @@ export interface RetreatEntry {
   chosenHoldId: string | null;
 }
 
+export interface TurnHistory {
+  turn: number;
+  armyMoves: { armyId: string; moved: boolean }[];
+}
+
+/* ── Tiredness types ──────────────────────────────────────────── */
+
+export interface TirednessUpdate {
+  armyId: string;
+  tiredness: string;
+}
+
+export interface TirednessRequest {
+  armies: TirednessArmyContext[];
+}
+
+export interface TirednessArmyContext {
+  armyId: string;
+  name: string;
+  units: ArmyUnit[];
+  leaders: Leader[];
+  notables?: Notable[];
+  currentTiredness: string;
+  moveType: "rest" | "march";
+  movesSinceRest: number;
+  territory: "home" | "neutral";
+  holdName: string;
+}
+
 /* ── Game state ───────────────────────────────────────────────── */
 
 export interface GameState {
@@ -141,6 +172,8 @@ export interface GameState {
   retreats: RetreatEntry[];
   /** Whether the battle log panel is open */
   battleLogOpen: boolean;
+  /** Turn-by-turn movement history */
+  turnHistory?: TurnHistory[];
 }
 
 export type GameAction =
@@ -158,4 +191,5 @@ export type GameAction =
   | { type: "COMBINE_ARMIES" }
   | { type: "TOGGLE_ADMIN" }
   | { type: "SWITCH_FACTION"; faction: Faction }
-  | { type: "TOGGLE_BATTLE_LOG" };
+  | { type: "TOGGLE_BATTLE_LOG" }
+  | { type: "UPDATE_TIREDNESS"; updates: TirednessUpdate[] };

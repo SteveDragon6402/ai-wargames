@@ -152,4 +152,5 @@ export const INITIAL_GAME_STATE: GameState = {
   battleReports: [],
   retreats: [],
   battleLogOpen: false,
+  turnHistory: [],
 };
