@@ -118,23 +118,42 @@ function applyCasualties(armies: Army[], casualties: Casualty[]): Army[] {
     .filter((army) => army.units.length > 0);
 }
 
-/** Remove fallen leaders and notables from armies. */
+/** Remove fallen leaders and notables from armies.
+ *
+ * Robustness:
+ * 1. Matches by name against BOTH leaders and notables regardless of isLeader flag —
+ *    Claude sometimes returns isLeader:false for an actual leader, which would leave
+ *    them alive if we only removed from notables[].
+ * 2. If a fallen figure's armyId doesn't match any surviving army, searches all armies
+ *    by name so a wrong ID from Claude doesn't silently drop the death.
+ */
 function applyFallen(armies: Army[], fallen: FallenFigure[]): Army[] {
+  // Resolve armyId: if it doesn't exist in the army list, find the army by name match
+  const resolvedFallen = fallen.map((f) => {
+    const armyExists = armies.some((a) => a.id === f.armyId);
+    if (armyExists) return f;
+    // Fallback: find by name in leaders or notables of any army
+    for (const army of armies) {
+      const inLeaders = army.leaders.some((l) => l.name === f.name);
+      const inNotables = army.notables?.some((n) => n.name === f.name) ?? false;
+      if (inLeaders || inNotables) {
+        return { ...f, armyId: army.id };
+      }
+    }
+    return f; // unresolvable — will be a no-op below
+  });
+
   return armies.map((army) => {
-    const armyFallen = fallen.filter((f) => f.armyId === army.id);
+    const armyFallen = resolvedFallen.filter((f) => f.armyId === army.id);
     if (armyFallen.length === 0) return army;
 
-    const leaderNames = new Set(
-      armyFallen.filter((f) => f.isLeader).map((f) => f.name)
-    );
-    const notableNames = new Set(
-      armyFallen.filter((f) => !f.isLeader).map((f) => f.name)
-    );
+    // Match by name against both lists — don't trust isLeader flag from Claude
+    const fallenNames = new Set(armyFallen.map((f) => f.name));
 
     return {
       ...army,
-      leaders: army.leaders.filter((l) => !leaderNames.has(l.name)),
-      notables: army.notables?.filter((n) => !notableNames.has(n.name)) ?? [],
+      leaders: army.leaders.filter((l) => !fallenNames.has(l.name)),
+      notables: army.notables?.filter((n) => !fallenNames.has(n.name)) ?? [],
     };
   });
 }
@@ -163,13 +182,17 @@ function buildRetreats(
 
       const isNorth = army.faction === "north";
 
-      // Filter 1: last hold the enemy came from (persistent, not just this turn)
+      // Filter 1: last hold the enemy came from (persistent, not just this turn).
+      // Exception: the retreating army's OWN lastHoldId is never blocked by this rule —
+      // if I marched A→B and lost, I can always retreat to A even if the enemy also
+      // has lastHoldId=A (they marched A→B some turns ago). Filter 2 (occupied) still
+      // applies, so if the enemy actually has a live army at A, it stays forbidden.
       const enemyArmies = isNorth ? battle.westArmies : battle.northArmies;
       const lastHoldForbidden = enemyArmies
         .map((a) => a.lastHoldId)
-        .filter((h): h is string => !!h);
+        .filter((h): h is string => !!h && h !== army.lastHoldId); // own origin always allowed
 
-      // Filter 2: any hold currently occupied by an enemy army (any enemy army, not just battle participants)
+      // Filter 2: any hold currently occupied by an enemy army (any enemy, not just battle participants)
       const occupiedForbidden = armies
         .filter((a) => a.faction !== army.faction)
         .map((a) => a.holdId);
