@@ -60,6 +60,16 @@ export const gameHistory = pgTable(
   (t) => [uniqueIndex("game_history_room_turn_idx").on(t.roomId, t.turn)]
 );
 
+/** GOT Houses — persisted game state for room-based play. */
+export const gotGames = pgTable("got_games", {
+  roomId: uuid("room_id")
+    .primaryKey()
+    .references(() => rooms.id, { onDelete: "cascade" }),
+  /** Full GOT GameState JSON blob */
+  state: jsonb("state").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const orders = pgTable(
   "orders",
   {

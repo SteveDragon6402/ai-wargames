@@ -1,43 +1,15 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { SwordIcon } from "@phosphor-icons/react";
-import { factionDisplayName } from "@/lib/unit-labels";
 
-interface ScenarioMeta {
-  id: string;
-  name: string;
-  factions: string[];
-}
-
-async function safeJson(res: Response): Promise<{ error?: string } & Record<string, unknown>> {
+async function safeJson(res: Response): Promise<Record<string, unknown>> {
   try {
     return await res.json();
   } catch {
     return { error: `Server error (${res.status})` };
   }
 }
-
-/* ------------------------------------------------------------------ Types */
-
-interface AdminRoom {
-  id: string;
-  code: string;
-  status: string;
-  scenarioId: string;
-  soloDualFaction?: boolean;
-  createdAt: string;
-  players: { displayName: string; factionId: string }[];
-  game: {
-    turn: number;
-    phase: string;
-    winnerFactionId: string | null;
-    turnEndsAt: string | null;
-  } | null;
-}
-
-/* ================================================================= Main page */
 
 export default function HomePage() {
   const router = useRouter();
@@ -47,48 +19,22 @@ export default function HomePage() {
   const [loading, setLoading] = useState(false);
   const codeRef = useRef<HTMLInputElement>(null);
 
-  /* Scenario picker */
-  const [scenarios, setScenarios] = useState<ScenarioMeta[]>([]);
-  const [selectedScenarioId, setSelectedScenarioId] = useState("battle-of-fords");
-
-  useEffect(() => {
-    fetch("/api/scenarios")
-      .then((r) => r.json())
-      .then((d) => {
-        if (Array.isArray(d.scenarios) && d.scenarios.length > 0) {
-          setScenarios(d.scenarios);
-        }
-      })
-      .catch(() => {});
-  }, []);
-
-  /* Admin state */
-  const [adminOpen, setAdminOpen] = useState(false);
-  const [adminAuthed, setAdminAuthed] = useState(false);
-  const [adminPw, setAdminPw] = useState("");
-  const [adminPwError, setAdminPwError] = useState("");
-  const [adminLoading, setAdminLoading] = useState(false);
-  const [adminRooms, setAdminRooms] = useState<AdminRoom[]>([]);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [soloCreating, setSoloCreating] = useState(false);
-
-  /* ---- room creation / join ---- */
-
   async function createRoom() {
+    if (!name.trim()) {
+      setError("Enter a commander name");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/rooms", {
+      const res = await fetch("/api/got-houses/rooms", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          displayName: name.trim() || "Commander",
-          scenarioId: selectedScenarioId,
-        }),
+        body: JSON.stringify({ displayName: name.trim() }),
       });
       const data = await safeJson(res);
       if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Failed to create room");
-      router.push(`/room/${data.roomId}/lobby`);
+      router.push(`/got-houses/room/${data.roomId}/lobby`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
     } finally {
@@ -102,20 +48,21 @@ export default function HomePage() {
       codeRef.current?.focus();
       return;
     }
+    if (!name.trim()) {
+      setError("Enter a commander name");
+      return;
+    }
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/rooms/join", {
+      const res = await fetch("/api/got-houses/rooms/join", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          code: code.toUpperCase(),
-          displayName: name.trim() || "Commander",
-        }),
+        body: JSON.stringify({ code: code.toUpperCase(), displayName: name.trim() }),
       });
       const data = await safeJson(res);
       if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Failed to join");
-      router.push(`/room/${data.roomId}/lobby`);
+      router.push(`/got-houses/room/${data.roomId}/lobby`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
     } finally {
@@ -123,485 +70,344 @@ export default function HomePage() {
     }
   }
 
-  /* ---- admin ---- */
-
-  async function adminLogin() {
-    setAdminLoading(true);
-    setAdminPwError("");
-    try {
-      const res = await fetch("/api/admin/rooms", {
-        headers: { Authorization: `Bearer ${adminPw}` },
-      });
-      if (res.status === 401) {
-        setAdminPwError("Incorrect password");
-        return;
-      }
-      const data = await safeJson(res);
-      if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Failed to load");
-      setAdminRooms((data.rooms as AdminRoom[]) ?? []);
-      setAdminAuthed(true);
-    } catch (e) {
-      setAdminPwError(e instanceof Error ? e.message : "Error");
-    } finally {
-      setAdminLoading(false);
-    }
-  }
-
-  async function adminRefresh() {
-    setAdminLoading(true);
-    try {
-      const res = await fetch("/api/admin/rooms", {
-        headers: { Authorization: `Bearer ${adminPw}` },
-      });
-      const data = await safeJson(res);
-      if (res.ok) setAdminRooms((data.rooms as AdminRoom[]) ?? []);
-    } finally {
-      setAdminLoading(false);
-    }
-  }
-
-  async function adminCreateSoloGame() {
-    setSoloCreating(true);
-    setAdminPwError("");
-    try {
-      const res = await fetch("/api/admin/rooms/solo", {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${adminPw}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          displayName: name.trim() || "Commander",
-          scenarioId: selectedScenarioId,
-        }),
-      });
-      const data = await safeJson(res);
-      if (!res.ok) {
-        throw new Error(typeof data.error === "string" ? data.error : "Failed to create solo game");
-      }
-      router.push(`/room/${data.roomId}/game`);
-    } catch (e) {
-      setAdminPwError(e instanceof Error ? e.message : "Error");
-    } finally {
-      setSoloCreating(false);
-    }
-  }
-
-  async function adminDelete(roomId: string) {
-    setDeletingId(roomId);
-    try {
-      const res = await fetch(`/api/admin/rooms/${roomId}`, {
-        method: "DELETE",
-        headers: { Authorization: `Bearer ${adminPw}` },
-      });
-      if (res.ok) {
-        setAdminRooms((prev) => prev.filter((r) => r.id !== roomId));
-      }
-    } finally {
-      setDeletingId(null);
-    }
-  }
-
-  function closeAdmin() {
-    setAdminOpen(false);
-    setAdminAuthed(false);
-    setAdminPw("");
-    setAdminPwError("");
-    setAdminRooms([]);
-  }
-
-  /* ---- render ---- */
-
   return (
-    <>
-      <main className="flex min-h-screen flex-col items-center justify-center bg-canvas p-6">
-        {/* Logo / title block */}
-        <div className="mb-10 flex flex-col items-center gap-3 text-center">
-          {/* Sword emblem */}
-          <div className="mb-2 flex h-16 w-16 items-center justify-center rounded-full border border-hairline">
-            <SwordIcon size={32} color="#00d992" />
-          </div>
-          <h1 className="text-2xl font-normal tracking-tight text-ink-strong">
-            AI Wargames
-          </h1>
-          <p className="text-sm text-mute">
-            AI-adjudicated node warfare
-          </p>
-        </div>
-
-        {/* Command panel */}
-        <div className="w-full max-w-sm rounded-md border border-hairline bg-canvas">
-          {/* Panel header */}
-          <div className="border-b border-hairline px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-mute">
-            Command Uplink
-          </div>
-
-          <div className="flex flex-col gap-4 p-5">
-            <div>
-              <label className="mb-1.5 block text-xs font-medium text-body">
-                Commander name
-              </label>
-              <input
-                className="w-full rounded-sm border border-hairline bg-canvas-soft px-3 py-2 text-sm text-ink outline-none transition-colors focus:border-primary"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Commander"
-                onKeyDown={(e) => e.key === "Enter" && createRoom()}
-                maxLength={32}
-              />
-            </div>
-
-            {/* Scenario picker */}
-            {scenarios.length > 0 && (
-              <div>
-                <label className="mb-1.5 block text-xs font-medium text-body">
-                  Theatre of war
-                </label>
-                <div className="flex flex-col gap-1">
-                  {scenarios.map((s) => {
-                    const selected = s.id === selectedScenarioId;
-                    return (
-                      <button
-                        key={s.id}
-                        type="button"
-                        onClick={() => setSelectedScenarioId(s.id)}
-                        className={`w-full rounded-sm border px-3 py-2 text-left transition-colors ${
-                          selected
-                            ? "border-primary bg-canvas-soft"
-                            : "border-hairline bg-canvas hover:border-hairline-dim"
-                        }`}
-                      >
-                        <div className="flex items-center justify-between gap-2">
-                          <span
-                            className={`truncate text-sm font-medium ${
-                              selected ? "text-primary-soft" : "text-ink"
-                            }`}
-                          >
-                            {s.name}
-                          </span>
-                          {selected && (
-                            <span className="shrink-0 text-xs text-primary-soft">✓</span>
-                          )}
-                        </div>
-                        <div className="mt-0.5 text-xs text-mute">
-                          {s.factions.map((f) => factionDisplayName(f)).join(" vs ")}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-
-            <button
-              type="button"
-              disabled={loading}
-              onClick={createRoom}
-              className="btn-primary w-full"
-            >
-              {loading ? "Establishing uplink…" : "Initiate new operation"}
-            </button>
-
-            <div className="flex items-center gap-3">
-              <div className="h-px flex-1 bg-hairline" />
-              <span className="text-xs text-mute">or join existing</span>
-              <div className="h-px flex-1 bg-hairline" />
-            </div>
-
-            <div className="flex gap-2">
-              <input
-                ref={codeRef}
-                className="flex-1 rounded-sm border border-hairline bg-canvas-soft px-3 py-2 text-center text-lg uppercase tracking-[0.3em] text-ink outline-none transition-colors focus:border-primary"
-                value={code}
-                onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
-                placeholder="XXXXXX"
-                maxLength={6}
-                onKeyDown={(e) => e.key === "Enter" && joinRoom()}
-              />
-              <button
-                type="button"
-                disabled={loading || code.length !== 6}
-                onClick={joinRoom}
-                className="btn-outline px-5"
-              >
-                Join
-              </button>
-            </div>
-          </div>
-
-          {error && (
-            <div className="mx-5 mb-4 rounded-sm border border-faction-isengard-deep bg-canvas-soft px-3 py-2 text-sm text-faction-isengard">
-              {error}
-            </div>
-          )}
-
-          {/* Admin link */}
-          <div className="border-t border-hairline px-4 py-2 text-center">
-            <button
-              type="button"
-              onClick={() => setAdminOpen(true)}
-              className="text-xs text-mute transition-colors hover:text-body"
-            >
-              Admin access
-            </button>
-          </div>
-        </div>
-
-        {/* Alternative game modes */}
-        <div className="mt-6 w-full max-w-sm">
+    <main
+      style={{
+        minHeight: "100dvh",
+        background: "#060606",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: 24,
+        fontFamily: "var(--font-mono), monospace",
+      }}
+    >
+      {/* House sigils */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 20,
+          marginBottom: 32,
+        }}
+      >
+        <div style={{ textAlign: "center" }}>
           <div
-            className="mb-2 text-[8px] uppercase tracking-widest text-center"
-            style={{ color: "#2a2a2a" }}
-          >
-            Other Theatres
-          </div>
-          <a
-            href="/got-houses"
-            className="flex w-full items-center justify-between px-4 py-3 transition-all"
             style={{
-              border: "1px solid #1e1e1e",
-              background: "#060606",
-              textDecoration: "none",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = "#3a2a00";
-              e.currentTarget.style.background = "#0a0800";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = "#1e1e1e";
-              e.currentTarget.style.background = "#060606";
+              width: 56,
+              height: 56,
+              border: "1px solid #1a3a5a",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 26,
+              marginBottom: 6,
             }}
           >
-            <div>
-              <div
-                className="text-[10px] font-bold uppercase tracking-wide"
-                style={{ color: "#888", fontFamily: "var(--font-mono), monospace" }}
-              >
-                Game of Thrones Houses Mode
-              </div>
-              <div
-                className="mt-0.5 text-[8px] uppercase tracking-widest"
-                style={{ color: "#333" }}
-              >
-                Westeros Theatre
-              </div>
-            </div>
-            <span
-              className="text-[9px] uppercase tracking-widest"
-              style={{ color: "#2a2a2a" }}
-            >
-              →
-            </span>
-          </a>
-        </div>
-
-        {/* Ticker line */}
-        <div className="mt-8 text-xs text-hairline-dim">
-          AI-adjudicated node warfare · secure channel
-        </div>
-      </main>
-
-      {/* Admin overlay */}
-      {adminOpen && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/80">
-          <div className="my-8 w-full max-w-3xl rounded-md border border-hairline bg-canvas shadow-2xl">
-            {/* Header */}
-            <header className="flex items-center justify-between border-b border-hairline px-5 py-3">
-              <h2 className="text-sm font-semibold text-ink">Admin panel</h2>
-              <button
-                type="button"
-                onClick={closeAdmin}
-                className="text-sm text-mute transition-colors hover:text-ink"
-              >
-                ✕
-              </button>
-            </header>
-
-            <div className="p-5">
-              {!adminAuthed ? (
-                /* Password gate */
-                <div className="flex flex-col gap-3">
-                  <p className="text-sm text-body">Enter the admin password to continue.</p>
-                  <div className="flex gap-2">
-                    <input
-                      type="password"
-                      className="flex-1 rounded-sm border border-hairline bg-canvas-soft px-3 py-2 text-sm text-ink outline-none focus:border-primary"
-                      placeholder="Password"
-                      value={adminPw}
-                      onChange={(e) => setAdminPw(e.target.value)}
-                      onKeyDown={(e) => e.key === "Enter" && adminLogin()}
-                      autoFocus
-                    />
-                    <button
-                      type="button"
-                      disabled={adminLoading || !adminPw}
-                      onClick={adminLogin}
-                      className="btn-primary"
-                    >
-                      {adminLoading ? "Checking…" : "Login"}
-                    </button>
-                  </div>
-                  {adminPwError && (
-                    <p className="text-sm text-faction-isengard">{adminPwError}</p>
-                  )}
-                </div>
-              ) : (
-                /* Room list */
-                <div className="flex flex-col gap-4">
-                  <div className="flex items-center justify-between">
-                    <p className="text-sm text-body">
-                      {adminRooms.length} room{adminRooms.length !== 1 ? "s" : ""}
-                    </p>
-                    <div className="flex items-center gap-2">
-                      <button
-                        type="button"
-                        disabled={soloCreating || adminLoading}
-                        onClick={adminCreateSoloGame}
-                        className="btn-primary"
-                        style={{ padding: "6px 12px", fontSize: "12px" }}
-                      >
-                        {soloCreating ? "Starting…" : "Play both sides"}
-                      </button>
-                      <a
-                        href="/got-houses"
-                        className="btn-primary"
-                        style={{ padding: "6px 12px", fontSize: "12px", textDecoration: "none" }}
-                      >
-                        GoT Houses Mode
-                      </a>
-                      <button
-                        type="button"
-                        disabled={adminLoading}
-                        onClick={adminRefresh}
-                        className="text-xs text-mute hover:text-body disabled:opacity-50"
-                      >
-                        {adminLoading ? "Refreshing…" : "↻ Refresh"}
-                      </button>
-                    </div>
-                  </div>
-
-                  {adminRooms.length === 0 ? (
-                    <p className="py-8 text-center text-sm text-mute">No rooms found.</p>
-                  ) : (
-                    <div className="rounded-sm border border-hairline">
-                      {adminRooms.map((room) => (
-                        <RoomRow
-                          key={room.id}
-                          room={room}
-                          deleting={deletingId === room.id}
-                          onDelete={() => adminDelete(room.id)}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            ☾
+          </div>
+          <div style={{ fontSize: 9, color: "#3a6a8a", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+            The North
           </div>
         </div>
-      )}
-    </>
-  );
-}
 
-/* ================================================================= RoomRow */
-
-function RoomRow({
-  room,
-  deleting,
-  onDelete,
-}: {
-  room: AdminRoom;
-  deleting: boolean;
-  onDelete: () => void;
-}) {
-  const [confirmDelete, setConfirmDelete] = useState(false);
-
-  const statusColorClass =
-    room.status === "playing"
-      ? "text-primary-soft"
-      : room.status === "finished"
-        ? "text-mute"
-        : "text-faction-rohan";
-
-  const createdAgo = timeAgo(new Date(room.createdAt));
-
-  return (
-    <div className="flex items-start justify-between gap-3 border-b border-hairline px-4 py-3 last:border-b-0">
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5">
-          <span className="font-mono text-sm tracking-wide text-ink">{room.code}</span>
-          <span className={`text-xs font-medium uppercase tracking-wide ${statusColorClass}`}>
-            {room.status}
-          </span>
-          {room.soloDualFaction && (
-            <span className="rounded-pill border border-faction-rohan-deep px-1.5 py-px text-xs text-faction-rohan">
-              Solo
-            </span>
-          )}
-          {room.game && (
-            <span className="text-xs text-mute">
-              T{room.game.turn}
-              {room.game.winnerFactionId
-                ? ` · ${factionDisplayName(room.game.winnerFactionId)} won`
-                : ` · ${room.game.phase}`}
-            </span>
-          )}
-          <span className="text-xs text-hairline-dim">{createdAgo}</span>
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+          <div style={{ fontSize: 10, color: "#2a2a2a", textTransform: "uppercase", letterSpacing: "0.2em" }}>
+            vs
+          </div>
         </div>
 
-        {room.players.length > 0 && (
-          <p className="mt-0.5 text-xs text-mute">
-            {room.players
-              .map((p) => `${p.displayName} (${factionDisplayName(p.factionId)})`)
-              .join(" vs ")}
-          </p>
-        )}
+        <div style={{ textAlign: "center" }}>
+          <div
+            style={{
+              width: 56,
+              height: 56,
+              border: "1px solid #5a1a1a",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              fontSize: 26,
+              marginBottom: 6,
+            }}
+          >
+            ♟
+          </div>
+          <div style={{ fontSize: 9, color: "#8a3a3a", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+            Westerlands
+          </div>
+        </div>
       </div>
 
-      <div className="shrink-0">
-        {confirmDelete ? (
-          <div className="flex items-center gap-1.5">
-            <span className="text-xs text-body">Sure?</span>
-            <button
-              type="button"
-              disabled={deleting}
-              onClick={onDelete}
-              className="rounded-sm border border-faction-isengard-deep bg-canvas-soft px-2 py-1 text-xs font-medium text-faction-isengard disabled:opacity-50"
+      {/* Title */}
+      <div style={{ textAlign: "center", marginBottom: 32 }}>
+        <h1
+          style={{
+            fontSize: 20,
+            fontWeight: 400,
+            color: "#c8941a",
+            textTransform: "uppercase",
+            letterSpacing: "0.25em",
+            marginBottom: 6,
+          }}
+        >
+          War of the Five Kings
+        </h1>
+        <p style={{ fontSize: 9, color: "#2a2a2a", textTransform: "uppercase", letterSpacing: "0.2em" }}>
+          AI-adjudicated · node warfare · Westeros theatre
+        </p>
+      </div>
+
+      {/* Main panel */}
+      <div
+        style={{
+          width: "100%",
+          maxWidth: 360,
+          border: "1px solid #1e1e1e",
+          background: "#080808",
+        }}
+      >
+        {/* Panel header */}
+        <div
+          style={{
+            borderBottom: "1px solid #1e1e1e",
+            padding: "8px 16px",
+            fontSize: 9,
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: "0.12em",
+            color: "#2a2a2a",
+          }}
+        >
+          Command Uplink
+        </div>
+
+        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Commander name */}
+          <div>
+            <label
+              style={{
+                display: "block",
+                fontSize: 9,
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: "0.1em",
+                color: "#555",
+                marginBottom: 6,
+              }}
             >
-              {deleting ? "Deleting…" : "Yes, delete"}
-            </button>
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(false)}
-              className="px-2 py-1 text-xs text-mute"
-            >
-              Cancel
-            </button>
+              Commander name
+            </label>
+            <input
+              style={{
+                width: "100%",
+                background: "#0a0a0a",
+                border: "1px solid #1e1e1e",
+                padding: "8px 12px",
+                fontSize: 13,
+                color: "#ccc",
+                outline: "none",
+                boxSizing: "border-box",
+                fontFamily: "inherit",
+                transition: "border-color 0.12s",
+              }}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="Enter your name"
+              maxLength={32}
+              onKeyDown={(e) => e.key === "Enter" && createRoom()}
+              onFocus={(e) => (e.currentTarget.style.borderColor = "#c8941a")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "#1e1e1e")}
+            />
           </div>
-        ) : (
+
+          {/* Faction info */}
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr",
+              gap: 8,
+            }}
+          >
+            <div
+              style={{
+                border: "1px solid #1a3a5a",
+                padding: "10px 12px",
+                background: "#050a12",
+              }}
+            >
+              <div style={{ fontSize: 9, color: "#6aaad8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
+                Host → The North
+              </div>
+              <div style={{ fontSize: 9, color: "#2a4a6a" }}>Robb Stark, 5 armies</div>
+            </div>
+            <div
+              style={{
+                border: "1px solid #5a1a1a",
+                padding: "10px 12px",
+                background: "#120505",
+              }}
+            >
+              <div style={{ fontSize: 9, color: "#d87070", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
+                Joiner → Westerlands
+              </div>
+              <div style={{ fontSize: 9, color: "#6a2a2a" }}>Tywin Lannister, 2 armies</div>
+            </div>
+          </div>
+
+          {/* Create button */}
           <button
             type="button"
-            onClick={() => setConfirmDelete(true)}
-            className="rounded-sm border border-hairline px-2 py-1 text-xs font-medium text-mute transition-colors hover:border-faction-isengard-deep hover:text-faction-isengard"
+            disabled={loading}
+            onClick={createRoom}
+            style={{
+              width: "100%",
+              padding: "10px 16px",
+              background: "#1a1200",
+              border: "1px solid #3a2a00",
+              color: "#c8941a",
+              fontSize: 11,
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: "0.15em",
+              cursor: loading ? "wait" : "pointer",
+              fontFamily: "inherit",
+              transition: "border-color 0.12s, color 0.12s",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = "#c8941a";
+              e.currentTarget.style.color = "#f0b429";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = "#3a2a00";
+              e.currentTarget.style.color = "#c8941a";
+            }}
           >
-            Delete
+            {loading ? "Establishing uplink…" : "Raise your banners →"}
           </button>
+
+          {/* Divider */}
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ flex: 1, height: 1, background: "#1a1a1a" }} />
+            <span style={{ fontSize: 9, color: "#2a2a2a", textTransform: "uppercase", letterSpacing: "0.1em" }}>
+              or join existing
+            </span>
+            <div style={{ flex: 1, height: 1, background: "#1a1a1a" }} />
+          </div>
+
+          {/* Join code */}
+          <div style={{ display: "flex", gap: 8 }}>
+            <input
+              ref={codeRef}
+              style={{
+                flex: 1,
+                background: "#0a0a0a",
+                border: "1px solid #1e1e1e",
+                padding: "8px 12px",
+                fontSize: 18,
+                color: "#ccc",
+                textAlign: "center",
+                textTransform: "uppercase",
+                letterSpacing: "0.3em",
+                outline: "none",
+                fontFamily: "inherit",
+                transition: "border-color 0.12s",
+              }}
+              value={code}
+              onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+              placeholder="XXXXXX"
+              maxLength={6}
+              onKeyDown={(e) => e.key === "Enter" && joinRoom()}
+              onFocus={(e) => (e.currentTarget.style.borderColor = "#c8941a")}
+              onBlur={(e) => (e.currentTarget.style.borderColor = "#1e1e1e")}
+            />
+            <button
+              type="button"
+              disabled={loading || code.length !== 6}
+              onClick={joinRoom}
+              style={{
+                padding: "8px 20px",
+                background: "transparent",
+                border: "1px solid #1e1e1e",
+                color: code.length === 6 ? "#888" : "#2a2a2a",
+                fontSize: 10,
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: "0.1em",
+                cursor: code.length === 6 ? "pointer" : "default",
+                fontFamily: "inherit",
+                transition: "border-color 0.12s, color 0.12s",
+              }}
+              onMouseEnter={(e) => {
+                if (code.length === 6) {
+                  e.currentTarget.style.borderColor = "#888";
+                  e.currentTarget.style.color = "#ccc";
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.borderColor = "#1e1e1e";
+                e.currentTarget.style.color = code.length === 6 ? "#888" : "#2a2a2a";
+              }}
+            >
+              Join
+            </button>
+          </div>
+        </div>
+
+        {/* Error */}
+        {error && (
+          <div
+            style={{
+              margin: "0 20px 16px",
+              padding: "8px 12px",
+              border: "1px solid #5a1a1a",
+              background: "#120505",
+              fontSize: 11,
+              color: "#d87070",
+            }}
+          >
+            {error}
+          </div>
         )}
+
+        {/* Standalone link */}
+        <div
+          style={{
+            borderTop: "1px solid #1a1a1a",
+            padding: "8px 16px",
+            textAlign: "center",
+          }}
+        >
+          <a
+            href="/got-houses"
+            style={{
+              fontSize: 9,
+              color: "#2a2a2a",
+              textTransform: "uppercase",
+              letterSpacing: "0.1em",
+              textDecoration: "none",
+              transition: "color 0.12s",
+            }}
+            onMouseEnter={(e) => (e.currentTarget.style.color = "#555")}
+            onMouseLeave={(e) => (e.currentTarget.style.color = "#2a2a2a")}
+          >
+            Play standalone (no room)
+          </a>
+        </div>
       </div>
-    </div>
+
+      {/* Footer */}
+      <div
+        style={{
+          marginTop: 32,
+          fontSize: 9,
+          color: "#1a1a1a",
+          textTransform: "uppercase",
+          letterSpacing: "0.15em",
+        }}
+      >
+        AI-adjudicated node warfare · secure channel
+      </div>
+    </main>
   );
-}
-
-/* ------------------------------------------------------------------ helpers */
-
-function timeAgo(date: Date): string {
-  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
 }

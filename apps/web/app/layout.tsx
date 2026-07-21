@@ -17,8 +17,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "WAR ROOM: MIDDLE-EARTH",
-  description: "AI-adjudicated node-map wargame — Rohan vs Isengard",
+  title: "WAR OF THE FIVE KINGS",
+  description: "AI-adjudicated wargame — The North vs The Westerlands",
 };
 
 export default function RootLayout({
