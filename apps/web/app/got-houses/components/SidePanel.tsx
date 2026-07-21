@@ -74,7 +74,6 @@ export default function SidePanel({ state, dispatch }: Props) {
         : null;
   const isLocked = factionOrders?.submitted ?? false;
 
-  // Determine if "Select all here" should be shown for active faction
   const controllableArmies = armiesHere.filter((a) => {
     if (!adminMode && a.faction !== activeFaction) return false;
     const orders = a.faction === "north" ? state.north : state.westerlands;
@@ -91,8 +90,25 @@ export default function SidePanel({ state, dispatch }: Props) {
     allSelectedSameFaction &&
     !isLocked;
 
-  // Can move: 1+ selected, not locked, not already in move mode
+  // Can split: exactly 1 selected, not locked, has at least 2 leaders or 2 unit groups
+  const singleSelected = selectedArmies.length === 1 ? selectedArmies[0] : null;
+  const canSplit =
+    !!singleSelected &&
+    !isLocked &&
+    (singleSelected.leaders.length >= 2 || singleSelected.units.length >= 2);
+
+  // Can move: 1+ selected, not locked, not in move mode
   const canMove = selectedArmies.length > 0 && !isLocked;
+
+  // Stance orders for selected single army
+  const singleArmyStanceOrder =
+    singleSelected && selectedFaction
+      ? (selectedFaction === "north"
+          ? state.north.stanceOrders[singleSelected.id]
+          : state.westerlands.stanceOrders[singleSelected.id]) ?? null
+      : null;
+
+  const canIssueStance = !!singleSelected && !isLocked;
 
   return (
     <div
@@ -210,9 +226,44 @@ export default function SidePanel({ state, dispatch }: Props) {
               />
               {canCombine && (
                 <ActionButton
-                  label="Combine Armies"
+                  label="Combine"
                   disabled={false}
                   onClick={() => dispatch({ type: "COMBINE_ARMIES" })}
+                />
+              )}
+              {canSplit && (
+                <ActionButton
+                  label="Split"
+                  disabled={false}
+                  onClick={() => dispatch({ type: "OPEN_SPLIT", armyId: singleSelected!.id })}
+                />
+              )}
+              {canIssueStance && (
+                <ActionButton
+                  label="Rest"
+                  disabled={false}
+                  active={singleArmyStanceOrder === "rest"}
+                  onClick={() =>
+                    dispatch({
+                      type: "SET_STANCE_ORDER",
+                      armyId: singleSelected!.id,
+                      order: singleArmyStanceOrder === "rest" ? null : "rest",
+                    })
+                  }
+                />
+              )}
+              {canIssueStance && (
+                <ActionButton
+                  label="Fortify"
+                  disabled={false}
+                  active={singleArmyStanceOrder === "fortify"}
+                  onClick={() =>
+                    dispatch({
+                      type: "SET_STANCE_ORDER",
+                      armyId: singleSelected!.id,
+                      order: singleArmyStanceOrder === "fortify" ? null : "fortify",
+                    })
+                  }
                 />
               )}
               <ActionButton
@@ -305,12 +356,14 @@ export default function SidePanel({ state, dispatch }: Props) {
               <Section label={FACTION_LABEL.north}>
                 {northHere.map((army) => {
                   const hasOrder = state.north.orders.some((o) => o.armyId === army.id);
+                  const stanceOrder = state.north.stanceOrders[army.id] ?? null;
                   return (
                     <ArmyCard
                       key={army.id}
                       army={army}
                       isSelected={selectedArmyIds.includes(army.id)}
                       hasOrder={hasOrder}
+                      stanceOrder={stanceOrder}
                       isLocked={state.north.submitted}
                       onClick={(id, shift) =>
                         dispatch({ type: "SELECT_ARMY", armyId: id, shift })
@@ -324,12 +377,14 @@ export default function SidePanel({ state, dispatch }: Props) {
               <Section label={FACTION_LABEL.westerlands}>
                 {westHere.map((army) => {
                   const hasOrder = state.westerlands.orders.some((o) => o.armyId === army.id);
+                  const stanceOrder = state.westerlands.stanceOrders[army.id] ?? null;
                   return (
                     <ArmyCard
                       key={army.id}
                       army={army}
                       isSelected={selectedArmyIds.includes(army.id)}
                       hasOrder={hasOrder}
+                      stanceOrder={stanceOrder}
                       isLocked={state.westerlands.submitted}
                       onClick={(id, shift) =>
                         dispatch({ type: "SELECT_ARMY", armyId: id, shift })
@@ -374,12 +429,15 @@ function ActionButton({
   disabled,
   onClick,
   accent,
+  active,
 }: {
   label: string;
   disabled: boolean;
   onClick: () => void;
   accent?: boolean;
+  active?: boolean;
 }) {
+  const isActive = active ?? false;
   return (
     <button
       type="button"
@@ -393,20 +451,40 @@ function ActionButton({
         letterSpacing: "0.1em",
         padding: "4px 10px",
         cursor: disabled ? "default" : "pointer",
-        border: accent ? "1px solid #3a2a00" : "1px solid #2a2a2a",
-        background: accent ? "#1a1200" : "#0a0a0a",
-        color: disabled ? "#333" : accent ? "#c8941a" : "#666",
+        border: accent
+          ? "1px solid #3a2a00"
+          : isActive
+            ? "1px solid #c8941a"
+            : "1px solid #2a2a2a",
+        background: accent ? "#1a1200" : isActive ? "#2a1800" : "#0a0a0a",
+        color: disabled
+          ? "#333"
+          : accent
+            ? "#c8941a"
+            : isActive
+              ? "#f0b429"
+              : "#666",
         transition: "border-color 0.12s, color 0.12s",
       }}
       onMouseEnter={(e) => {
         if (!disabled) {
-          e.currentTarget.style.borderColor = accent ? "#c8941a" : "#555";
-          e.currentTarget.style.color = accent ? "#f0b429" : "#aaa";
+          e.currentTarget.style.borderColor = accent || isActive ? "#c8941a" : "#555";
+          e.currentTarget.style.color = accent || isActive ? "#f0b429" : "#aaa";
         }
       }}
       onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = accent ? "#3a2a00" : "#2a2a2a";
-        e.currentTarget.style.color = disabled ? "#333" : accent ? "#c8941a" : "#666";
+        e.currentTarget.style.borderColor = accent
+          ? "#3a2a00"
+          : isActive
+            ? "#c8941a"
+            : "#2a2a2a";
+        e.currentTarget.style.color = disabled
+          ? "#333"
+          : accent
+            ? "#c8941a"
+            : isActive
+              ? "#f0b429"
+              : "#666";
       }}
     >
       {label}

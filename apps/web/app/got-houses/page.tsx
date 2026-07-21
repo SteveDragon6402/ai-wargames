@@ -7,6 +7,8 @@ import WesterosMap from "./components/WesterosMap";
 import SidePanel from "./components/SidePanel";
 import RetreatPanel from "./components/RetreatPanel";
 import BattleSummaries from "./components/BattleSummaries";
+import SplitPanel from "./components/SplitPanel";
+import CommanderRenamePanel from "./components/CommanderRenamePanel";
 import { HOLDS, HOLDS_MAP } from "./data/holds";
 import type { BattleReport, TirednessRequest, TirednessUpdate } from "./types";
 
@@ -25,19 +27,33 @@ export default function GotHousesPage() {
 
     if (tirednessUpdatedRef.current !== state.turn) {
       tirednessUpdatedRef.current = state.turn;
-      
+
       async function updateTiredness() {
         console.group(`%c⚡ Tiredness Update — turn ${state.turn}`, "color:#4a9eff;font-weight:bold");
-        
+
         const turnHistory = state.turnHistory ?? [];
         const lastTurnHistory = turnHistory[turnHistory.length - 1];
-        
+
+        // Collect all stance orders from both factions (already cleared into the turn's army activities,
+        // but we need to derive the order for the tiredness API from activity counters since orders
+        // were cleared in ADJUDICATE_MOVES — read from activity instead)
         const tirednessRequest: TirednessRequest = {
           armies: state.armies.map((army) => {
             const hold = HOLDS_MAP.get(army.holdId);
             const territory = hold ? determineTerritory(army, hold) : "neutral";
-            const moved = lastTurnHistory?.armyMoves.find(m => m.armyId === army.id)?.moved ?? false;
-            
+            const moved = lastTurnHistory?.armyMoves.find((m) => m.armyId === army.id)?.moved ?? false;
+
+            // Derive the stance order from activity (which was already updated by ADJUDICATE_MOVES)
+            let stanceOrder: "rest" | "fortify" | "march";
+            if (moved) {
+              stanceOrder = "march";
+            } else if (army.activity.turnsFortiying > (army.activity.turnsResting > 0 ? 0 : -1) &&
+                       army.activity.turnsFortiying > 0) {
+              stanceOrder = "fortify";
+            } else {
+              stanceOrder = "rest";
+            }
+
             return {
               armyId: army.id,
               name: army.name,
@@ -45,10 +61,14 @@ export default function GotHousesPage() {
               leaders: army.leaders,
               notables: army.notables,
               currentTiredness: army.tiredness,
+              currentMorale: army.morale,
+              currentStance: army.stance,
               moveType: moved ? "march" : "rest",
               movesSinceRest: army.movesSinceRest ?? 0,
               territory,
               holdName: hold?.name ?? "Unknown",
+              activity: army.activity,
+              stanceOrder,
             };
           }),
         };
@@ -70,7 +90,7 @@ export default function GotHousesPage() {
 
           const updates = await res.json() as TirednessUpdate[];
           console.log("✓ Received", updates.length, "tiredness updates");
-          
+
           dispatch({ type: "UPDATE_TIREDNESS", updates });
         } catch (err) {
           console.error("✗ Tiredness update error:", err);
@@ -95,11 +115,10 @@ export default function GotHousesPage() {
       const reports: BattleReport[] = [];
 
       for (const battle of state.pendingBattles) {
-        console.group(`%c⚔ Battle: hold ${battle.holdId} — turn ${state.turn}`, "color:#c8941a;font-weight:bold");
+        console.group(`%c⚔ Battle: ${battle.holdId} — turn ${state.turn}${battle.lastStand ? " [LAST STAND]" : ""}`, "color:#c8941a;font-weight:bold");
         console.log("North armies:", battle.northArmies.map((a) => `${a.name} (${a.id})`));
         console.log("West armies:", battle.westArmies.map((a) => `${a.name} (${a.id})`));
-        console.log("North from:", battle.northFromHoldId ?? "(defender)");
-        console.log("West from:", battle.westFromHoldId ?? "(defender)");
+        console.log("Last stand:", battle.lastStand ?? false);
 
         try {
           console.log("→ POSTing to /api/got-houses/battle …");
@@ -111,7 +130,6 @@ export default function GotHousesPage() {
 
           console.log("← HTTP status:", res.status, res.statusText);
 
-          // Capture raw text FIRST before any parsing
           const rawBody = await res.text();
           console.log("=== RAW API RESPONSE BODY ===");
           console.log(rawBody);
@@ -177,6 +195,14 @@ export default function GotHousesPage() {
 
   const isResolving = state.phase === "resolving";
   const isRetreat = state.phase === "retreat";
+  const isRename = state.phase === "rename_commanders";
+
+  // Counts for the resolving overlay
+  const totalBattleArmies = state.pendingBattles.reduce(
+    (sum, b) => sum + b.northArmies.length + b.westArmies.length,
+    0
+  );
+  const totalBattles = state.pendingBattles.length;
 
   return (
     <div
@@ -222,7 +248,7 @@ export default function GotHousesPage() {
                     color: "#c8941a",
                   }}
                 >
-                  ⚔ Adjudicating Battle
+                  Adjudicating
                 </div>
                 <div
                   style={{
@@ -233,8 +259,9 @@ export default function GotHousesPage() {
                     letterSpacing: "0.2em",
                   }}
                 >
-                  {state.pendingBattles.length} engagement
-                  {state.pendingBattles.length !== 1 ? "s" : ""} — consulting the maesters…
+                  {totalBattles > 0
+                    ? `${totalBattleArmies} arm${totalBattleArmies !== 1 ? "ies" : "y"} · ${totalBattles} battle${totalBattles !== 1 ? "s" : ""} being adjudicated`
+                    : "Updating conditions…"}
                 </div>
                 <div
                   style={{
@@ -266,6 +293,16 @@ export default function GotHousesPage() {
           />
         )}
       </div>
+
+      {/* Commander rename overlay */}
+      {isRename && (
+        <CommanderRenamePanel state={state} dispatch={dispatch} />
+      )}
+
+      {/* Split army overlay */}
+      {state.splitPanelArmyId && (
+        <SplitPanel state={state} dispatch={dispatch} />
+      )}
 
       <style>{`
         @keyframes pulse {

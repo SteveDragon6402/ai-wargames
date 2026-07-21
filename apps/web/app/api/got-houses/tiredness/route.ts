@@ -2,46 +2,83 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import type { TirednessRequest, TirednessUpdate } from "@/app/got-houses/types";
 
-const SYSTEM_PROMPT = `You are adjudicating army tiredness for a Game of Thrones strategy game. For each army, provide a single one-line tiredness description (similar to "Well-rested and eager" or "Weary but determined").
+const SYSTEM_PROMPT = `You are adjudicating the condition and stance of armies in a Game of Thrones strategy game. For each army, provide three short one-line descriptions: tiredness, morale, and stance.
 
-Consider these factors:
-- Army composition: Cavalry tire faster on forced marches; large armies move slower
-- Move type: "rest" means no movement this turn (recovering); "march" means they moved
-- Moves since rest: Consecutive marches accumulate fatigue (1 march = slight fatigue, 3+ marches = significant fatigue)
-- Territory: "home" means commanders from this house's lands (familiar, morale boost); "neutral" is unfamiliar ground
-
-Guidelines:
-- Resting in home territory: improves tiredness significantly
+TIREDNESS — physical condition of the troops:
+- Resting in home territory: significant recovery
 - Resting in neutral territory: modest recovery
 - First march: slight fatigue
-- 2-3 consecutive marches: moderate fatigue, mention weariness
-- 4+ consecutive marches: heavy fatigue, mention exhaustion or strain
-- Cavalry-heavy armies tire faster when marching
-- Large infantry armies should reflect their slower, grinding nature
+- 2–3 consecutive marches: moderate fatigue
+- 4+ consecutive marches: heavy fatigue, mention exhaustion
+- Cavalry-heavy armies tire faster on the march
 
-Keep descriptions flavorful and thematic to ASOIAF. Respond with JSON only: [{"armyId": "...", "tiredness": "..."}]`;
+MORALE — spirit and will to fight:
+- Resting armies get a modest morale improvement (smaller than post-battle recovery)
+- Home territory rest: better morale gain than neutral territory
+- Fortifying armies: steady but not lifted morale (they are working, not relaxing)
+- Long marches without rest: morale slowly erodes
+- Morale changes should be smaller than battle outcomes — this is a peacetime adjustment
+
+STANCE — battle-readiness and tactical posture:
+- Resting (especially multiple consecutive turns): troops grow softer, less drilled, less battle-ready. "Relaxed and unready" after 2+ turns
+- Fortifying (1 turn): defensive stance developing. 2+ turns: hardened, entrenched, very defensive
+- Marching (especially toward the enemy): aggressive, alert, purposeful
+- Just merged armies this turn (turnsSinceMerge = 0): disorganised, chain of command unsettled
+- Just split this turn (turnsSinceSplit = 0): uncertain, divided, formations still forming
+- Long consecutive marches (3+): experienced and battle-hardened but weary
+
+Each description should be one vivid sentence in ASOIAF flavour.
+
+Respond with JSON only:
+[{"armyId": "...", "tiredness": "...", "morale": "...", "stance": "..."}]`;
 
 function fallbackTiredness(armies: TirednessRequest["armies"]): TirednessUpdate[] {
   return armies.map((army) => {
-    let description = army.currentTiredness;
-    
-    if (army.moveType === "rest") {
+    let tiredness = army.currentTiredness;
+    let morale = army.currentMorale;
+    let stance = army.currentStance;
+
+    if (army.stanceOrder === "rest") {
       if (army.territory === "home") {
-        description = "Well-rested and in good spirits";
+        tiredness = "Well-rested and in good spirits";
+        morale = "Heartened by familiar ground and warm fires";
+        stance = army.activity.turnsResting >= 2
+          ? "Comfortable and unready — too long from the march"
+          : "Relaxed but watchful";
       } else {
-        description = "Rested but watchful in unfamiliar lands";
+        tiredness = "Rested but watchful in unfamiliar lands";
+        morale = "Steady — the rest does them good even in strange country";
+        stance = "Cautious and defensive";
       }
+    } else if (army.stanceOrder === "fortify") {
+      tiredness = "Tired from digging and construction, but purposefully so";
+      morale = "Determined — building defences focuses the men";
+      stance = army.activity.turnsFortiying >= 2
+        ? "Hardened and entrenched — they know this ground"
+        : "Defensive posture taking shape";
     } else {
       if (army.movesSinceRest >= 4) {
-        description = "Exhausted and footsore from the long march";
+        tiredness = "Exhausted and footsore from the long march";
+        morale = "Fraying — the men grumble and feet blister";
+        stance = "Weary but experienced, moving on instinct";
       } else if (army.movesSinceRest >= 2) {
-        description = "Weary from days of marching";
+        tiredness = "Weary from days of marching";
+        morale = "Steady under pressure, though tired";
+        stance = "Alert and purposeful, eyes forward";
       } else {
-        description = "Tired but steady after the march";
+        tiredness = "Tired but steady after the march";
+        morale = "Focused and ready";
+        stance = "Aggressive and alert — fresh from the road";
       }
     }
-    
-    return { armyId: army.armyId, tiredness: description };
+
+    if (army.activity.turnsSinceMerge === 0) {
+      stance = "Disorganised — units still integrating after the merger";
+    } else if (army.activity.turnsSinceSplit === 0) {
+      stance = "Uncertain — formations still settling after the split";
+    }
+
+    return { armyId: army.armyId, tiredness, morale, stance };
   });
 }
 
@@ -67,13 +104,26 @@ export async function POST(req: NextRequest) {
           .map((u) => `${u.count} ${u.house} ${u.type}`)
           .join(", ");
         const leaders = army.leaders.map((l) => l.name).join(", ");
-        
+
+        const act = army.activity;
+        const activityLines = [
+          `Consecutive turns resting: ${act.turnsResting}`,
+          `Consecutive turns fortifying: ${act.turnsFortiying}`,
+          `Consecutive turns marching: ${act.turnsMarching}`,
+          act.turnsSinceMerge !== null ? `Turns since last merge: ${act.turnsSinceMerge} (0 = just merged this turn)` : null,
+          act.turnsSinceSplit !== null ? `Turns since last split: ${act.turnsSinceSplit} (0 = just split this turn)` : null,
+        ].filter(Boolean).join("\n");
+
         return `Army: ${army.name} [id: "${army.armyId}"]
 Location: ${army.holdName} (${army.territory} territory)
 Commanders: ${leaders}
 Strength: ${totalStrength} troops (${unitBreakdown})
 Current tiredness: ${army.currentTiredness}
-This turn: ${army.moveType} (moves since last rest: ${army.movesSinceRest})`;
+Current morale: ${army.currentMorale}
+Current stance: ${army.currentStance}
+This turn's order: ${army.stanceOrder} (moves since last rest: ${army.movesSinceRest})
+Activity history:
+${activityLines}`;
       })
       .join("\n\n");
 
@@ -125,6 +175,8 @@ This turn: ${army.moveType} (moves since last rest: ${army.movesSinceRest})`;
       return {
         armyId: army.armyId,
         tiredness: update?.tiredness || army.currentTiredness,
+        morale: update?.morale || army.currentMorale,
+        stance: update?.stance || army.currentStance,
       };
     });
 

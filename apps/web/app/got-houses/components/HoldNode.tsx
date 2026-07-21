@@ -21,19 +21,38 @@ const FACTION_COLORS = {
   westerlands: "#b03030",
 };
 
-function ArmyDot({ faction }: { faction: "north" | "westerlands" }) {
+function ArmyDot({
+  faction,
+  fortified,
+  resting,
+}: {
+  faction: "north" | "westerlands";
+  fortified?: boolean;
+  resting?: boolean;
+}) {
   return (
     <span
+      title={fortified ? "Fortifying" : resting ? "Resting" : undefined}
       style={{
-        display: "inline-block",
-        width: 6,
-        height: 6,
-        borderRadius: "50%",
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: fortified ? 10 : 6,
+        height: fortified ? 10 : 6,
+        borderRadius: fortified ? 1 : "50%",
         background: FACTION_COLORS[faction],
-        border: "1px solid rgba(255,255,255,0.15)",
+        border: fortified
+          ? "1px solid rgba(255,255,255,0.35)"
+          : "1px solid rgba(255,255,255,0.15)",
         flexShrink: 0,
+        opacity: resting && !fortified ? 0.45 : 1,
+        fontSize: 5,
+        color: "rgba(255,255,255,0.8)",
+        lineHeight: 1,
       }}
-    />
+    >
+      {fortified ? "▣" : ""}
+    </span>
   );
 }
 
@@ -108,10 +127,20 @@ function HoldNode({ data }: { data: HoldNodeData }) {
             }}
           >
             {northArmies.map((a) => (
-              <ArmyDot key={a.id} faction="north" />
+              <ArmyDot
+                key={a.id}
+                faction="north"
+                fortified={(a.activity?.turnsFortiying ?? 0) > 0}
+                resting={(a.activity?.turnsResting ?? 0) > 0}
+              />
             ))}
             {westArmies.map((a) => (
-              <ArmyDot key={a.id} faction="westerlands" />
+              <ArmyDot
+                key={a.id}
+                faction="westerlands"
+                fortified={(a.activity?.turnsFortiying ?? 0) > 0}
+                resting={(a.activity?.turnsResting ?? 0) > 0}
+              />
             ))}
           </div>
         )}

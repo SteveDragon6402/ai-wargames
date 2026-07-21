@@ -12,7 +12,7 @@ export type Faction = "north" | "westerlands";
 
 export type UnitType = "cavalry" | "infantry" | "archers";
 
-export type GamePhase = "planning" | "resolving" | "retreat";
+export type GamePhase = "planning" | "resolving" | "retreat" | "rename_commanders";
 
 export interface Hold {
   id: string;
@@ -45,6 +45,19 @@ export interface Notable {
   description: string;
 }
 
+/**
+ * Tracks how many consecutive turns an army has spent in each mode,
+ * and how recently it merged or split. No booleans — all counters.
+ * turnsSinceMerge/Split: null = never happened; 0 = happened this resolve.
+ */
+export interface ArmyActivity {
+  turnsResting: number;
+  turnsFortiying: number;
+  turnsMarching: number;
+  turnsSinceMerge: number | null;
+  turnsSinceSplit: number | null;
+}
+
 export interface Army {
   id: string;
   name: string;
@@ -58,8 +71,14 @@ export interface Army {
   morale: string;
   /** Qualitative one-liner */
   tiredness: string;
+  /** Qualitative one-liner — updated by tiredness bot and battle adjudicator */
+  stance: string;
+  /** Activity history counters — fed to AI bots each turn */
+  activity: ArmyActivity;
   /** Number of consecutive moves without rest */
   movesSinceRest?: number;
+  /** The hold this army was at immediately before its current position (for retreat blocking) */
+  lastHoldId?: string;
 }
 
 export interface MoveOrder {
@@ -70,6 +89,8 @@ export interface MoveOrder {
 
 export interface FactionOrders {
   orders: MoveOrder[];
+  /** REST or FORTIFY orders issued by the player this turn — cleared on resolve */
+  stanceOrders: Record<string, "rest" | "fortify">;
   submitted: boolean;
 }
 
@@ -90,11 +111,12 @@ export interface FallenFigure {
   isLeader: boolean;
 }
 
-/** Post-battle qualitative morale + tiredness update for one army */
+/** Post-battle qualitative morale + tiredness + stance update for one army */
 export interface ArmyConditionUpdate {
   armyId: string;
   morale: string;
   tiredness: string;
+  stance?: string;
 }
 
 export interface BattleReport {
@@ -107,7 +129,7 @@ export interface BattleReport {
   casualties: Casualty[];
   fallen: FallenFigure[];
   retreatingArmyIds: string[];
-  /** Qualitative morale + tiredness after the battle for each involved army */
+  /** Qualitative morale + tiredness + stance after the battle for each involved army */
   conditionUpdates?: ArmyConditionUpdate[];
 }
 
@@ -119,12 +141,16 @@ export interface BattleContext {
   northFromHoldId?: string;
   /** hold the westerlands army marched from; undefined = defender */
   westFromHoldId?: string;
+  /** Per-army order type for this engagement */
+  armyOrders?: Record<string, "march" | "rest" | "fortify">;
+  /** When true, one side is trapped with no retreat options — fight to the last */
+  lastStand?: boolean;
 }
 
 export interface RetreatEntry {
   armyId: string;
   fromHoldId: string;
-  /** holds the army CANNOT retreat to (came from opponent) */
+  /** holds the army CANNOT retreat to */
   forbiddenHoldIds: string[];
   validTargets: string[];
   chosenHoldId: string | null;
@@ -140,6 +166,8 @@ export interface TurnHistory {
 export interface TirednessUpdate {
   armyId: string;
   tiredness: string;
+  morale?: string;
+  stance?: string;
 }
 
 export interface TirednessRequest {
@@ -153,10 +181,24 @@ export interface TirednessArmyContext {
   leaders: Leader[];
   notables?: Notable[];
   currentTiredness: string;
+  currentMorale: string;
+  currentStance: string;
   moveType: "rest" | "march";
   movesSinceRest: number;
   territory: "home" | "neutral";
   holdName: string;
+  /** Full activity history — fed verbatim to AI */
+  activity: ArmyActivity;
+  /** The explicit stance order the player issued this turn (if any) */
+  stanceOrder: "rest" | "fortify" | "march";
+}
+
+/* ── Split types ─────────────────────────────────────────────── */
+
+export interface SplitConfig {
+  sourceArmyId: string;
+  army1: { units: ArmyUnit[]; leaderNames: string[]; notableNames: string[] };
+  army2: { units: ArmyUnit[]; leaderNames: string[]; notableNames: string[] };
 }
 
 /* ── Game state ───────────────────────────────────────────────── */
@@ -183,6 +225,10 @@ export interface GameState {
   battleLogOpen: boolean;
   /** Turn-by-turn movement history */
   turnHistory?: TurnHistory[];
+  /** Army IDs awaiting post-battle commander selection */
+  pendingRenames: string[];
+  /** Army ID currently open in the split panel (null = panel closed) */
+  splitPanelArmyId: string | null;
 }
 
 export type GameAction =
@@ -201,4 +247,9 @@ export type GameAction =
   | { type: "TOGGLE_ADMIN" }
   | { type: "SWITCH_FACTION"; faction: Faction }
   | { type: "TOGGLE_BATTLE_LOG" }
-  | { type: "UPDATE_TIREDNESS"; updates: TirednessUpdate[] };
+  | { type: "UPDATE_TIREDNESS"; updates: TirednessUpdate[] }
+  | { type: "SET_STANCE_ORDER"; armyId: string; order: "rest" | "fortify" | null }
+  | { type: "OPEN_SPLIT"; armyId: string }
+  | { type: "CLOSE_SPLIT" }
+  | { type: "SPLIT_ARMY"; config: SplitConfig }
+  | { type: "SELECT_LEAD_COMMANDER"; armyId: string; leaderName: string };

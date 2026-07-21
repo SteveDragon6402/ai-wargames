@@ -2,6 +2,8 @@
 
 import type { Army, UnitType } from "../types";
 
+type StanceOrder = "rest" | "fortify" | null;
+
 const FACTION_COLORS = {
   north: { border: "#1a3a5a", accent: "#3a6ea8", text: "#6aaad8" },
   westerlands: { border: "#5a1a1a", accent: "#b03030", text: "#d87070" },
@@ -23,11 +25,12 @@ interface Props {
   army: Army;
   isSelected: boolean;
   hasOrder: boolean;
+  stanceOrder?: StanceOrder;
   isLocked: boolean;
   onClick: (armyId: string, shift: boolean) => void;
 }
 
-export default function ArmyCard({ army, isSelected, hasOrder, isLocked, onClick }: Props) {
+export default function ArmyCard({ army, isSelected, hasOrder, stanceOrder, isLocked, onClick }: Props) {
   const colors = FACTION_COLORS[army.faction];
 
   const totalUnits = army.units.reduce((s, u) => s + u.count, 0);
@@ -90,21 +93,14 @@ export default function ArmyCard({ army, isSelected, hasOrder, isLocked, onClick
         >
           {army.name}
         </span>
-        {hasOrder && (
-          <span
-            style={{
-              fontSize: 8,
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              color: "#c8941a",
-              border: "1px solid #3a2a00",
-              padding: "1px 4px",
-              flexShrink: 0,
-            }}
-          >
-            ORDERED
-          </span>
+        {stanceOrder === "rest" && (
+          <span style={orderBadgeStyle("#2a4a2a", "#4a8a4a")}>REST</span>
+        )}
+        {stanceOrder === "fortify" && (
+          <span style={orderBadgeStyle("#1a2a4a", "#4a6aaa")}>FORTIFY</span>
+        )}
+        {hasOrder && !stanceOrder && (
+          <span style={orderBadgeStyle("#3a2a00", "#c8941a")}>ORDERED</span>
         )}
       </div>
 
@@ -250,54 +246,11 @@ export default function ArmyCard({ army, isSelected, hasOrder, isLocked, onClick
         </span>
       </div>
 
-      {/* Morale & Tiredness */}
+      {/* Morale, Tiredness & Stance */}
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <div>
-          <span
-            style={{
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 8,
-              color: "#444",
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-            }}
-          >
-            Morale ·{" "}
-          </span>
-          <span
-            style={{
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 9,
-              color: "#666",
-              fontStyle: "italic",
-            }}
-          >
-            {army.morale}
-          </span>
-        </div>
-        <div>
-          <span
-            style={{
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 8,
-              color: "#444",
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-            }}
-          >
-            Condition ·{" "}
-          </span>
-          <span
-            style={{
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 9,
-              color: "#666",
-              fontStyle: "italic",
-            }}
-          >
-            {army.tiredness}
-          </span>
-        </div>
+        <QualitativeRow label="Morale" value={army.morale} />
+        <QualitativeRow label="Condition" value={army.tiredness} />
+        {army.stance && <QualitativeRow label="Stance" value={army.stance} />}
       </div>
 
       {/* Selected ring */}
@@ -313,4 +266,45 @@ export default function ArmyCard({ army, isSelected, hasOrder, isLocked, onClick
       )}
     </div>
   );
+}
+
+function QualitativeRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <span
+        style={{
+          fontFamily: "var(--font-mono), monospace",
+          fontSize: 8,
+          color: "#444",
+          textTransform: "uppercase",
+          letterSpacing: "0.1em",
+        }}
+      >
+        {label} ·{" "}
+      </span>
+      <span
+        style={{
+          fontFamily: "var(--font-mono), monospace",
+          fontSize: 9,
+          color: "#666",
+          fontStyle: "italic",
+        }}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function orderBadgeStyle(borderColor: string, textColor: string): React.CSSProperties {
+  return {
+    fontSize: 8,
+    fontWeight: 700,
+    textTransform: "uppercase" as const,
+    letterSpacing: "0.1em",
+    color: textColor,
+    border: `1px solid ${borderColor}`,
+    padding: "1px 4px",
+    flexShrink: 0,
+  };
 }

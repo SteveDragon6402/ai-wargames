@@ -1,4 +1,12 @@
-import type { Army, GameState } from "../types";
+import type { Army, ArmyActivity, GameState } from "../types";
+
+const FRESH_ACTIVITY: ArmyActivity = {
+  turnsResting: 0,
+  turnsFortiying: 0,
+  turnsMarching: 0,
+  turnsSinceMerge: null,
+  turnsSinceSplit: null,
+};
 
 
 export const INITIAL_ARMIES: Army[] = [
@@ -22,6 +30,8 @@ export const INITIAL_ARMIES: Army[] = [
     ],
     morale: "High spirits — the men fight for their lord and home.",
     tiredness: "Well-rested and eager, fresh from Winterfell's walls.",
+    stance: "Disciplined and ready — a northern host assembled for war.",
+    activity: { ...FRESH_ACTIVITY },
   },
   {
     id: "army-bolton",
@@ -39,6 +49,8 @@ export const INITIAL_ARMIES: Army[] = [
     ],
     morale: "Cold and disciplined — loyalty to Bolton runs deep here.",
     tiredness: "Unhurried and well-provisioned.",
+    stance: "Watchful and methodical — Bolton men do not rush.",
+    activity: { ...FRESH_ACTIVITY },
   },
   {
     id: "army-manderly",
@@ -57,6 +69,8 @@ export const INITIAL_ARMIES: Army[] = [
     ],
     morale: "Confident and proud — the wealthiest lord in the North marches.",
     tiredness: "Fresh, well-fed, and well-equipped.",
+    stance: "Steady and professional — well-drilled harbor soldiers.",
+    activity: { ...FRESH_ACTIVITY },
   },
   {
     id: "army-greatjon",
@@ -77,6 +91,8 @@ export const INITIAL_ARMIES: Army[] = [
     ],
     morale: "Fierce and bellowing — the Greatjon's enthusiasm is contagious.",
     tiredness: "Rested but restless, itching for a fight.",
+    stance: "Aggressive and eager — the Umbers want blood.",
+    activity: { ...FRESH_ACTIVITY },
   },
   {
     id: "army-glover",
@@ -94,6 +110,8 @@ export const INITIAL_ARMIES: Army[] = [
     ],
     morale: "Determined and steady — woodsmen and rangers bred for hard marching.",
     tiredness: "Fresh, having ridden south from Barrowton.",
+    stance: "Light and mobile — rangers built for scouting and skirmish.",
+    activity: { ...FRESH_ACTIVITY },
   },
 
   // ── Westerlands armies ─────────────────────────────────────────────────
@@ -115,6 +133,8 @@ export const INITIAL_ARMIES: Army[] = [
     ],
     morale: "Utterly assured — Tywin Lannister does not lose.",
     tiredness: "Well-rested and battle-ready, supplied from the Rock's deep vaults.",
+    stance: "Immovable and methodical — Tywin forms his lines before he strikes.",
+    activity: { ...FRESH_ACTIVITY },
   },
   {
     id: "army-jaime",
@@ -134,6 +154,8 @@ export const INITIAL_ARMIES: Army[] = [
     ],
     morale: "Swaggering confidence — their captain's reputation precedes them.",
     tiredness: "Fresh and sharp, eager to prove themselves.",
+    stance: "Bold and aggressive — Jaime attacks before the enemy can set.",
+    activity: { ...FRESH_ACTIVITY },
   },
 ];
 
@@ -144,8 +166,8 @@ export const INITIAL_GAME_STATE: GameState = {
   selectedHoldId: null,
   selectedArmyIds: [],
   moveMode: { active: false, validTargets: [] },
-  north: { orders: [], submitted: false },
-  westerlands: { orders: [], submitted: false },
+  north: { orders: [], stanceOrders: {}, submitted: false },
+  westerlands: { orders: [], stanceOrders: {}, submitted: false },
   adminMode: true,
   activeFaction: "north",
   pendingBattles: [],
@@ -153,4 +175,6 @@ export const INITIAL_GAME_STATE: GameState = {
   retreats: [],
   battleLogOpen: false,
   turnHistory: [],
+  pendingRenames: [],
+  splitPanelArmyId: null,
 };

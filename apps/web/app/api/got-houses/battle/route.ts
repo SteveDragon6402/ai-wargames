@@ -2,7 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import type { BattleContext, BattleReport, Casualty, FallenFigure, Hold, ArmyConditionUpdate } from "@/app/got-houses/types";
 
-const SYSTEM_PROMPT = `You are a scholar of George R.R. Martin's A Song of Ice and Fire with deep knowledge of medieval military history. You know every commander's character and fighting style. Write battle narratives that are brief, clear, and direct — no flowery prose, no purple language. State what each commander decided, why, and what happened as a result. Cause and effect. Always respond with valid JSON only — no prose, no markdown fences, no commentary outside the JSON object.`;
+const SYSTEM_PROMPT = `You are adjudicating a battle in a Game of Thrones strategy game set during the War of the Five Kings. You have deep knowledge of every commander's character, tactical style, and historical record from ASOIAF.
+
+Write a crisp after-action report — not a chronicle, not a saga. State what each commander decided, why, and what happened as a result. Cause and effect. Name commanders and their choices explicitly. Keep ASOIAF flavour only in proper nouns and tone, not in prose style.
+
+Always respond with valid JSON only — no prose, no markdown fences, no commentary outside the JSON object.`;
 
 function buildBattleMessage(battle: BattleContext, holdsMap: Map<string, Hold>, maxTokens: number): string {
   const hold = holdsMap.get(battle.holdId);
@@ -10,15 +14,17 @@ function buildBattleMessage(battle: BattleContext, holdsMap: Map<string, Hold>, 
     ? `${hold.name} (${hold.region} — seat of House ${hold.house}, held by ${hold.lord})`
     : `Hold ${battle.holdId}`;
 
-  function armyBlock(armies: typeof battle.northArmies, fromHoldId: string | undefined, factionLabel: string): string {
+  function armyBlock(armies: typeof battle.northArmies, factionLabel: string): string {
     if (armies.length === 0) return "";
 
-    const statusVerb = fromHoldId ? "ATTACKING" : "DEFENDING";
-    const marchLine = fromHoldId
-      ? `Marched from: ${holdsMap.get(fromHoldId)?.name ?? fromHoldId}`
-      : "Status: Holding the ground";
-
     return armies.map((army) => {
+      const order = battle.armyOrders?.[army.id] ?? "march";
+      const statusLine = order === "rest"
+        ? "Order this turn: EXPLICITLY RESTING — not expecting to fight, encamped and off-guard"
+        : order === "fortify"
+          ? "Order this turn: FORTIFYING — digging in and constructing defences"
+          : "Order this turn: MARCHING / ENGAGING";
+
       const commanders = army.leaders
         .map((l) => `${l.name}${l.title ? ` (${l.title})` : ""}`)
         .join(", ");
@@ -29,27 +35,42 @@ function buildBattleMessage(battle: BattleContext, holdsMap: Map<string, Hold>, 
         .map((u) => `${u.count.toLocaleString()} ${u.house} ${u.type}`)
         .join(", ");
 
-      return `${factionLabel} — ${statusVerb}
-  Army: ${army.name} [id: "${army.id}"]
+      const act = army.activity;
+      const activityLines = [
+        act.turnsResting > 0 ? `Has been resting for ${act.turnsResting} consecutive turn(s)` : null,
+        act.turnsFortiying > 0 ? `Has been fortifying for ${act.turnsFortiying} consecutive turn(s)` : null,
+        act.turnsMarching > 0 ? `Has been marching for ${act.turnsMarching} consecutive turn(s)` : null,
+        act.turnsSinceMerge === 0 ? `Merged with another army THIS TURN — formations disorganised` : null,
+        act.turnsSinceSplit === 0 ? `Split from another army THIS TURN — chain of command uncertain` : null,
+      ].filter(Boolean).join("; ") || "No notable activity history";
+
+      return `${factionLabel} — ${army.name} [id: "${army.id}"]
   Commanders: ${commanders}
   Notable figures:
     ${notablesText}
   Strength: ${strength}
   Morale: ${army.morale}
   Condition: ${army.tiredness}
-  ${marchLine}`;
+  Stance: ${army.stance}
+  Activity: ${activityLines}
+  ${statusLine}`;
     }).join("\n\n");
   }
 
-  const northBlock = armyBlock(battle.northArmies, battle.northFromHoldId, "THE NORTH");
-  const westBlock = armyBlock(battle.westArmies, battle.westFromHoldId, "THE WESTERLANDS");
+  const northBlock = armyBlock(battle.northArmies, "THE NORTH");
+  const westBlock = armyBlock(battle.westArmies, "THE WESTERLANDS");
 
   const allArmyIds = [
     ...battle.northArmies.map((a) => `"${a.id}" (${a.name})`),
     ...battle.westArmies.map((a) => `"${a.id}" (${a.name})`),
   ].join(", ");
 
+  const lastStandNote = battle.lastStand
+    ? `\n⚠ LAST STAND: The retreating side has no valid retreat routes. They are surrounded or cut off and fighting for survival. Expect very heavy casualties on the trapped side. Total army destruction is possible and should be adjudicated honestly.`
+    : "";
+
   return `BATTLE LOCATION: ${locationLine}
+This battle takes place at ${hold?.name ?? battle.holdId}. Use this exact location name throughout. Do not substitute another location.${lastStandNote}
 
 FORCES ENGAGED:
 
@@ -57,36 +78,41 @@ ${northBlock}
 
 ${westBlock}
 
-TASK: Adjudicate this battle. Write a detailed chronicle of the engagement for the Citadel's records.
+TASK: Adjudicate this battle at ${hold?.name ?? battle.holdId}.
 
-Your chronicle MUST:
-1. Open by describing the terrain of ${hold?.name ?? "this location"} and how it shaped the tactical situation.
-2. Explain each commander's battle plan given their character and force composition — what did they attempt? Where did they deploy cavalry, archers, infantry?
-3. Describe the sequence of the battle in detail: the opening moves, a decisive turning point, and the final outcome. Name commanders and notable figures where relevant — their actions should matter.
-4. Describe the human cost: which units bore the brunt, where the line broke (if it did), and the emotional weight of the losses.
-5. End with the state of the field — who holds it, who is withdrawing, and in what condition the survivors are.
+Your after-action report MUST:
+1. Note the terrain and fortifications of ${hold?.name ?? battle.holdId} and how they shaped the fight (briefly — one sentence max).
+2. For each named commander present, state explicitly what tactical choice they made and why — based on their known character and the forces at their disposal. Tywin Lannister fights differently from Robb Stark. Jaime charges. Roose Bolton waits. Make commanders matter.
+3. Include at least one randomising factor that affected the outcome — weather, fog, a messenger failure, an unexpected flank, a horse stumbling at the wrong moment. War is not a chess match.
+4. Describe the decisive moment clearly: what broke, who held, what changed.
+5. State who holds the field and in what condition the survivors are.
 
-The narrative should be 4–6 dense paragraphs in ASOIAF maester-chronicle prose style. Be specific and vivid. Do not summarise blandly.
+If any army had order "EXPLICITLY RESTING", they were not prepared for battle — treat them as surprised, slower to form up, and disadvantaged accordingly.
 
-Casualty guidance: scale losses to the engagement's intensity. A brief skirmish: 3–8% losses per side. A contested battle: 10–20%. A devastating rout: 20–35% for the losing side, 8–15% for the winner. List casualties by unit type and house separately.
+Casualty guidance — scale losses to the engagement's intensity:
+- Brief skirmish: 3–8% per side
+- Contested battle: 10–20%
+- Devastating rout: 20–35% for the loser, 8–15% for the winner
+- Last stand / encirclement: 30–60% for the trapped side; total destruction is allowed
+List casualties by unit type and house separately.
 
-Commander/notable death guidance: deaths should be rare, meaningful, and narratively justified. Do not kill characters without clear cause. A figure might die in a desperate last stand, a cavalry charge gone wrong, or an assassination — not arbitrarily.
+Commander and notable death guidance: deaths must be proportionate to the scale of defeat. A decisive rout should cost the losing side commanders. A shattering defeat can kill even prominent figures. An army that is completely destroyed may lose all its commanders. Do not artificially protect named characters — if the battle warrants it, kill them. Equally, do not invent deaths in a minor skirmish.
+
+Army destruction: you MAY reduce a unit type to 0 if casualties warrant it. An army with 0 total surviving units after casualties is destroyed entirely — include all its commanders in "fallen". Do not hesitate to destroy broken armies that are outmatched.
 
 hold_result rules:
-- "north" → The North holds the field. Westerlands armies MUST retreat. Their armyIds go in retreatingArmyIds.
-- "westerlands" → The Westerlands hold the field. North armies MUST retreat. Their armyIds go in retreatingArmyIds.
-- "abandoned" → BOTH sides are shattered and fall back. ALL army IDs from BOTH factions go in retreatingArmyIds. Use sparingly — only if both forces are genuinely broken.
-- Do NOT leave enemy armies sharing the same location. Someone must yield or both must abandon the field.
+- "north" → The North holds the field. All Westerlands army IDs go in retreatingArmyIds.
+- "westerlands" → The Westerlands hold. All North army IDs go in retreatingArmyIds.
+- "abandoned" → BOTH sides shattered. ALL army IDs from BOTH factions in retreatingArmyIds. Use only if genuinely both forces collapse.
+- Do NOT leave enemies sharing the same location. Someone must yield.
 
 Army IDs for the response: ${allArmyIds}
 
 IMPORTANT: Your entire response must fit within ${maxTokens} tokens. Do not truncate the JSON — it must be complete and valid.
 
-Narrative style: brief and clear. 2–3 short paragraphs max. No flowery language. State what each commander decided, why, and what happened. Cause and effect. Name the key figures and their choices. Skip atmospheric description unless it directly affected the outcome.
-
 Respond with this exact JSON object — no other text, no markdown fences:
 {
-  "narrative": "2–3 paragraphs. Use \\n\\n to separate. Direct, factual, no purple prose.",
+  "narrative": "2–3 short paragraphs. Use \\n\\n to separate. Direct and factual. Commanders make choices. Chance intervenes. The field is decided. Name the location (${hold?.name ?? battle.holdId}) in the opening sentence.",
   "holdResult": "north OR westerlands OR abandoned",
   "casualties": [
     {"faction": "north OR westerlands", "armyId": "exact-id", "unitType": "cavalry OR infantry OR archers", "house": "exact house name from above", "count": NUMBER}
@@ -96,19 +122,18 @@ Respond with this exact JSON object — no other text, no markdown fences:
   ],
   "retreatingArmyIds": ["exact-id", ...],
   "conditionUpdates": [
-    {"armyId": "exact-id", "morale": "one vivid sentence describing morale after this battle", "tiredness": "one vivid sentence describing physical condition after this battle"}
+    {"armyId": "exact-id", "morale": "one vivid sentence — specific to outcome", "tiredness": "one vivid sentence — physical state after battle", "stance": "one vivid sentence — tactical posture after battle: victors become bold/aggressive, defeated become shaken/defensive"}
   ]
 }
 
-conditionUpdates must include one entry for every army involved. Morale and tiredness should be qualitative, vivid, and specific to the outcome — winners feel pride or grim satisfaction, losers feel broken or shamed. Tired men who fought all day should feel it. Fresh troops who routed an enemy feel elated. Never use numbers.`;
+conditionUpdates must include one entry for every army involved. Stance: winners should feel emboldened and aggressive; losers should feel shaken, defensive, or broken. An army that fought from rest will have a different stance than one that fought on the march.`;
 }
 
 function fallbackReport(battle: BattleContext): Omit<BattleReport, "id" | "turn" | "holdId"> {
-  // On error, north holds (arbitrary) with light losses on both sides; west retreats
   const westRetreating = battle.westArmies.map((a) => a.id);
   return {
     narrative:
-      "The forces clashed in the grey half-light of dawn. The exchange was brief and brutal, but the men of the North pressed the advantage on familiar ground. When the sun rose, the Western host had withdrawn, leaving the field to their foes.\n\nThe maesters record no further details — the chaos of the engagement left few reliable witnesses.",
+      "The forces clashed in the grey half-light of dawn. The Northmen pressed their advantage on familiar ground and the Western host withdrew before the day was out.\n\nThe maesters record no further details — the chaos of the engagement left few reliable witnesses.",
     holdResult: "north",
     casualties: [
       ...battle.northArmies.flatMap((a) =>
@@ -173,7 +198,6 @@ export async function POST(req: NextRequest) {
         response = await client.messages.create({
           model,
           max_tokens: MAX_TOKENS,
-          // Disable adaptive thinking — all tokens go to output, not internal reasoning
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           thinking: { type: "disabled" } as any,
           system: SYSTEM_PROMPT,
@@ -186,7 +210,7 @@ export async function POST(req: NextRequest) {
         lastError = apiErr instanceof Error ? apiErr.message : String(apiErr);
         const isOverloaded = lastError.includes("529") || lastError.toLowerCase().includes("overload");
         console.warn(`[got-houses/battle] ${model} attempt ${attempt + 1} failed (overloaded=${isOverloaded}):`, lastError);
-        if (!isOverloaded) break; // non-overload errors won't be fixed by retrying
+        if (!isOverloaded) break;
       }
     }
     if (!succeeded) {
@@ -194,16 +218,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ...fallbackReport(battle), _debug: "api_error", _error: lastError });
     }
 
-    // Dump the entire response so we can see exactly what Sonnet 5 returned
     const _responseDebug = JSON.stringify(response);
     console.log("[got-houses/battle] full response:", _responseDebug);
 
-    // Extract text from ALL block types (text + thinking + any other)
     const rawText = (response.content as Array<Record<string, unknown>>)
       .map((b) => {
         if (typeof b.text === "string") return b.text;
         if (typeof b.thinking === "string") return b.thinking;
-        // Capture anything else with string values
         return Object.values(b).filter((v) => typeof v === "string").join("");
       })
       .join("");
@@ -211,16 +232,12 @@ export async function POST(req: NextRequest) {
     console.log("[got-houses/battle] rawText length:", rawText.length, "stop_reason:", response.stop_reason);
     const _rawFull = rawText;
 
-    // Strip any markdown fences Claude might still add
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       console.error("[got-houses/battle] No JSON found. Raw (first 800 chars):", rawText.slice(0, 800));
       return NextResponse.json({ ...fallbackReport(battle), _debug: "no_json", _raw: rawText, _responseDebug });
     }
 
-    // Sanitise: replace any literal newlines/carriage-returns inside JSON string
-    // values with their escape sequences (Claude occasionally emits a bare \n
-    // instead of \\n inside a quoted value, which breaks JSON.parse).
     function sanitiseJson(str: string): string {
       let inString = false;
       let escaped = false;
@@ -253,7 +270,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ...fallbackReport(battle), _debug: "json_parse_error", _error: msg, _raw: rawText, _responseDebug });
     }
 
-    // Enforce retreat logic: make sure the right armies are in retreatingArmyIds
     const northIds = battle.northArmies.map((a) => a.id);
     const westIds = battle.westArmies.map((a) => a.id);
     let retreatingArmyIds = Array.isArray(parsed.retreatingArmyIds) ? parsed.retreatingArmyIds : [];
