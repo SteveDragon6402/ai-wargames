@@ -119,10 +119,22 @@ export interface ArmyConditionUpdate {
   stance?: string;
 }
 
+/**
+ * How the losing side left the field. Drives casualty magnitude and narrative tone.
+ * structured_withdrawal  — ordered retreat, rear-guard holds, low losses
+ * rout                   — formation breaks, men flee, pursuit casualties + abandonment
+ * shattering             — army effectively destroyed, mass desertion, may reach 0 strength
+ * pyrrhic_win            — winner triumphs but pays dearly (winner casualties > loser in some cases)
+ * last_stand             — trapped with no retreat, fight to the last
+ */
+export type DefeatType = "structured_withdrawal" | "rout" | "shattering" | "pyrrhic_win" | "last_stand";
+
 export interface BattleReport {
   id: string;
   turn: number;
   holdId: string;
+  /** How the battle ended — determines casualty scale */
+  defeatType?: DefeatType;
   /** Claude's ASOIAF-style narrative (2–3 paragraphs) */
   narrative: string;
   holdResult: Faction | "abandoned";

@@ -1,8 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import type { BattleReport, Casualty, FallenFigure } from "../types";
+import type { BattleReport, Casualty, DefeatType, FallenFigure } from "../types";
 import { HOLDS_MAP } from "../data/holds";
+
+const DEFEAT_TYPE_LABELS: Record<DefeatType, string> = {
+  structured_withdrawal: "Structured Withdrawal",
+  rout: "Rout",
+  shattering: "Shattering",
+  pyrrhic_win: "Pyrrhic Victory",
+  last_stand: "Last Stand",
+};
+
+const DEFEAT_TYPE_COLORS: Record<DefeatType, string> = {
+  structured_withdrawal: "#555",
+  rout: "#c87830",
+  shattering: "#b03030",
+  pyrrhic_win: "#c8941a",
+  last_stand: "#8b1a1a",
+};
 
 interface Props {
   reports: BattleReport[];
@@ -227,18 +243,38 @@ function BattleModal({
             </div>
             <div
               style={{
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginTop: 4,
+                flexWrap: "wrap",
+              }}
+            >
+              <span style={{
                 fontFamily: "var(--font-mono), monospace",
                 fontSize: 9,
                 color: "#444",
                 textTransform: "uppercase",
                 letterSpacing: "0.1em",
-                marginTop: 2,
-              }}
-            >
-              Turn {report.turn} ·{" "}
-              <span style={{ color: resultColor }}>
-                {HOLD_RESULT_LABELS[report.holdResult]}
+              }}>
+                Turn {report.turn}
               </span>
+              <span style={{ color: resultColor, fontFamily: "var(--font-mono), monospace", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                · {HOLD_RESULT_LABELS[report.holdResult]}
+              </span>
+              {report.defeatType && (
+                <span style={{
+                  fontFamily: "var(--font-mono), monospace",
+                  fontSize: 8,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.1em",
+                  color: DEFEAT_TYPE_COLORS[report.defeatType],
+                  border: `1px solid ${DEFEAT_TYPE_COLORS[report.defeatType]}40`,
+                  padding: "1px 6px",
+                }}>
+                  {DEFEAT_TYPE_LABELS[report.defeatType]}
+                </span>
+              )}
             </div>
           </div>
           <button
@@ -445,21 +481,36 @@ export default function BattleSummaries({ reports, onClose }: Props) {
                     (e.currentTarget.style.background = "transparent")
                   }
                 >
-                  <span
-                    style={{
-                      fontFamily: "var(--font-mono), monospace",
-                      fontSize: 9,
-                      color: "#888",
-                      textTransform: "uppercase",
-                      letterSpacing: "0.08em",
-                    }}
-                  >
-                    <span style={{ color: "#444" }}>Turn {report.turn} · </span>
-                    {hold?.name ?? report.holdId}
-                    <span style={{ color: resultColor, marginLeft: 8 }}>
-                      · {HOLD_RESULT_LABELS[report.holdResult]}
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                    <span
+                      style={{
+                        fontFamily: "var(--font-mono), monospace",
+                        fontSize: 9,
+                        color: "#888",
+                        textTransform: "uppercase",
+                        letterSpacing: "0.08em",
+                      }}
+                    >
+                      <span style={{ color: "#444" }}>T{report.turn} · </span>
+                      {hold?.name ?? report.holdId}
+                      <span style={{ color: resultColor, marginLeft: 8 }}>
+                        · {HOLD_RESULT_LABELS[report.holdResult]}
+                      </span>
                     </span>
-                  </span>
+                    {report.defeatType && (
+                      <span style={{
+                        fontFamily: "var(--font-mono), monospace",
+                        fontSize: 7,
+                        textTransform: "uppercase",
+                        letterSpacing: "0.08em",
+                        color: DEFEAT_TYPE_COLORS[report.defeatType],
+                        border: `1px solid ${DEFEAT_TYPE_COLORS[report.defeatType]}40`,
+                        padding: "1px 5px",
+                      }}>
+                        {DEFEAT_TYPE_LABELS[report.defeatType]}
+                      </span>
+                    )}
+                  </div>
                   <span
                     style={{
                       fontFamily: "var(--font-mono), monospace",
