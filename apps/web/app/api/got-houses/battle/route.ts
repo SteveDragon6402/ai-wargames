@@ -4,11 +4,19 @@ import type { BattleContext, BattleReport, Casualty, FallenFigure, Hold, ArmyCon
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
-const SYSTEM_PROMPT = `You are adjudicating a multi-army coalition battle in a Game of Thrones strategy game set during the War of the Five Kings. You have deep knowledge of every commander's character, tactical style, and historical record from ASOIAF.
+const SYSTEM_PROMPT = `You are a military analyst adjudicating a medieval wargame battle. Your job is to determine what actually happened when these specific forces met on this specific ground.
 
-Write a crisp after-action report — not a chronicle, not a saga. State what each side decided collectively, what the decisive commanders chose, and what happened as a result. Cause and effect. Name commanders and their choices explicitly. Keep ASOIAF flavour only in proper nouns and tone, not in prose style.
+Write a tactical engagement report — not a story. Structure it as a sequence of labelled phases (INITIAL DEPLOYMENT, PHASE 1, PHASE 2, etc.). Each phase states who acted, what maneuver they executed, and the immediate result. Use commander names and unit types. Describe real tactical actions: flanking, advancing in column, volley fire, screening, holding the line, charging, withdrawing in order, routing.
 
-Each side is a coalition of armies fighting together. Treat them as a unified force with internal dynamics (rivalries, different orders, different conditions), not as isolated individuals.
+HARD CONSTRAINTS — never violate these:
+- Do not comment on who controls territory not explicitly stated in the battle data
+- Do not state or imply where retreating armies will go — that is the player's decision
+- Do not comment on strategic or political implications beyond this single engagement
+- Do not reference armies, forces, or reinforcements not present in this battle
+- Treat the battle location as contested unless the data explicitly shows a defending garrison
+- Every claim must follow directly from the forces given: their numbers, unit composition, morale, tiredness, commander characters, and orders
+
+Keep ASOIAF proper nouns (names, places). Drop all ASOIAF narrative flavour — no ravens, no maesters, no "the gods decided", no purple prose.
 
 Always respond with valid JSON only — no prose, no markdown fences, no commentary outside the JSON object.`;
 
@@ -107,16 +115,29 @@ ${westBlock}
 TASK: Adjudicate this coalition battle at ${locationName}.
 ═══════════════════════════════════════════════════════════════
 
-NARRATIVE REQUIREMENTS:
-1. One sentence on terrain/fortifications at ${locationName} and how they shaped the fight.
-2. For each side: describe the coalition's overall tactical approach, noting where the armies coordinated well or poorly. Name specific commanders and their individual choices. Tywin Lannister fights differently from Robb Stark. Jaime charges. Roose Bolton waits. When multiple friendly armies are present, note if they acted in concert or independently.
-3. Describe the decisive moment: what broke, who held, what changed. The outcome must be driven primarily by the forces themselves — their strength, morale, commanders, terrain, and orders. War has friction; if there is a natural place for an element of chance or fog-of-war, include it as texture. Do not use weather or luck as the deciding factor.
+ENGAGEMENT REPORT FORMAT — write 3 to 5 labelled tactical phases:
 
-If any army had order EXPLICITLY RESTING, treat them as surprised and disorganised — disadvantaged.
+  INITIAL DEPLOYMENT: Where each force positions. Who holds what ground. Opening dispositions of each commander.
+  PHASE 1 — [brief label]: First maneuver. Who moved, what action, immediate result.
+  PHASE 2 — [brief label]: Response or escalation. What changed, who pressed or gave ground.
+  PHASE N — [brief label]: Continue until the decisive moment is reached.
+  RESOLUTION: The final state of the field. Which side holds, which withdraws, what condition they are in.
+
+Rules for each phase:
+- 1 to 3 sentences maximum
+- Name the commander making the decision
+- Name the unit type executing it
+- State the immediate tactical result — do not editorialize, do not project future consequences
+- Do not state where a retreating army will go
+- Do not comment on what the result means politically or strategically
+- Do not assume any army controls territory it was not already occupying per the battle data
+- If an army had order EXPLICITLY RESTING: treat it as surprised and unprepared — that affects the early phases
+
+Each side is a coalition: when multiple armies fight together, note if they coordinated or acted independently.
 
 ${buildCasualtyGuidance(battle.lastStand ?? false)}
 
-Commander and notable death guidance: proportionate to the scale of defeat. A decisive rout should cost losing commanders. A shattering can kill prominent figures. An annihilated army loses all commanders. Do NOT artificially protect named characters. Do NOT invent deaths in minor skirmishes.
+Commander and notable death guidance: proportionate to the scale of defeat. A decisive rout risks losing commanders. A shattering can kill prominent figures. Do NOT artificially protect named characters — they die when the situation warrants it. Do NOT invent deaths in minor skirmishes or small engagements.
 
 Army destruction: you MAY reduce any unit type to 0. An army at 0 total surviving units is destroyed — all its commanders go in "fallen". Do not hesitate with broken armies.
 
@@ -133,7 +154,7 @@ IMPORTANT: Your entire response must fit within ${maxTokens} tokens. Do not trun
 Respond with this exact JSON — no other text, no markdown fences:
 {
   "defeatType": "structured_withdrawal OR rout OR shattering OR pyrrhic_win OR last_stand",
-  "narrative": "One to three paragraphs. Use \\n\\n to separate. Direct and factual — cause and effect. Name the location (${locationName}) in the opening sentence. Length should match the scale of the engagement: a minor skirmish needs one paragraph, a large set-piece deserves three.",
+  "narrative": "Labelled tactical phases separated by \\n\\n. Format each phase as 'LABEL: sentence(s)'. Example: 'INITIAL DEPLOYMENT: Robb Stark deployed his cavalry on the ridge north of ${locationName} while Tywin Lannister advanced his main body up the Kingsroad in column.\\n\\nPHASE 1 — OPENING PROBE: Tywin detached the Clegane vanguard to test the eastern ford under crossbow cover. The Stark cavalry screened but took fire and pulled back to the bank.\\n\\nRESOLUTION: The Northern line collapsed on the left. Robb ordered a fighting withdrawal before the flank was turned.' Scale phases to the engagement — a skirmish needs 3, a major battle warrants 5.",
   "holdResult": "north OR westerlands OR abandoned",
   "casualties": [
     {"faction": "north OR westerlands", "armyId": "exact-id", "unitType": "cavalry OR infantry OR archers", "house": "exact house name from above", "count": NUMBER}
