@@ -58,6 +58,18 @@ export interface ArmyActivity {
   turnsSinceSplit: number | null;
 }
 
+/**
+ * Snapshot of a source army's qualitative condition at the moment of merging.
+ * Populated for one turn (cleared after UPDATE_TIREDNESS) so the tiredness
+ * API can describe the heterogeneous state of a freshly merged force.
+ */
+export interface MergeSourceRecord {
+  name: string;
+  morale: string;
+  tiredness: string;
+  stance: string;
+}
+
 export interface Army {
   id: string;
   name: string;
@@ -79,6 +91,12 @@ export interface Army {
   movesSinceRest?: number;
   /** The hold this army was at immediately before its current position (for retreat blocking) */
   lastHoldId?: string;
+  /**
+   * Set when this army was formed by merging two or more armies this turn.
+   * Contains each source army's morale/tiredness/stance at the moment of merge.
+   * Cleared after the next UPDATE_TIREDNESS so the tiredness API sees it exactly once.
+   */
+  mergedFrom?: MergeSourceRecord[];
 }
 
 export interface MoveOrder {
@@ -203,6 +221,11 @@ export interface TirednessArmyContext {
   activity: ArmyActivity;
   /** The explicit stance order the player issued this turn (if any) */
   stanceOrder: "rest" | "fortify" | "march";
+  /**
+   * If this army was formed by merging this turn, the pre-merge conditions
+   * of each source army. Used to produce a heterogeneous condition description.
+   */
+  mergedFrom?: MergeSourceRecord[];
 }
 
 /* ── Split types ─────────────────────────────────────────────── */

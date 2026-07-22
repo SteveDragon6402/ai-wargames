@@ -110,9 +110,8 @@ TASK: Adjudicate this coalition battle at ${locationName}.
 NARRATIVE REQUIREMENTS:
 1. One sentence on terrain/fortifications at ${locationName} and how they shaped the fight.
 2. For each side: describe the coalition's overall tactical approach, noting where the armies coordinated well or poorly. Name specific commanders and their individual choices. Tywin Lannister fights differently from Robb Stark. Jaime charges. Roose Bolton waits. When multiple friendly armies are present, note if they acted in concert or independently.
-3. Include one randomising factor (weather, fog, courier failure, unexpected flank, a horse stumbling, a ford harder than expected). War is not a chess match.
-4. Describe the decisive moment: what broke, who held, what changed.
-5. END with the field result and survivor condition.
+3. Describe the decisive moment: what broke, who held, what changed. The outcome must be driven primarily by the forces themselves — their strength, morale, commanders, terrain, and orders. War has friction; if there is a natural place for an element of chance or fog-of-war, include it as texture. Do not use weather or luck as the deciding factor.
+4. END with the field result and survivor condition.
 
 If any army had order EXPLICITLY RESTING, treat them as surprised and disorganised — disadvantaged.
 
@@ -156,55 +155,41 @@ conditionUpdates must include one entry for EVERY army involved. Stance after de
 
 function buildCasualtyGuidance(lastStand: boolean): string {
   if (lastStand) {
-    return `DEFEAT TYPE FOR THIS BATTLE: LAST STAND (forced by encirclement — use last stand casualty rules below)
+    return `DEFEAT TYPE FOR THIS BATTLE: LAST STAND (forced by encirclement)
 
-CASUALTY RULES — LAST STAND:
-  Trapped side: 50–85% total casualties. Total destruction is adjudicated honestly. No mercy from the numbers.
-  Attacking side: 10–22% casualties — even the winner bleeds against cornered men.
-  No abandonment modifier needed — there is nowhere to run.
-  List casualties by unit type and house separately.`;
+The trapped force is surrounded with nowhere to retreat. Cornered men fight with desperation — but they cannot escape. Adjudicate casualties honestly based on the trapped side's strength, morale, and the attacker's willingness to close. Total destruction is possible but not automatic: a resolute force behind prepared ground costs the attacker dearly even as it dies.
+
+The attacker bleeds too — even a victorious assault on cornered men is not cheap.
+
+List casualties by unit type and house separately.`;
   }
 
-  return `DEFEAT TYPE — choose ONE that best fits how this battle ends. Your choice determines casualty scale.
+  return `DEFEAT TYPE — choose ONE that best describes how this battle ends. Your choice shapes how you think about casualties.
 
-┌─────────────────────────────────────────────────────────────────────────────┐
-│ STRUCTURED WITHDRAWAL                                                       │
-│ The losing side retreats in good order. Rear-guard holds. Discipline        │
-│ maintained. No pursuit rout.                                                │
-│   Loser:  8–18% casualties. No abandonment.                                 │
-│   Winner: 6–14% casualties (sometimes higher if they attacked a prepared    │
-│           line — a successful defence can cost the attacker more).          │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ ROUT                                                                        │
-│ The losing formation breaks. Men scatter and flee. Cavalry pursues.         │
-│ Casualties come as much from pursuit as from the fighting itself.           │
-│   Loser:  20–38% direct battle casualties                                   │
-│           + 8–20% ABANDONMENT: men who scatter during/after and never       │
-│             return to the army — deserters, stragglers, broken men.         │
-│             Include abandonment in the casualty count.                      │
-│             Narrative must mention men casting down weapons, scattering     │
-│             into fields, or peeling away from the column over the next day. │
-│   Winner: 5–12% casualties.                                                 │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ SHATTERING                                                                  │
-│ The army is effectively destroyed — pursuit, encirclement, or complete      │
-│ collapse. A combination of battlefield deaths and mass desertion.           │
-│   Loser:  40–70% combined (fighting deaths + abandonment). Unit types       │
-│           may drop to 0. "Half an army melted away into the countryside."   │
-│   Winner: 8–18% casualties.                                                 │
-├─────────────────────────────────────────────────────────────────────────────┤
-│ PYRRHIC WIN                                                                 │
-│ The winner triumphs but at terrible cost. Reckless assault, stubborn        │
-│ defence, grinding attrition, or tactical misjudgement by the winner.        │
-│ Sometimes the loser inflicts more casualties than the winner.               │
-│   Winner: 18–32% casualties.                                                │
-│   Loser:  10–22% casualties (fought well before giving ground).             │
-│   Use this when: the loser held a fortified or elevated position; the        │
-│   winner assaulted across a river or through a choke; OR attacker's         │
-│   commanders were reckless (Jaime charging unsupported, etc.).              │
-└─────────────────────────────────────────────────────────────────────────────┘
+STRUCTURED WITHDRAWAL
+The losing side retreats in good order. Rear-guards hold. Discipline is maintained. The loser preserves most of their strength — the pursuit is limited and the army lives to fight another day. Both sides emerged from the engagement with most of their men intact. Think: a narrow defeat against a competent adversary, a deliberate fallback to prepared positions, or a successful fighting withdrawal.
 
-ABANDONMENT NOTE: Routs and shatterings ALWAYS include post-battle abandonment in the casualty totals. These are men who survive the battle but scatter, desert, or fade away — they are gone from the army regardless. Count them as casualties. Mention them in the narrative.
+ROUT
+The formation breaks. Men scatter in terror and flee. Cavalry pursues and the killing happens in the rout, not the battle itself. Beyond the battlefield dead, significant numbers of men scatter, desert, and never return — count these abandonment losses as casualties too. The narrative must describe men casting down weapons, scattering into fields, or peeling away over the following day. Think: a flank that collapsed, a commander killed at the critical moment, morale already brittle before the fight began.
+
+SHATTERING
+The army ceases to exist as a fighting force. Encirclement, complete collapse, or a rout so total that pursuit and desertion reduce the force to almost nothing. Unit types may be annihilated entirely. "Half the army melted away into the countryside" is not hyperbole here. Think: a force caught in the open with no escape, outmanoeuvred on all sides, or already so broken in morale that the battle was over before it started.
+
+PYRRHIC WIN
+The winner claims the field but at terrible cost — often bleeding more than the loser. The losing side fought stubbornly and made the winner pay. Think: the winner assaulted a fortified or elevated position; fought uphill across difficult ground; commanders were reckless; the defence ground down the attacker before finally giving way. The winner cannot pursue aggressively.
+
+CASUALTY PRINCIPLE — do not use percentages or target numbers:
+Think about what this specific battle would actually cost. Consider:
+- How many men reached fighting range before one side broke?
+- How long did the engagement last?
+- Was there a pursuit, and how far did it go?
+- Did men scatter, desert, or simply stop following orders?
+- Were any units already exhausted, low on morale, or poorly led?
+- Did fortifications or terrain shield the defenders or expose the attackers?
+
+Let the numbers emerge from your assessment of the battle and the armies involved. Do not anchor on percentages. A massive army routing a small one costs almost nothing. A small force defending a chokepoint can bleed an army twice its size.
+
+ABANDONMENT: In a rout or shattering, men who survive the fighting but scatter, desert, or fade away are as lost to the army as those who died. Include them in the casualty count and mention them in the narrative.
 
 List all casualties by unit type and house separately.`;
 }

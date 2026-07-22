@@ -710,6 +710,15 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         turnsSinceSplit: base.activity.turnsSinceSplit,
       };
 
+      // Capture each source army's qualitative state before merge, so the
+      // tiredness API can describe the heterogeneous state of the new force.
+      const mergedFrom: import("../types").MergeSourceRecord[] = selected.map((a) => ({
+        name: a.name,
+        morale: a.morale,
+        tiredness: a.tiredness,
+        stance: a.stance,
+      }));
+
       const merged: Army = {
         ...base,
         units: mergedUnits,
@@ -720,6 +729,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         ],
         activity: mergedActivity,
         stance: "Disorganised — units still integrating after the merger",
+        mergedFrom,
       };
 
       const remainingIds = new Set(rest.map((a) => a.id));
@@ -832,6 +842,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             tiredness: update.tiredness,
             ...(update.morale ? { morale: update.morale } : {}),
             ...(update.stance ? { stance: update.stance } : {}),
+            // mergedFrom is a one-turn field — clear it after the tiredness
+            // update so the next tiredness call sees a normal single army.
+            mergedFrom: undefined,
           };
         }),
       };

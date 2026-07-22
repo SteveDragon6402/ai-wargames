@@ -23,9 +23,15 @@ STANCE — battle-readiness and tactical posture:
 - Resting (especially multiple consecutive turns): troops grow softer, less drilled, less battle-ready. "Relaxed and unready" after 2+ turns
 - Fortifying (1 turn): defensive stance developing. 2+ turns: hardened, entrenched, very defensive
 - Marching (especially toward the enemy): aggressive, alert, purposeful
-- Just merged armies this turn (turnsSinceMerge = 0): disorganised, chain of command unsettled
+- Just merged armies this turn (turnsSinceMerge = 0): disorganised, chain of command unsettled — describe the heterogeneous state if source conditions are provided (see below)
 - Just split this turn (turnsSinceSplit = 0): uncertain, divided, formations still forming
 - Long consecutive marches (3+): experienced and battle-hardened but weary
+
+MERGED ARMIES (when "Pre-merge source conditions" is present):
+This army was formed by combining two or more forces this turn. Each source army entered the merger with its own tiredness, morale, and stance — those do not vanish the moment they march together. Describe the merged state in terms of its constituent parts rather than flattening them into a single average.
+- Example: "Disorganised from the merger — Tywin's veterans remain steady and well-rested while Jaime's battered men are still exhausted and shaken from their ordeal"
+- Acknowledge the contrast if it is meaningful; omit it only when both forces were in essentially the same condition
+- If one contingent was in noticeably worse shape, that should be visible in the tiredness and morale descriptions
 
 Each description should be one vivid sentence in ASOIAF flavour.
 
@@ -73,7 +79,12 @@ function fallbackTiredness(armies: TirednessRequest["armies"]): TirednessUpdate[
     }
 
     if (army.activity.turnsSinceMerge === 0) {
-      stance = "Disorganised — units still integrating after the merger";
+      if (army.mergedFrom && army.mergedFrom.length >= 2) {
+        const [a, b] = army.mergedFrom;
+        stance = `Disorganised from the merger — ${a.name}'s contingent remains ${a.tiredness.toLowerCase().split(".")[0]} while ${b.name}'s men are ${b.tiredness.toLowerCase().split(".")[0]}`;
+      } else {
+        stance = "Disorganised — units still integrating after the merger";
+      }
     } else if (army.activity.turnsSinceSplit === 0) {
       stance = "Uncertain — formations still settling after the split";
     }
@@ -114,6 +125,10 @@ export async function POST(req: NextRequest) {
           act.turnsSinceSplit !== null ? `Turns since last split: ${act.turnsSinceSplit} (0 = just split this turn)` : null,
         ].filter(Boolean).join("\n");
 
+        const mergeSection = army.mergedFrom && army.mergedFrom.length > 0
+          ? `\nPre-merge source conditions (this army was formed by merging these forces this turn):\n${army.mergedFrom.map((s) => `  • ${s.name}: tiredness="${s.tiredness}", morale="${s.morale}", stance="${s.stance}"`).join("\n")}`
+          : "";
+
         return `Army: ${army.name} [id: "${army.armyId}"]
 Location: ${army.holdName} (${army.territory} territory)
 Commanders: ${leaders}
@@ -123,7 +138,7 @@ Current morale: ${army.currentMorale}
 Current stance: ${army.currentStance}
 This turn's order: ${army.stanceOrder} (moves since last rest: ${army.movesSinceRest})
 Activity history:
-${activityLines}`;
+${activityLines}${mergeSection}`;
       })
       .join("\n\n");
 

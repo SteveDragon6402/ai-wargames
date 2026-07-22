@@ -89,6 +89,9 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
               holdName: hold?.name ?? "Unknown",
               activity: army.activity,
               stanceOrder,
+              // Pass pre-merge conditions so the tiredness API can describe
+              // the heterogeneous state of a freshly merged army.
+              ...(army.mergedFrom ? { mergedFrom: army.mergedFrom } : {}),
             };
           }),
         };
