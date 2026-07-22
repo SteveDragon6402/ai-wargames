@@ -596,6 +596,14 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
+    case "OPEN_COMMANDER_CHANGE": {
+      return { ...state, voluntaryCommanderChange: action.armyId };
+    }
+
+    case "CLOSE_COMMANDER_CHANGE": {
+      return { ...state, voluntaryCommanderChange: null };
+    }
+
     case "SELECT_LEAD_COMMANDER": {
       const updatedArmies = state.armies.map((army) => {
         if (army.id !== action.armyId) return army;
@@ -609,6 +617,15 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           name: `${action.leaderName}'s ${suffix}`,
         };
       });
+
+      // Handle voluntary commander reassignment
+      if (state.voluntaryCommanderChange === action.armyId) {
+        return {
+          ...state,
+          armies: updatedArmies,
+          voluntaryCommanderChange: null,
+        };
+      }
 
       const newPendingRenames = state.pendingRenames.filter((id) => id !== action.armyId);
 

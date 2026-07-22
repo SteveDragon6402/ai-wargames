@@ -262,6 +262,8 @@ export interface GameState {
   turnHistory?: TurnHistory[];
   /** Army IDs awaiting post-battle commander selection */
   pendingRenames: string[];
+  /** Army ID whose commander the player is voluntarily reassigning (null = panel closed) */
+  voluntaryCommanderChange: string | null;
   /** Army ID currently open in the split panel (null = panel closed) */
   splitPanelArmyId: string | null;
 }
@@ -287,4 +289,6 @@ export type GameAction =
   | { type: "OPEN_SPLIT"; armyId: string }
   | { type: "CLOSE_SPLIT" }
   | { type: "SPLIT_ARMY"; config: SplitConfig }
-  | { type: "SELECT_LEAD_COMMANDER"; armyId: string; leaderName: string };
+  | { type: "SELECT_LEAD_COMMANDER"; armyId: string; leaderName: string }
+  | { type: "OPEN_COMMANDER_CHANGE"; armyId: string }
+  | { type: "CLOSE_COMMANDER_CHANGE" };

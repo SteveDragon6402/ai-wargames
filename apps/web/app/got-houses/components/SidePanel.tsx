@@ -97,6 +97,12 @@ export default function SidePanel({ state, dispatch }: Props) {
     !isLocked &&
     (singleSelected.leaders.length >= 2 || singleSelected.units.length >= 2);
 
+  // Can change commander: exactly 1 selected, not locked, has 2+ candidates (leaders + notables)
+  const canChangeCommander =
+    !!singleSelected &&
+    !isLocked &&
+    (singleSelected.leaders.length + (singleSelected.notables?.length ?? 0)) >= 2;
+
   // Can move: 1+ selected, not locked, not in move mode
   const canMove = selectedArmies.length > 0 && !isLocked;
 
@@ -236,6 +242,15 @@ export default function SidePanel({ state, dispatch }: Props) {
                   label="Split"
                   disabled={false}
                   onClick={() => dispatch({ type: "OPEN_SPLIT", armyId: singleSelected!.id })}
+                />
+              )}
+              {canChangeCommander && (
+                <ActionButton
+                  label="Commander"
+                  disabled={false}
+                  onClick={() =>
+                    dispatch({ type: "OPEN_COMMANDER_CHANGE", armyId: singleSelected!.id })
+                  }
                 />
               )}
               {canIssueStance && (

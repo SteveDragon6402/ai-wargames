@@ -16,23 +16,40 @@ const FACTION_COLORS = {
 };
 
 export default function CommanderRenamePanel({ state, dispatch }: Props) {
+  // Voluntary reassignment takes priority (player-initiated)
+  if (state.voluntaryCommanderChange) {
+    const army = state.armies.find((a) => a.id === state.voluntaryCommanderChange);
+    if (army) {
+      return (
+        <ArmyRenameCard
+          key={army.id}
+          army={army}
+          dispatch={dispatch}
+          mode="voluntary"
+        />
+      );
+    }
+  }
+
+  // Post-battle forced commander selection
   const armies = state.pendingRenames
     .map((id) => state.armies.find((a) => a.id === id))
     .filter(Boolean) as Army[];
 
   if (armies.length === 0) return null;
 
-  // Show one army at a time — the first in the queue
   const army = armies[0];
-  return <ArmyRenameCard key={army.id} army={army} dispatch={dispatch} />;
+  return <ArmyRenameCard key={army.id} army={army} dispatch={dispatch} mode="forced" />;
 }
 
 function ArmyRenameCard({
   army,
   dispatch,
+  mode,
 }: {
   army: Army;
   dispatch: React.Dispatch<GameAction>;
+  mode: "forced" | "voluntary";
 }) {
   const colors = FACTION_COLORS[army.faction];
   const [selected, setSelected] = useState<string | null>(null);
@@ -83,14 +100,38 @@ function ArmyRenameCard({
             flexShrink: 0,
           }}
         >
-          <div style={{ ...MONO, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.15em", color: "#c8941a", marginBottom: 4 }}>
-            Commander Lost
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+            <div style={{ ...MONO, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.15em", color: "#c8941a", marginBottom: 4 }}>
+              {mode === "voluntary" ? "Appoint Commander" : "Commander Lost"}
+            </div>
+            {mode === "voluntary" && (
+              <button
+                type="button"
+                onClick={() => dispatch({ type: "CLOSE_COMMANDER_CHANGE" })}
+                style={{
+                  ...MONO,
+                  fontSize: 10,
+                  color: "#333",
+                  background: "none",
+                  border: "none",
+                  cursor: "pointer",
+                  padding: 0,
+                  marginTop: 1,
+                }}
+                onMouseEnter={(e) => (e.currentTarget.style.color = "#888")}
+                onMouseLeave={(e) => (e.currentTarget.style.color = "#333")}
+              >
+                ✕
+              </button>
+            )}
           </div>
           <div style={{ ...MONO, fontSize: 9, color: "#555", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 8 }}>
-            {army.name} · {totalUnits.toLocaleString()} troops remaining
+            {army.name} · {totalUnits.toLocaleString()} troops
           </div>
           <div style={{ ...MONO, fontSize: 9, color: "#666", lineHeight: 1.6 }}>
-            This army has lost its lead commander. Choose who will take command.
+            {mode === "voluntary"
+              ? "Choose who leads this army. The army will be renamed accordingly."
+              : "This army has lost its lead commander. Choose who will take command."}
           </div>
         </div>
 

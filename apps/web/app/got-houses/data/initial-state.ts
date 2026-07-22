@@ -176,5 +176,6 @@ export const INITIAL_GAME_STATE: GameState = {
   battleLogOpen: false,
   turnHistory: [],
   pendingRenames: [],
+  voluntaryCommanderChange: null,
   splitPanelArmyId: null,
 };
