@@ -209,7 +209,7 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
 
   const isResolving = state.phase === "resolving";
   const isRetreat = state.phase === "retreat";
-  const isRename = state.phase === "rename_commanders";
+  const isRename = state.phase === "rename_commanders" || !!state.voluntaryCommanderChange;
 
   const totalBattleArmies = state.pendingBattles.reduce(
     (sum, b) => sum + b.northArmies.length + b.westArmies.length,
