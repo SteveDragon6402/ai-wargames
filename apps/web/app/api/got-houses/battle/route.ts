@@ -309,6 +309,7 @@ export async function POST(req: NextRequest) {
     }
 
     function sanitiseJson(str: string): string {
+      // Pass 1: escape raw control characters that appear inside JSON strings
       let inString = false;
       let escaped = false;
       let out = "";
@@ -317,11 +318,18 @@ export async function POST(req: NextRequest) {
         if (escaped) { escaped = false; out += ch; continue; }
         if (ch === "\\" && inString) { escaped = true; out += ch; continue; }
         if (ch === '"') { inString = !inString; out += ch; continue; }
-        if (inString && ch === "\n") { out += "\\n"; continue; }
-        if (inString && ch === "\r") { out += "\\r"; continue; }
+        if (inString) {
+          if (ch === "\n") { out += "\\n"; continue; }
+          if (ch === "\r") { out += "\\r"; continue; }
+          if (ch === "\t") { out += "\\t"; continue; }
+        }
         out += ch;
       }
-      return out;
+      // Pass 2: remove trailing commas before ] or } (LLMs commonly emit these)
+      // Safe to do globally — a literal ",]" or ",}" inside a string value
+      // would have been escaped by now if it contained raw newlines, and
+      // the pattern itself is syntactically invalid in JSON everywhere else.
+      return out.replace(/,(\s*[}\]])/g, "$1");
     }
 
     let parsed: {
@@ -333,11 +341,21 @@ export async function POST(req: NextRequest) {
       retreatingArmyIds: string[];
       conditionUpdates?: ArmyConditionUpdate[];
     };
+    const sanitised = sanitiseJson(jsonMatch[0]);
     try {
-      parsed = JSON.parse(sanitiseJson(jsonMatch[0]));
+      parsed = JSON.parse(sanitised);
     } catch (parseErr) {
       const msg = parseErr instanceof Error ? parseErr.message : String(parseErr);
-      console.error("[got-houses/battle] JSON parse error:", msg);
+      // Extract position from message like "at position 1933" and log a window around it
+      const posMatch = msg.match(/position (\d+)/);
+      if (posMatch) {
+        const pos = parseInt(posMatch[1], 10);
+        console.error("[got-houses/battle] JSON parse error:", msg,
+          "\n→ context around position", pos, ":",
+          JSON.stringify(sanitised.slice(Math.max(0, pos - 60), pos + 60)));
+      } else {
+        console.error("[got-houses/battle] JSON parse error:", msg);
+      }
       return NextResponse.json({ ...fallbackReport(battle), _debug: "json_parse_error", _error: msg });
     }
 
