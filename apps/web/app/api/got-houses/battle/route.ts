@@ -111,7 +111,6 @@ NARRATIVE REQUIREMENTS:
 1. One sentence on terrain/fortifications at ${locationName} and how they shaped the fight.
 2. For each side: describe the coalition's overall tactical approach, noting where the armies coordinated well or poorly. Name specific commanders and their individual choices. Tywin Lannister fights differently from Robb Stark. Jaime charges. Roose Bolton waits. When multiple friendly armies are present, note if they acted in concert or independently.
 3. Describe the decisive moment: what broke, who held, what changed. The outcome must be driven primarily by the forces themselves — their strength, morale, commanders, terrain, and orders. War has friction; if there is a natural place for an element of chance or fog-of-war, include it as texture. Do not use weather or luck as the deciding factor.
-4. END with the field result and survivor condition.
 
 If any army had order EXPLICITLY RESTING, treat them as surprised and disorganised — disadvantaged.
 
@@ -134,7 +133,7 @@ IMPORTANT: Your entire response must fit within ${maxTokens} tokens. Do not trun
 Respond with this exact JSON — no other text, no markdown fences:
 {
   "defeatType": "structured_withdrawal OR rout OR shattering OR pyrrhic_win OR last_stand",
-  "narrative": "2–3 short paragraphs. Use \\n\\n to separate. Direct and factual. Coalitions make decisions. Chance intervenes. The field is decided. Name the location (${locationName}) in the opening sentence.",
+  "narrative": "One to three paragraphs. Use \\n\\n to separate. Direct and factual — cause and effect. Name the location (${locationName}) in the opening sentence. Length should match the scale of the engagement: a minor skirmish needs one paragraph, a large set-piece deserves three.",
   "holdResult": "north OR westerlands OR abandoned",
   "casualties": [
     {"faction": "north OR westerlands", "armyId": "exact-id", "unitType": "cavalry OR infantry OR archers", "house": "exact house name from above", "count": NUMBER}

@@ -98,20 +98,65 @@ function detectBattles(
 
 /** Apply casualties to the army list. Returns updated armies (removes depleted units). */
 function applyCasualties(armies: Army[], casualties: Casualty[]): Army[] {
+  // Normalise a house name for fuzzy matching:
+  // strips the "House " prefix and lowercases so "House Stark" == "stark" == "Stark"
+  const norm = (s: string) => s.toLowerCase().replace(/^\s*house\s+/i, "").trim();
+
   return armies
     .map((army) => {
       const armyCasualties = casualties.filter((c) => c.armyId === army.id);
       if (armyCasualties.length === 0) return army;
 
+      // Track which casualty entries have been claimed by a specific unit
+      const claimed = new Set<number>();
+
       const updatedUnits = army.units
         .map((unit) => {
-          const loss = armyCasualties.find(
-            (c) => c.unitType === unit.type && c.house === unit.house
+          // 1. Try exact match (armyId + unitType + house)
+          // 2. Fallback: case-insensitive + strip "House " prefix
+          const matchingIndices = armyCasualties
+            .map((c, i) => ({ c, i }))
+            .filter(({ c }) => {
+              if (c.unitType !== unit.type) return false;
+              return c.house === unit.house || norm(c.house) === norm(unit.house);
+            })
+            .map(({ i }) => i);
+
+          if (matchingIndices.length === 0) return unit;
+
+          // Sum all matching entries (Claude sometimes emits multiple rows for same unit)
+          const totalLoss = matchingIndices.reduce(
+            (sum, i) => sum + armyCasualties[i].count,
+            0
           );
-          if (!loss) return unit;
-          return { ...unit, count: Math.max(0, unit.count - loss.count) };
+          matchingIndices.forEach((i) => claimed.add(i));
+          return { ...unit, count: Math.max(0, unit.count - totalLoss) };
         })
         .filter((u) => u.count > 0);
+
+      // Proportional fallback for any remaining unclaimed casualties
+      // (Claude used a house name that doesn't match any real unit in this army —
+      // distribute them across units of the matching type, proportional to size)
+      const unclaimed = armyCasualties.filter((_, i) => !claimed.has(i));
+      if (unclaimed.length > 0) {
+        const byType = new Map<string, number>();
+        for (const c of unclaimed) {
+          byType.set(c.unitType, (byType.get(c.unitType) ?? 0) + c.count);
+        }
+        for (const [unitType, totalLoss] of byType) {
+          const typeUnits = updatedUnits.filter((u) => u.type === unitType);
+          if (typeUnits.length === 0) continue;
+          const totalOfType = typeUnits.reduce((s, u) => s + u.count, 0);
+          for (const unit of typeUnits) {
+            const share = Math.round((unit.count / totalOfType) * totalLoss);
+            unit.count = Math.max(0, unit.count - share);
+          }
+        }
+        // Remove any units zeroed out in the proportional pass
+        for (let i = updatedUnits.length - 1; i >= 0; i--) {
+          if (updatedUnits[i].count <= 0) updatedUnits.splice(i, 1);
+        }
+      }
 
       return { ...army, units: updatedUnits };
     })
