@@ -1,4 +1,5 @@
 import type { Army, ArmyActivity, GameState } from "../types";
+import { buildInitialCharacters } from "./characters";
 
 const FRESH_ACTIVITY: ArmyActivity = {
   turnsResting: 0,
@@ -178,4 +179,9 @@ export const INITIAL_GAME_STATE: GameState = {
   pendingRenames: [],
   voluntaryCommanderChange: null,
   splitPanelArmyId: null,
+  characters: buildInitialCharacters(),
+  conversations: [],
+  speechesThisTurn: [],
+  openConversationIds: [],
+  talkPickerOpen: false,
 };

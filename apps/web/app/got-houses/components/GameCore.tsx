@@ -10,8 +10,21 @@ import BattleSummaries from "./BattleSummaries";
 import SplitPanel from "./SplitPanel";
 import CommanderRenamePanel from "./CommanderRenamePanel";
 import { HOLDS, HOLDS_MAP } from "../data/holds";
-import type { BattleReport, TirednessRequest, TirednessUpdate, GameState } from "../types";
+import { FACTION_HOMELAND } from "../data/homeland";
+import { getPathwayRoute } from "../data/pathways";
+import type {
+  BattleReport,
+  TirednessRequest,
+  TirednessUpdate,
+  GameState,
+  CommanderBrief,
+  NpcRuntimePatch,
+  BattleContext,
+} from "../types";
 import { INITIAL_GAME_STATE } from "../data/initial-state";
+import ConversationDock from "./ConversationDock";
+import { snapshotForApi } from "../lib/converse-client";
+import { buildInitialCharacters } from "../data/characters";
 
 interface GameCoreProps {
   /** Override starting state (e.g. loaded from DB for room games). Defaults to INITIAL_GAME_STATE. */
@@ -20,8 +33,22 @@ interface GameCoreProps {
   onSave?: (state: GameState) => void;
 }
 
+function normalizeState(raw: GameState): GameState {
+  return {
+    ...INITIAL_GAME_STATE,
+    ...raw,
+    characters: raw.characters ?? buildInitialCharacters(),
+    conversations: raw.conversations ?? [],
+    speechesThisTurn: raw.speechesThisTurn ?? [],
+    openConversationIds: raw.openConversationIds ?? [],
+    talkPickerOpen: raw.talkPickerOpen ?? false,
+  };
+}
+
 export default function GameCore({ initialState, onSave }: GameCoreProps) {
-  const { state, dispatch } = useGameState(initialState ?? INITIAL_GAME_STATE);
+  const { state, dispatch } = useGameState(
+    normalizeState(initialState ?? INITIAL_GAME_STATE)
+  );
 
   const resolvingRef = useRef(false);
   const tirednessUpdatedRef = useRef<number | null>(null);
@@ -74,6 +101,17 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
               stanceOrder = "rest";
             }
 
+            const fromHold =
+              moved && army.lastHoldId ? HOLDS_MAP.get(army.lastHoldId) : undefined;
+            const marchRoute =
+              moved && fromHold && hold
+                ? {
+                    fromHoldName: fromHold.name,
+                    toHoldName: hold.name,
+                    route: getPathwayRoute(fromHold.id, hold.id),
+                  }
+                : undefined;
+
             return {
               armyId: army.id,
               name: army.name,
@@ -87,6 +125,9 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
               movesSinceRest: army.movesSinceRest ?? 0,
               territory,
               holdName: hold?.name ?? "Unknown",
+              holdGround: hold?.ground ?? "Unknown ground",
+              homeland: FACTION_HOMELAND[army.faction],
+              ...(marchRoute ? { marchRoute } : {}),
               activity: army.activity,
               stanceOrder,
               // Pass pre-merge conditions so the tiredness API can describe
@@ -134,6 +175,7 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
 
     async function runBattles() {
       const reports: BattleReport[] = [];
+      let characters = state.characters;
 
       for (const battle of state.pendingBattles) {
         console.group(`%c⚔ Battle: ${battle.holdId} — turn ${state.turn}${battle.lastStand ? " [LAST STAND]" : ""}`, "color:#c8941a;font-weight:bold");
@@ -141,12 +183,73 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
         console.log("West armies:", battle.westArmies.map((a) => `${a.name} (${a.id})`));
         console.log("Last stand:", battle.lastStand ?? false);
 
+        // NPC commander briefs (never player lords)
+        let commanderBriefs: CommanderBrief[] = [];
+        const armyIds = new Set(
+          [...battle.northArmies, ...battle.westArmies].map((a) => a.id)
+        );
+        const commanderIds = Object.values(characters)
+          .filter(
+            (c) =>
+              c.kind === "npc" &&
+              c.alive &&
+              c.role === "commander" &&
+              c.armyId &&
+              armyIds.has(c.armyId)
+          )
+          .map((c) => c.id);
+
+        if (commanderIds.length > 0) {
+          try {
+            console.log("→ Commander briefs for", commanderIds);
+            const briefRes = await fetch("/api/got-houses/converse/battle-brief", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                battle,
+                commanderIds,
+                ...snapshotForApi({ ...state, characters }),
+              }),
+            });
+            if (briefRes.ok) {
+              const briefData = (await briefRes.json()) as {
+                briefs?: CommanderBrief[];
+                patches?: NpcRuntimePatch[];
+              };
+              commanderBriefs = briefData.briefs ?? [];
+              if (briefData.patches?.length) {
+                dispatch({ type: "PATCH_CHARACTERS", patches: briefData.patches });
+                for (const p of briefData.patches) {
+                  const cur = characters[p.id];
+                  if (cur?.kind === "npc") {
+                    characters = {
+                      ...characters,
+                      [p.id]: {
+                        ...cur,
+                        ...(p.mood !== undefined ? { mood: p.mood } : {}),
+                        ...(p.notepad !== undefined ? { notepad: p.notepad } : {}),
+                      },
+                    };
+                  }
+                }
+              }
+            }
+          } catch (err) {
+            console.warn("Commander briefs failed — continuing without", err);
+          }
+        }
+
+        const battleWithBriefs: BattleContext = {
+          ...battle,
+          commanderBriefs,
+        };
+
         try {
           console.log("→ POSTing to /api/got-houses/battle …");
           const res = await fetch("/api/got-houses/battle", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ battle, holds: HOLDS }),
+            body: JSON.stringify({ battle: battleWithBriefs, holds: HOLDS }),
           });
 
           console.log("← HTTP status:", res.status, res.statusText);
@@ -309,6 +412,10 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
 
       {/* Split army overlay */}
       {state.splitPanelArmyId && <SplitPanel state={state} dispatch={dispatch} />}
+
+      {state.phase === "planning" && (
+        <ConversationDock state={state} dispatch={dispatch} />
+      )}
 
       <style>{`
         @keyframes pulse {

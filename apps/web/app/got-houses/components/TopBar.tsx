@@ -241,8 +241,30 @@ export default function TopBar({ state, dispatch }: Props) {
         locked={!inPlanningPhase}
       />
 
+      {/* Talk */}
+      {inPlanningPhase && (
+        <button
+          type="button"
+          onClick={() => dispatch({ type: "TOGGLE_TALK_PICKER" })}
+          style={{
+            fontFamily: "var(--font-mono), monospace",
+            fontSize: 9,
+            textTransform: "uppercase",
+            letterSpacing: "0.1em",
+            color: state.talkPickerOpen ? "#c8941a" : "#555",
+            background: "transparent",
+            border: "1px solid #2a2a2a",
+            padding: "6px 12px",
+            cursor: "pointer",
+            marginRight: 8,
+          }}
+        >
+          Talk
+        </button>
+      )}
+
       {/* Battle Log toggle */}
-      <button
+        <button
         type="button"
         onClick={() => dispatch({ type: "TOGGLE_BATTLE_LOG" })}
         style={{

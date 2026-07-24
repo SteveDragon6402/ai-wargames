@@ -26,6 +26,28 @@ export interface Hold {
   y: number;
   /** IDs of directly connected holds */
   links: string[];
+  /**
+   * Soft ground: climate, defensibility, rest quality.
+   * Adjudicator-only — never shown to players.
+   */
+  ground: string;
+}
+
+/**
+ * Soft march between two adjacent holds.
+ * Adjudicator-only — never shown to players.
+ */
+export interface Pathway {
+  a: string;
+  b: string;
+  route: string;
+}
+
+/** How an army arrived at a battle hold this turn (if it marched in). */
+export interface ArmyApproach {
+  fromHoldId: string;
+  fromHoldName: string;
+  route: string;
 }
 
 export interface ArmyUnit {
@@ -171,10 +193,14 @@ export interface BattleContext {
   northFromHoldId?: string;
   /** hold the westerlands army marched from; undefined = defender */
   westFromHoldId?: string;
+  /** Per-army approach path for armies that marched into this hold this turn */
+  armyApproaches?: Record<string, ArmyApproach>;
   /** Per-army order type for this engagement */
   armyOrders?: Record<string, "march" | "rest" | "fortify">;
   /** When true, one side is trapped with no retreat options — fight to the last */
   lastStand?: boolean;
+  /** NPC commander takes — player lords never included */
+  commanderBriefs?: CommanderBrief[];
 }
 
 export interface RetreatEntry {
@@ -217,6 +243,19 @@ export interface TirednessArmyContext {
   movesSinceRest: number;
   territory: "home" | "neutral";
   holdName: string;
+  /** Soft ground at the army's current hold — adjudicator only */
+  holdGround: string;
+  /** Soft homeland character for this army's faction — adjudicator only */
+  homeland: string;
+  /**
+   * If the army marched this turn, the pathway it took.
+   * Soft route text — adjudicator only.
+   */
+  marchRoute?: {
+    fromHoldName: string;
+    toHoldName: string;
+    route: string;
+  };
   /** Full activity history — fed verbatim to AI */
   activity: ArmyActivity;
   /** The explicit stance order the player issued this turn (if any) */
@@ -234,6 +273,98 @@ export interface SplitConfig {
   sourceArmyId: string;
   army1: { units: ArmyUnit[]; leaderNames: string[]; notableNames: string[] };
   army2: { units: ArmyUnit[]; leaderNames: string[]; notableNames: string[] };
+}
+
+/* ── Character / conversation types ───────────────────────────── */
+
+export type CharacterId = string;
+
+export interface InviteMemory {
+  fromCharacterId: CharacterId;
+  turn: number;
+  outcome: "accepted" | "declined" | "left";
+  reason: string;
+}
+
+/** Thin player-lord record — not an AI agent. */
+export interface PlayerLordState {
+  kind: "player";
+  id: CharacterId;
+  name: string;
+  faction: Faction;
+  role: "lord";
+  /** For NPCs to read via tools — not an AI system prompt */
+  background: string;
+  armyId: string | null;
+  alive: boolean;
+}
+
+/** Full NPC agent runtime state. */
+export interface NpcAgentState {
+  kind: "npc";
+  id: CharacterId;
+  name: string;
+  faction: Faction;
+  role: "commander" | "notable";
+  armyId: string | null;
+  alive: boolean;
+  /** Soft memory — capped; adjudicator/agent only */
+  notepad: string;
+  /** Soft mood one-liner — feeds battle briefs */
+  mood: string;
+  dispositionToward: Record<string, string>;
+  inviteHistory: InviteMemory[];
+}
+
+export type CharacterState = PlayerLordState | NpcAgentState;
+
+export type ChatMessageKind = "chat" | "invite" | "system" | "leave" | "speech_reaction";
+
+export interface ChatMessage {
+  id: string;
+  speakerId: CharacterId;
+  speakerName: string;
+  text: string;
+  at: number;
+  kind: ChatMessageKind;
+}
+
+export type ConversationKind = "direct" | "war_council";
+export type ConversationStatus = "pending_invite" | "active" | "closed";
+
+export interface ConversationThread {
+  id: string;
+  kind: ConversationKind;
+  faction?: Faction;
+  participantIds: CharacterId[];
+  /** NPCs who left a war council (player always remains for council) */
+  leftParticipantIds: CharacterId[];
+  status: ConversationStatus;
+  messages: ChatMessage[];
+  inviteFrom: CharacterId;
+  inviteTo: CharacterId | null;
+  closedReason?: string;
+  createdTurn: number;
+}
+
+export interface CommanderBrief {
+  characterId: CharacterId;
+  name: string;
+  armyId: string;
+  mood: string;
+  take: string;
+  outlook: string;
+  approach: string;
+}
+
+export interface NpcRuntimePatch {
+  id: CharacterId;
+  notepad?: string;
+  mood?: string;
+  dispositionToward?: Record<string, string>;
+  inviteHistory?: InviteMemory[];
+  alive?: boolean;
+  armyId?: string | null;
 }
 
 /* ── Game state ───────────────────────────────────────────────── */
@@ -266,6 +397,16 @@ export interface GameState {
   voluntaryCommanderChange: string | null;
   /** Army ID currently open in the split panel (null = panel closed) */
   splitPanelArmyId: string | null;
+  /** Permanent character homes (player lords + NPC agents) */
+  characters: Record<CharacterId, CharacterState>;
+  /** Active and archived conversation threads */
+  conversations: ConversationThread[];
+  /** Army IDs that already gave a speech this turn */
+  speechesThisTurn: string[];
+  /** Open chat thread ids in the dock (UI) */
+  openConversationIds: string[];
+  /** Whether the talk/character picker is open */
+  talkPickerOpen: boolean;
 }
 
 export type GameAction =
@@ -291,4 +432,19 @@ export type GameAction =
   | { type: "SPLIT_ARMY"; config: SplitConfig }
   | { type: "SELECT_LEAD_COMMANDER"; armyId: string; leaderName: string }
   | { type: "OPEN_COMMANDER_CHANGE"; armyId: string }
-  | { type: "CLOSE_COMMANDER_CHANGE" };
+  | { type: "CLOSE_COMMANDER_CHANGE" }
+  | { type: "TOGGLE_TALK_PICKER" }
+  | { type: "OPEN_CONVERSATION"; threadId: string }
+  | { type: "CLOSE_CONVERSATION_DOCK"; threadId: string }
+  | { type: "UPSERT_CONVERSATION"; thread: ConversationThread }
+  | { type: "APPEND_MESSAGES"; threadId: string; messages: ChatMessage[] }
+  | { type: "PATCH_CHARACTERS"; patches: NpcRuntimePatch[] }
+  | {
+      type: "APPLY_SPEECH";
+      armyId: string;
+      reaction: string;
+      condition: ArmyConditionUpdate;
+      impliedOrder: "rest" | "fortify" | "none";
+      commanderPatch?: NpcRuntimePatch;
+    }
+  | { type: "MARK_CHARACTERS_FALLEN"; names: string[] };

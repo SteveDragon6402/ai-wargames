@@ -6,6 +6,7 @@ import type {
   MoveOrder,
   Army,
   ArmyActivity,
+  ArmyApproach,
   BattleContext,
   BattleReport,
   RetreatEntry,
@@ -14,9 +15,39 @@ import type {
   Hold,
   ArmyConditionUpdate,
   SplitConfig,
+  CharacterState,
+  NpcAgentState,
+  NpcRuntimePatch,
 } from "../types";
 import { INITIAL_GAME_STATE } from "../data/initial-state";
 import { HOLDS_MAP } from "../data/holds";
+import { getPathwayRoute } from "../data/pathways";
+import { findCharacterIdByName } from "../data/characters";
+
+function applyCharacterPatches(
+  characters: Record<string, CharacterState>,
+  patches: NpcRuntimePatch[]
+): Record<string, CharacterState> {
+  if (patches.length === 0) return characters;
+  const next = { ...characters };
+  for (const p of patches) {
+    const cur = next[p.id];
+    if (!cur || cur.kind !== "npc") continue;
+    const updated: NpcAgentState = {
+      ...cur,
+      ...(p.notepad !== undefined ? { notepad: p.notepad } : {}),
+      ...(p.mood !== undefined ? { mood: p.mood } : {}),
+      ...(p.dispositionToward !== undefined
+        ? { dispositionToward: p.dispositionToward }
+        : {}),
+      ...(p.inviteHistory !== undefined ? { inviteHistory: p.inviteHistory } : {}),
+      ...(p.alive !== undefined ? { alive: p.alive } : {}),
+      ...(p.armyId !== undefined ? { armyId: p.armyId } : {}),
+    };
+    next[p.id] = updated;
+  }
+  return next;
+}
 
 function getAdjacentHolds(holdId: string): string[] {
   return HOLDS_MAP.get(holdId)?.links ?? [];
@@ -84,12 +115,25 @@ function detectBattles(
       (o) => westHere.some((a) => a.id === o.armyId) && o.toHoldId === holdId
     )?.fromHoldId;
 
+    const armyApproaches: Record<string, ArmyApproach> = {};
+    for (const order of allOrders) {
+      if (order.toHoldId !== holdId) continue;
+      if (!armiesHere.some((a) => a.id === order.armyId)) continue;
+      const fromHold = HOLDS_MAP.get(order.fromHoldId);
+      armyApproaches[order.armyId] = {
+        fromHoldId: order.fromHoldId,
+        fromHoldName: fromHold?.name ?? order.fromHoldId,
+        route: getPathwayRoute(order.fromHoldId, order.toHoldId),
+      };
+    }
+
     battles.push({
       holdId,
       northArmies: northHere,
       westArmies: westHere,
       northFromHoldId: northFrom,
       westFromHoldId: westFrom,
+      armyApproaches,
       armyOrders: armyOrdersMap,
     });
   }
@@ -524,6 +568,19 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       let updatedArmies = applyCasualties(state.armies, allCasualties);
       updatedArmies = applyFallen(updatedArmies, allFallen);
 
+      // Mark character agents dead when they fall
+      let characters = state.characters;
+      for (const f of allFallen) {
+        const cid = findCharacterIdByName(characters, f.name);
+        if (!cid) continue;
+        const cur = characters[cid];
+        if (!cur) continue;
+        characters = {
+          ...characters,
+          [cid]: { ...cur, alive: false, armyId: null },
+        };
+      }
+
       // Apply post-battle condition updates (morale, tiredness, stance)
       if (allConditionUpdates.length > 0) {
         updatedArmies = updatedArmies.map((army) => {
@@ -581,6 +638,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               holdId: battle.holdId,
               northArmies: northSurvivors,
               westArmies: westSurvivors,
+              northFromHoldId: battle.northFromHoldId,
+              westFromHoldId: battle.westFromHoldId,
+              armyApproaches: battle.armyApproaches,
               armyOrders: battle.armyOrders,
               lastStand: true,
             });
@@ -598,6 +658,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ...state,
           phase: "resolving",
           armies: updatedArmies,
+          characters,
           pendingBattles: lastStandBattles,
           battleReports: newBattleReports,
           retreats: nonTrappedRetreats,
@@ -610,6 +671,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ...state,
           phase: "rename_commanders",
           armies: updatedArmies,
+          characters,
           pendingBattles: [],
           battleReports: newBattleReports,
           retreats: nonTrappedRetreats,
@@ -622,6 +684,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ...state,
           phase: "retreat",
           armies: updatedArmies,
+          characters,
           pendingBattles: [],
           battleReports: newBattleReports,
           retreats: nonTrappedRetreats,
@@ -634,10 +697,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         turn: state.turn + 1,
         phase: "planning",
         armies: updatedArmies,
+        characters,
         pendingBattles: [],
         battleReports: newBattleReports,
         retreats: [],
         pendingRenames: [],
+        speechesThisTurn: [],
       };
     }
 
@@ -698,6 +763,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         phase: "planning",
         armies: updatedArmies,
         pendingRenames: [],
+        speechesThisTurn: [],
       };
     }
 
@@ -731,6 +797,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         phase: "planning",
         armies: updatedArmies,
         retreats: [],
+        speechesThisTurn: [],
       };
     }
 
@@ -910,6 +977,153 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           };
         }),
       };
+    }
+
+    case "TOGGLE_TALK_PICKER": {
+      return { ...state, talkPickerOpen: !state.talkPickerOpen };
+    }
+
+    case "OPEN_CONVERSATION": {
+      const ids = state.openConversationIds.includes(action.threadId)
+        ? state.openConversationIds
+        : [...state.openConversationIds, action.threadId];
+      return {
+        ...state,
+        openConversationIds: ids,
+        talkPickerOpen: false,
+      };
+    }
+
+    case "CLOSE_CONVERSATION_DOCK": {
+      return {
+        ...state,
+        openConversationIds: state.openConversationIds.filter(
+          (id) => id !== action.threadId
+        ),
+      };
+    }
+
+    case "UPSERT_CONVERSATION": {
+      const exists = state.conversations.some((t) => t.id === action.thread.id);
+      const conversations = exists
+        ? state.conversations.map((t) =>
+            t.id === action.thread.id ? action.thread : t
+          )
+        : [...state.conversations, action.thread];
+      const open =
+        action.thread.status === "active" &&
+        !state.openConversationIds.includes(action.thread.id)
+          ? [...state.openConversationIds, action.thread.id]
+          : state.openConversationIds;
+      return {
+        ...state,
+        conversations,
+        openConversationIds: open,
+        talkPickerOpen: false,
+      };
+    }
+
+    case "APPEND_MESSAGES": {
+      return {
+        ...state,
+        conversations: state.conversations.map((t) =>
+          t.id === action.threadId
+            ? { ...t, messages: [...t.messages, ...action.messages] }
+            : t
+        ),
+      };
+    }
+
+    case "PATCH_CHARACTERS": {
+      return {
+        ...state,
+        characters: applyCharacterPatches(state.characters, action.patches),
+      };
+    }
+
+    case "APPLY_SPEECH": {
+      const { armyId, condition, impliedOrder, commanderPatch } = action;
+      const faction = state.armies.find((a) => a.id === armyId)?.faction;
+      if (!faction) return state;
+
+      let armies = state.armies.map((a) =>
+        a.id === armyId
+          ? {
+              ...a,
+              morale: condition.morale,
+              tiredness: condition.tiredness,
+              ...(condition.stance ? { stance: condition.stance } : {}),
+            }
+          : a
+      );
+
+      // Clear queued move — speech is what this army is doing
+      const clearOrders = (orders: typeof state.north) => ({
+        ...orders,
+        orders: orders.orders.filter((o) => o.armyId !== armyId),
+        stanceOrders: {
+          ...orders.stanceOrders,
+          ...(impliedOrder === "rest" || impliedOrder === "fortify"
+            ? { [armyId]: impliedOrder }
+            : {}),
+        },
+      });
+
+      // If implied none, still remove any prior stance? Keep existing stance orders unless rest/fortify set
+      const north =
+        faction === "north" ? clearOrders(state.north) : state.north;
+      const westerlands =
+        faction === "westerlands"
+          ? clearOrders(state.westerlands)
+          : state.westerlands;
+
+      // Remove stance if implied none was meant to clear march only — delete armyId from stance if we need
+      if (impliedOrder === "none") {
+        const strip = (fo: typeof state.north) => {
+          const stanceOrders = { ...fo.stanceOrders };
+          // keep existing rest/fortify unless we cleared via speech implying none — leave as-is
+          return {
+            ...fo,
+            orders: fo.orders.filter((o) => o.armyId !== armyId),
+            stanceOrders,
+          };
+        };
+        return {
+          ...state,
+          armies,
+          north: faction === "north" ? strip(state.north) : state.north,
+          westerlands:
+            faction === "westerlands" ? strip(state.westerlands) : state.westerlands,
+          speechesThisTurn: [...state.speechesThisTurn, armyId],
+          characters: commanderPatch
+            ? applyCharacterPatches(state.characters, [commanderPatch])
+            : state.characters,
+        };
+      }
+
+      return {
+        ...state,
+        armies,
+        north,
+        westerlands,
+        speechesThisTurn: [...state.speechesThisTurn, armyId],
+        characters: commanderPatch
+          ? applyCharacterPatches(state.characters, [commanderPatch])
+          : state.characters,
+      };
+    }
+
+    case "MARK_CHARACTERS_FALLEN": {
+      let characters = state.characters;
+      for (const name of action.names) {
+        const cid = findCharacterIdByName(characters, name);
+        if (!cid) continue;
+        characters = {
+          ...characters,
+          [cid]: { ...characters[cid], alive: false, armyId: null },
+        };
+      }
+      return { ...state, characters };
     }
 
     default:

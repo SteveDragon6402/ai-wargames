@@ -11,18 +11,22 @@ TIREDNESS — physical condition of the troops:
 - 2–3 consecutive marches: moderate fatigue
 - 4+ consecutive marches: heavy fatigue, mention exhaustion
 - Cavalry-heavy armies tire faster on the march
+- Hold ground matters: swamp, mountain, desert heat, or storm-lashed coast make rest worse; fertile mild seats and good lodging make rest better
+- March route matters: bog causeways, mountain passes, desert roads, and sea crossings tire more than easy kingsroad or fertile Reach lanes
+- Homeland vs climate: weigh the army's homeland character against the hold ground and march route. Northmen recover well in cold and suffer badly in Dornish heat; Westermen know hills and mild west-coast country and struggle most in deep desert or endless fen
 
 MORALE — spirit and will to fight:
 - Resting armies get a modest morale improvement (smaller than post-battle recovery)
 - Home territory rest: better morale gain than neutral territory
 - Fortifying armies: steady but not lifted morale (they are working, not relaxing)
 - Long marches without rest: morale slowly erodes
+- Hostile climate relative to homeland erodes morale; familiar climate heartens it
 - Morale changes should be smaller than battle outcomes — this is a peacetime adjustment
 
 STANCE — battle-readiness and tactical posture:
 - Resting (especially multiple consecutive turns): troops grow softer, less drilled, less battle-ready. "Relaxed and unready" after 2+ turns
-- Fortifying (1 turn): defensive stance developing. 2+ turns: hardened, entrenched, very defensive
-- Marching (especially toward the enemy): aggressive, alert, purposeful
+- Fortifying (1 turn): defensive stance developing. 2+ turns: hardened, entrenched, very defensive — mention if the ground itself favours digging in
+- Marching (especially toward the enemy): aggressive, alert, purposeful — arrival route can leave them disordered (swamp, pass) or still formed (easy road)
 - Just merged armies this turn (turnsSinceMerge = 0): disorganised, chain of command unsettled — describe the heterogeneous state if source conditions are provided (see below)
 - Just split this turn (turnsSinceSplit = 0): uncertain, divided, formations still forming
 - Long consecutive marches (3+): experienced and battle-hardened but weary
@@ -38,19 +42,47 @@ Each description should be one vivid sentence in ASOIAF flavour.
 Respond with JSON only:
 [{"armyId": "...", "tiredness": "...", "morale": "...", "stance": "..."}]`;
 
+function climateHarshness(army: TirednessRequest["armies"][number]): "harsh" | "fair" | "kind" {
+  const text = `${army.holdGround} ${army.marchRoute?.route ?? ""} ${army.homeland}`.toLowerCase();
+  const isNorth = army.homeland.toLowerCase().includes("cold");
+  const isWest = army.homeland.toLowerCase().includes("hills");
+  const desertOrHeat = /desert|dornish|dry heat|fierce heat|sand|sunspear|boneway|prince's pass/.test(text);
+  const swampOrFen = /swamp|bog|fen|neck|causeway|fever/.test(text);
+  const coldHome = /northern cold|snow|winter|bitter cold|frost/.test(army.holdGround.toLowerCase());
+  const mildHills = /hill|mild|west-coast|fertile|reach|good lodging|excellent rest/.test(army.holdGround.toLowerCase());
+
+  if (isNorth && desertOrHeat) return "harsh";
+  if (isNorth && coldHome) return "kind";
+  if (isWest && desertOrHeat) return "harsh";
+  if (isWest && (mildHills || /hill|pass|mining/.test(army.holdGround.toLowerCase()))) return "kind";
+  if (swampOrFen && !isNorth) return "harsh";
+  if (/excellent rest|superb rest|comfortable rest|good lodging/.test(army.holdGround.toLowerCase())) return "kind";
+  return "fair";
+}
+
 function fallbackTiredness(armies: TirednessRequest["armies"]): TirednessUpdate[] {
   return armies.map((army) => {
     let tiredness = army.currentTiredness;
     let morale = army.currentMorale;
     let stance = army.currentStance;
+    const climate = climateHarshness(army);
+    const hardRoute = army.marchRoute
+      ? /swamp|bog|pass|desert|mountain|sea|fever|boneway|neck/.test(army.marchRoute.route.toLowerCase())
+      : false;
 
     if (army.stanceOrder === "rest") {
-      if (army.territory === "home") {
-        tiredness = "Well-rested and in good spirits";
+      if (army.territory === "home" && climate !== "harsh") {
+        tiredness = climate === "kind"
+          ? "Well-rested on familiar ground that suits them"
+          : "Well-rested and in good spirits";
         morale = "Heartened by familiar ground and warm fires";
         stance = army.activity.turnsResting >= 2
           ? "Comfortable and unready — too long from the march"
           : "Relaxed but watchful";
+      } else if (climate === "harsh") {
+        tiredness = "Rested poorly — the ground and climate work against them";
+        morale = "Uneasy — rest helps little in country that hates them";
+        stance = "Cautious and defensive, unsettled by the land";
       } else {
         tiredness = "Rested but watchful in unfamiliar lands";
         morale = "Steady — the rest does them good even in strange country";
@@ -63,17 +95,23 @@ function fallbackTiredness(armies: TirednessRequest["armies"]): TirednessUpdate[
         ? "Hardened and entrenched — they know this ground"
         : "Defensive posture taking shape";
     } else {
-      if (army.movesSinceRest >= 4) {
-        tiredness = "Exhausted and footsore from the long march";
-        morale = "Fraying — the men grumble and feet blister";
+      if (army.movesSinceRest >= 4 || (hardRoute && climate === "harsh")) {
+        tiredness = hardRoute
+          ? "Exhausted by a brutal road and country that drains them"
+          : "Exhausted and footsore from the long march";
+        morale = climate === "harsh"
+          ? "Fraying — the land itself seems set against them"
+          : "Fraying — the men grumble and feet blister";
         stance = "Weary but experienced, moving on instinct";
-      } else if (army.movesSinceRest >= 2) {
-        tiredness = "Weary from days of marching";
+      } else if (army.movesSinceRest >= 2 || hardRoute) {
+        tiredness = hardRoute
+          ? "Weary from a hard march over difficult ground"
+          : "Weary from days of marching";
         morale = "Steady under pressure, though tired";
         stance = "Alert and purposeful, eyes forward";
       } else {
         tiredness = "Tired but steady after the march";
-        morale = "Focused and ready";
+        morale = climate === "kind" ? "Focused and ready on ground that suits them" : "Focused and ready";
         stance = "Aggressive and alert — fresh from the road";
       }
     }
@@ -129,14 +167,20 @@ export async function POST(req: NextRequest) {
           ? `\nPre-merge source conditions (this army was formed by merging these forces this turn):\n${army.mergedFrom.map((s) => `  • ${s.name}: tiredness="${s.tiredness}", morale="${s.morale}", stance="${s.stance}"`).join("\n")}`
           : "";
 
+        const marchSection = army.marchRoute
+          ? `\nMarch this turn: ${army.marchRoute.fromHoldName} → ${army.marchRoute.toHoldName}\nRoute: ${army.marchRoute.route}`
+          : "\nMarch this turn: none (held position)";
+
         return `Army: ${army.name} [id: "${army.armyId}"]
 Location: ${army.holdName} (${army.territory} territory)
+Hold ground: ${army.holdGround}
+Homeland: ${army.homeland}
 Commanders: ${leaders}
 Strength: ${totalStrength} troops (${unitBreakdown})
 Current tiredness: ${army.currentTiredness}
 Current morale: ${army.currentMorale}
 Current stance: ${army.currentStance}
-This turn's order: ${army.stanceOrder} (moves since last rest: ${army.movesSinceRest})
+This turn's order: ${army.stanceOrder} (moves since last rest: ${army.movesSinceRest})${marchSection}
 Activity history:
 ${activityLines}${mergeSection}`;
       })

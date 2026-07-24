@@ -3,6 +3,7 @@
 import type { GameState, GameAction, Army, Faction } from "../types";
 import { HOLDS_MAP } from "../data/holds";
 import ArmyCard from "./ArmyCard";
+import SpeechComposer from "./SpeechComposer";
 
 interface Props {
   state: GameState;
@@ -412,6 +413,11 @@ export default function SidePanel({ state, dispatch }: Props) {
           </>
         )}
       </div>
+
+      {singleSelected &&
+        (adminMode || singleSelected.faction === activeFaction) && (
+          <SpeechComposer army={singleSelected} state={state} dispatch={dispatch} />
+        )}
     </div>
   );
 }

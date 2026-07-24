@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import type { BattleContext, BattleReport, Casualty, FallenFigure, Hold, ArmyConditionUpdate, DefeatType } from "@/app/got-houses/types";
+import { FACTION_HOMELAND } from "@/app/got-houses/data/homeland";
 
 // ─── System prompt ────────────────────────────────────────────────────────────
 
@@ -14,7 +15,14 @@ HARD CONSTRAINTS — never violate these:
 - Do not comment on strategic or political implications beyond this single engagement
 - Do not reference armies, forces, or reinforcements not present in this battle
 - Treat the battle location as contested unless the data explicitly shows a defending garrison
-- Every claim must follow directly from the forces given: their numbers, unit composition, morale, tiredness, commander characters, and orders
+- Every claim must follow directly from the forces given: their numbers, unit composition, morale, tiredness, commander characters, orders, hold ground, approach routes, homeland climate fit, and NPC commander takes/moods
+- Player faction lords (Robb, Tywin) do NOT submit AI takes — they are represented only by army orders and condition
+
+GROUND, APPROACH, HOMELAND, AND COMMANDER TAKES — these are soft mechanics and MUST shape the fight:
+- NPC commander takes (take / outlook / approach + mood) shape INITIAL DEPLOYMENT and early phases: eager commanders press; reluctant ones hesitate; discord between coalition takes hurts coordination
+- Hold ground: defensibility, footing, climate, and rest quality of the battle seat — use it in INITIAL DEPLOYMENT and throughout
+- Approach route: armies that marched in arrive shaped by that road (disordered from swamp/pass/desert, or still formed from easy road). Defenders already present hold the local ground
+- Homeland vs climate: Northmen thrive in cold and suffer in Dornish heat; Westermen know hills and mild west-coast country and struggle in deep desert or endless fen. Climate mismatch is a real combat factor — not flavour text
 
 Keep ASOIAF proper nouns (names, places). Drop all ASOIAF narrative flavour — no ravens, no maesters, no "the gods decided", no purple prose.
 
@@ -28,6 +36,9 @@ function buildBattleMessage(battle: BattleContext, holdsMap: Map<string, Hold>, 
   const locationLine = hold
     ? `${hold.name} (${hold.region} — seat of House ${hold.house}, held by ${hold.lord})`
     : `Hold ${battle.holdId}`;
+  const groundLine = hold?.ground
+    ? `Hold ground: ${hold.ground}`
+    : "Hold ground: unknown";
 
   // Build a detailed block for one army within a side
   function armyBlock(army: (typeof battle.northArmies)[number]): string {
@@ -59,6 +70,11 @@ function buildBattleMessage(battle: BattleContext, holdsMap: Map<string, Hold>, 
       act.turnsSinceSplit === 0 ? `SPLIT THIS TURN — chain of command uncertain` : null,
     ].filter(Boolean).join("; ") || "no notable recent history";
 
+    const approach = battle.armyApproaches?.[army.id];
+    const approachLine = approach
+      ? `Approach: marched from ${approach.fromHoldName} — ${approach.route}`
+      : "Approach: already present at this hold (defending / held position)";
+
     return `  ▸ ${army.name} [id: "${army.id}"]
     Commanders: ${commanders}
     Notables:
@@ -68,6 +84,8 @@ ${unitLines}
     Morale: ${army.morale}
     Condition: ${army.tiredness}
     Stance: ${army.stance}
+    Homeland: ${FACTION_HOMELAND[army.faction]}
+    ${approachLine}
     Activity: ${activityParts}
     ${statusLine}`;
   }
@@ -100,7 +118,20 @@ ${armies.map(armyBlock).join("\n\n")}`;
     ? `\n\n⚠ LAST STAND: The retreating side has no valid retreat routes. They are surrounded or cut off — cornered men fighting for their lives. Apply LAST STAND defeat type (see casualty rules). Total destruction of the trapped force is adjudicated honestly.`
     : "";
 
+  const briefs = battle.commanderBriefs ?? [];
+  const briefsBlock =
+    briefs.length > 0
+      ? `\nCOMMANDER TAKES (NPC only — soft mechanics; player lords have no takes):\n${briefs
+          .map(
+            (b) =>
+              `- ${b.name} [${b.armyId}] mood="${b.mood}"\n  take: ${b.take}\n  outlook: ${b.outlook}\n  approach: ${b.approach}`
+          )
+          .join("\n")}`
+      : "\nCOMMANDER TAKES: none available";
+
   return `BATTLE LOCATION: ${locationLine}
+${groundLine}
+${briefsBlock}
 ${lastStandNote}
 
 ═══════════════════════════════════════════════════════════════
@@ -117,7 +148,7 @@ TASK: Adjudicate this coalition battle at ${locationName}.
 
 ENGAGEMENT REPORT FORMAT — write 3 to 5 labelled tactical phases:
 
-  INITIAL DEPLOYMENT: Where each force positions. Who holds what ground. Opening dispositions of each commander.
+  INITIAL DEPLOYMENT: Where each force positions. Who holds what ground. Opening dispositions of each commander. Factor hold ground and each army's approach (or defensive presence).
   PHASE 1 — [brief label]: First maneuver. Who moved, what action, immediate result.
   PHASE 2 — [brief label]: Response or escalation. What changed, who pressed or gave ground.
   PHASE N — [brief label]: Continue until the decisive moment is reached.
@@ -132,6 +163,7 @@ Rules for each phase:
 - Do not comment on what the result means politically or strategically
 - Do not assume any army controls territory it was not already occupying per the battle data
 - If an army had order EXPLICITLY RESTING: treat it as surprised and unprepared — that affects the early phases
+- Arrival path shapes early phases; hold ground shapes fighting throughout; homeland–climate mismatch is a real combat factor
 
 Each side is a coalition: when multiple armies fight together, note if they coordinated or acted independently.
 
@@ -205,7 +237,7 @@ Think about what this specific battle would actually cost. Consider:
 - Was there a pursuit, and how far did it go?
 - Did men scatter, desert, or simply stop following orders?
 - Were any units already exhausted, low on morale, or poorly led?
-- Did fortifications or terrain shield the defenders or expose the attackers?
+- Did fortifications, hold ground, approach routes, or homeland–climate mismatch shield the defenders or expose the attackers?
 
 Let the numbers emerge from your assessment of the battle and the armies involved. Do not anchor on percentages. A massive army routing a small one costs almost nothing. A small force defending a chokepoint can bleed an army twice its size.
 
@@ -216,12 +248,21 @@ List all casualties by unit type and house separately.`;
 
 // ─── Deterministic fallback ───────────────────────────────────────────────────
 
-function fallbackReport(battle: BattleContext): Omit<BattleReport, "id" | "turn" | "holdId"> {
+function fallbackReport(
+  battle: BattleContext,
+  holdsMap?: Map<string, Hold>
+): Omit<BattleReport, "id" | "turn" | "holdId"> {
+  const hold = holdsMap?.get(battle.holdId);
+  const groundNote = hold?.ground
+    ? ` Fighting turned on the local ground — ${hold.ground.split(";")[0].trim()}.`
+    : "";
   const westRetreating = battle.westArmies.map((a) => a.id);
   return {
     defeatType: "structured_withdrawal",
     narrative:
-      "The forces clashed in the grey half-light of dawn. The Northmen pressed their advantage on familiar ground and the Western host withdrew before the day was out.\n\nThe maesters record no further details — the chaos of the engagement left few reliable witnesses.",
+      `INITIAL DEPLOYMENT: The hosts met at ${hold?.name ?? "the contested hold"}.${groundNote}\n\n` +
+      "PHASE 1 — CLASH: The Northmen pressed their advantage and the Western host gave ground before the day was out.\n\n" +
+      "RESOLUTION: The Westerlands withdrew in order. Few reliable witnesses remain of the details.",
     holdResult: "north",
     casualties: [
       ...battle.northArmies.flatMap((a) =>
@@ -252,19 +293,20 @@ function fallbackReport(battle: BattleContext): Omit<BattleReport, "id" | "turn"
 
 export async function POST(req: NextRequest) {
   let battle: BattleContext | null = null;
+  let holdsMap = new Map<string, Hold>();
   try {
     const body = await req.json() as { battle: BattleContext; holds: Hold[] };
     battle = body.battle;
     const { holds } = body;
+    holdsMap = new Map(holds.map((h) => [h.id, h]));
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       console.warn("[got-houses/battle] ANTHROPIC_API_KEY not set — using fallback");
-      return NextResponse.json({ ...fallbackReport(battle), _debug: "no_api_key" });
+      return NextResponse.json({ ...fallbackReport(battle, holdsMap), _debug: "no_api_key" });
     }
 
     const MAX_TOKENS = 6000;
-    const holdsMap = new Map(holds.map((h) => [h.id, h]));
     const userMessage = buildBattleMessage(battle, holdsMap, MAX_TOKENS);
 
     console.log("[got-houses/battle] Calling claude-sonnet-5 for hold:", battle.holdId,
@@ -309,7 +351,7 @@ export async function POST(req: NextRequest) {
 
     if (!succeeded) {
       console.error("[got-houses/battle] All attempts failed:", lastError);
-      return NextResponse.json({ ...fallbackReport(battle), _debug: "api_error", _error: lastError });
+      return NextResponse.json({ ...fallbackReport(battle, holdsMap), _debug: "api_error", _error: lastError });
     }
 
     const rawText = (response.content as Array<Record<string, unknown>>)
@@ -325,7 +367,7 @@ export async function POST(req: NextRequest) {
     const jsonMatch = rawText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
       console.error("[got-houses/battle] No JSON found. Raw (first 800 chars):", rawText.slice(0, 800));
-      return NextResponse.json({ ...fallbackReport(battle), _debug: "no_json", _raw: rawText });
+      return NextResponse.json({ ...fallbackReport(battle, holdsMap), _debug: "no_json", _raw: rawText });
     }
 
     function sanitiseJson(str: string): string {
@@ -376,7 +418,7 @@ export async function POST(req: NextRequest) {
       } else {
         console.error("[got-houses/battle] JSON parse error:", msg);
       }
-      return NextResponse.json({ ...fallbackReport(battle), _debug: "json_parse_error", _error: msg });
+      return NextResponse.json({ ...fallbackReport(battle, holdsMap), _debug: "json_parse_error", _error: msg });
     }
 
     // Validate and normalise retreating army IDs
@@ -418,7 +460,7 @@ export async function POST(req: NextRequest) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[got-houses/battle] Unexpected error:", msg);
     if (battle) {
-      return NextResponse.json({ ...fallbackReport(battle), _debug: "unexpected_error", _error: msg });
+      return NextResponse.json({ ...fallbackReport(battle, holdsMap), _debug: "unexpected_error", _error: msg });
     }
     return NextResponse.json({ error: "Adjudication failed", _debug: "unexpected_error", _error: msg }, { status: 500 });
   }
