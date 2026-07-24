@@ -241,7 +241,7 @@ export default function TopBar({ state, dispatch }: Props) {
         locked={!inPlanningPhase}
       />
 
-      {/* Talk */}
+      {/* Talk hub */}
       {inPlanningPhase && (
         <button
           type="button"
@@ -251,15 +251,28 @@ export default function TopBar({ state, dispatch }: Props) {
             fontSize: 9,
             textTransform: "uppercase",
             letterSpacing: "0.1em",
-            color: state.talkPickerOpen ? "#c8941a" : "#555",
-            background: "transparent",
-            border: "1px solid #2a2a2a",
+            color:
+              state.talkPickerOpen || state.openConversationIds.length > 0
+                ? "#c8941a"
+                : "#555",
+            background:
+              state.talkPickerOpen || state.openConversationIds.length > 0
+                ? "#1a1510"
+                : "transparent",
+            border: `1px solid ${
+              state.talkPickerOpen || state.openConversationIds.length > 0
+                ? "#3a2a00"
+                : "#2a2a2a"
+            }`,
             padding: "6px 12px",
             cursor: "pointer",
             marginRight: 8,
           }}
         >
           Talk
+          {state.openConversationIds.length > 0
+            ? ` (${state.openConversationIds.length})`
+            : ""}
         </button>
       )}
 

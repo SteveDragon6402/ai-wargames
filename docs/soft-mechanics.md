@@ -45,7 +45,13 @@ NPC agents (commanders, notables) have durable soft state: notepad, mood, invite
 
 Before each battle, NPC commanders in the fight give short takes (take / outlook / approach). Those takes plus mood are soft mechanics fed into the battle adjudicator. Player lords never submit an AI take.
 
-Army speeches are soft judgment (reaction + morale/stance) that can hand off to hard stance orders (rest/fortify) and clear a queued march — the host is listening that turn.
+Army speeches are an **army command** (like Move / Rest / Fortify), not Talk. Soft judgment (reaction + morale/stance) can hand off to hard stance orders (rest/fortify) and clear a queued march — the host is listening that turn; that counts as their action.
+
+**Faction event log** (searchable by NPCs): marches, rest, fortify, speeches, and battles involving *their* side. Not the enemy's private orders. Generous retrieval; short generated notes.
+
+**Advice ledger** (separate from notepad): counsel an NPC records toward their lord (or peer). After resolve, digests compare advice vs what the lord's hosts actually did so NPCs can update notepads (e.g. "he marched south against my counsel").
+
+Conversations persist across turns; a turn-break line is inserted when a new planning turn begins.
 
 ## When to choose hard anyway
 

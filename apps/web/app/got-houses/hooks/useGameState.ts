@@ -18,11 +18,17 @@ import type {
   CharacterState,
   NpcAgentState,
   NpcRuntimePatch,
+  ChatMessage,
 } from "../types";
 import { INITIAL_GAME_STATE } from "../data/initial-state";
 import { HOLDS_MAP } from "../data/holds";
 import { getPathwayRoute } from "../data/pathways";
 import { findCharacterIdByName } from "../data/characters";
+import {
+  eventFromSpeech,
+  eventsFromBattleReports,
+  eventsFromResolvedOrders,
+} from "../lib/faction-events";
 
 function applyCharacterPatches(
   characters: Record<string, CharacterState>,
@@ -43,10 +49,54 @@ function applyCharacterPatches(
       ...(p.inviteHistory !== undefined ? { inviteHistory: p.inviteHistory } : {}),
       ...(p.alive !== undefined ? { alive: p.alive } : {}),
       ...(p.armyId !== undefined ? { armyId: p.armyId } : {}),
+      ...(p.adviceGivenIds !== undefined
+        ? { adviceGivenIds: p.adviceGivenIds }
+        : {}),
     };
     next[p.id] = updated;
   }
   return next;
+}
+
+/** Insert a turn separator into every living conversation thread. */
+function withTurnBreaks(state: GameState, newTurn: number): ConversationThreadLike[] {
+  const msg = (threadId: string): ChatMessage => ({
+    id: `turn-${newTurn}-${threadId}`,
+    speakerId: "system",
+    speakerName: "",
+    text: `— Turn ${newTurn} —`,
+    at: Date.now(),
+    kind: "turn_break",
+  });
+  return state.conversations.map((t) => {
+    if (t.status === "closed" && t.messages.length === 0) return t;
+    // Skip empty brand-new threads with no history
+    if (t.messages.length === 0) return t;
+    const last = t.messages[t.messages.length - 1];
+    if (last?.kind === "turn_break" && last.text.includes(`Turn ${newTurn}`)) {
+      return t;
+    }
+    return { ...t, messages: [...t.messages, msg(t.id)] };
+  });
+}
+
+// Local alias so the helper stays typed without a circular import dance
+type ConversationThreadLike = GameState["conversations"][number];
+
+function advanceToPlanning(
+  state: GameState,
+  patch: Partial<GameState>
+): GameState {
+  const newTurn = state.turn + 1;
+  return {
+    ...state,
+    ...patch,
+    turn: newTurn,
+    phase: "planning",
+    conversations: withTurnBreaks(state, newTurn),
+    speechesThisTurn: [],
+    speechArmyId: null,
+  };
 }
 
 function getAdjacentHolds(holdId: string): string[] {
@@ -382,6 +432,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
       return {
         ...state,
+        speechArmyId: null,
         moveMode: { active: true, validTargets: Array.from(union) },
       };
     }
@@ -522,6 +573,15 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
       const pendingBattles = detectBattles(updatedArmies, allOrders, armyOrdersMap);
 
+      const orderEvents = eventsFromResolvedOrders(
+        state.turn,
+        state.armies,
+        state.north.orders,
+        state.westerlands.orders,
+        state.north.stanceOrders,
+        state.westerlands.stanceOrders
+      );
+
       return {
         ...state,
         phase: "resolving",
@@ -531,8 +591,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         selectedHoldId: null,
         selectedArmyIds: [],
         moveMode: { active: false, validTargets: [] },
+        speechArmyId: null,
         pendingBattles,
         turnHistory: [...(state.turnHistory ?? []), newTurnHistory],
+        factionEvents: [...state.factionEvents, ...orderEvents].slice(-400),
       };
     }
 
@@ -652,6 +714,13 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const nonTrappedRetreats = retreats.filter((r) => r.validTargets.length > 0);
       const newBattleReports = [...state.battleReports, ...correctedReports];
 
+      const battleEvents = eventsFromBattleReports(
+        state.turn,
+        correctedReports,
+        { ...state, armies: updatedArmies, characters }
+      );
+      const factionEvents = [...state.factionEvents, ...battleEvents].slice(-400);
+
       // If there are last-stand battles, re-enter resolving with them as pendingBattles
       if (lastStandBattles.length > 0) {
         return {
@@ -663,6 +732,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           battleReports: newBattleReports,
           retreats: nonTrappedRetreats,
           pendingRenames,
+          factionEvents,
         };
       }
 
@@ -676,6 +746,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           battleReports: newBattleReports,
           retreats: nonTrappedRetreats,
           pendingRenames,
+          factionEvents,
         };
       }
 
@@ -689,21 +760,19 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           battleReports: newBattleReports,
           retreats: nonTrappedRetreats,
           pendingRenames: [],
+          factionEvents,
         };
       }
 
-      return {
-        ...state,
-        turn: state.turn + 1,
-        phase: "planning",
+      return advanceToPlanning(state, {
         armies: updatedArmies,
         characters,
         pendingBattles: [],
         battleReports: newBattleReports,
         retreats: [],
         pendingRenames: [],
-        speechesThisTurn: [],
-      };
+        factionEvents,
+      });
     }
 
     case "OPEN_COMMANDER_CHANGE": {
@@ -757,14 +826,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         };
       }
 
-      return {
-        ...state,
-        turn: state.turn + 1,
-        phase: "planning",
+      return advanceToPlanning(state, {
         armies: updatedArmies,
         pendingRenames: [],
-        speechesThisTurn: [],
-      };
+      });
     }
 
     case "SET_RETREAT": {
@@ -791,14 +856,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         );
       }
 
-      return {
-        ...state,
-        turn: state.turn + 1,
-        phase: "planning",
+      return advanceToPlanning(state, {
         armies: updatedArmies,
         retreats: [],
-        speechesThisTurn: [],
-      };
+      });
     }
 
     case "COMBINE_ARMIES": {
@@ -990,16 +1051,33 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return {
         ...state,
         openConversationIds: ids,
-        talkPickerOpen: false,
+        focusedConversationId: action.threadId,
+        talkPickerOpen: true,
+      };
+    }
+
+    case "FOCUS_CONVERSATION": {
+      return {
+        ...state,
+        focusedConversationId: action.threadId,
+        talkPickerOpen: true,
       };
     }
 
     case "CLOSE_CONVERSATION_DOCK": {
+      const openConversationIds = state.openConversationIds.filter(
+        (id) => id !== action.threadId
+      );
+      const focusedConversationId =
+        state.focusedConversationId === action.threadId
+          ? openConversationIds[openConversationIds.length - 1] ?? null
+          : state.focusedConversationId;
       return {
         ...state,
-        openConversationIds: state.openConversationIds.filter(
-          (id) => id !== action.threadId
-        ),
+        openConversationIds,
+        focusedConversationId,
+        // Keep hub open so you can start another talk
+        talkPickerOpen: true,
       };
     }
 
@@ -1010,16 +1088,21 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             t.id === action.thread.id ? action.thread : t
           )
         : [...state.conversations, action.thread];
+      const shouldOpen =
+        action.thread.status === "active" ||
+        action.thread.status === "pending_invite";
       const open =
-        action.thread.status === "active" &&
-        !state.openConversationIds.includes(action.thread.id)
+        shouldOpen && !state.openConversationIds.includes(action.thread.id)
           ? [...state.openConversationIds, action.thread.id]
           : state.openConversationIds;
       return {
         ...state,
         conversations,
         openConversationIds: open,
-        talkPickerOpen: false,
+        focusedConversationId: shouldOpen
+          ? action.thread.id
+          : state.focusedConversationId,
+        talkPickerOpen: true,
       };
     }
 
@@ -1041,12 +1124,28 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
-    case "APPLY_SPEECH": {
-      const { armyId, condition, impliedOrder, commanderPatch } = action;
-      const faction = state.armies.find((a) => a.id === armyId)?.faction;
-      if (!faction) return state;
+    case "OPEN_SPEECH": {
+      if (state.phase !== "planning") return state;
+      if (state.speechesThisTurn.includes(action.armyId)) return state;
+      return {
+        ...state,
+        speechArmyId: action.armyId,
+        moveMode: { active: false, validTargets: [] },
+      };
+    }
 
-      let armies = state.armies.map((a) =>
+    case "CLOSE_SPEECH": {
+      return { ...state, speechArmyId: null };
+    }
+
+    case "APPLY_SPEECH": {
+      const { armyId, speech, reaction, condition, impliedOrder, commanderPatch } =
+        action;
+      const army = state.armies.find((a) => a.id === armyId);
+      const faction = army?.faction;
+      if (!faction || !army) return state;
+
+      const armies = state.armies.map((a) =>
         a.id === armyId
           ? {
               ...a,
@@ -1057,7 +1156,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           : a
       );
 
-      // Clear queued move — speech is what this army is doing
+      // Clear queued move — speech is what this army is doing this turn
       const clearOrders = (orders: typeof state.north) => ({
         ...orders,
         orders: orders.orders.filter((o) => o.armyId !== armyId),
@@ -1069,7 +1168,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         },
       });
 
-      // If implied none, still remove any prior stance? Keep existing stance orders unless rest/fortify set
       const north =
         faction === "north" ? clearOrders(state.north) : state.north;
       const westerlands =
@@ -1077,39 +1175,75 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ? clearOrders(state.westerlands)
           : state.westerlands;
 
-      // Remove stance if implied none was meant to clear march only — delete armyId from stance if we need
-      if (impliedOrder === "none") {
-        const strip = (fo: typeof state.north) => {
-          const stanceOrders = { ...fo.stanceOrders };
-          // keep existing rest/fortify unless we cleared via speech implying none — leave as-is
-          return {
-            ...fo,
-            orders: fo.orders.filter((o) => o.armyId !== armyId),
-            stanceOrders,
-          };
-        };
-        return {
-          ...state,
-          armies,
-          north: faction === "north" ? strip(state.north) : state.north,
-          westerlands:
-            faction === "westerlands" ? strip(state.westerlands) : state.westerlands,
-          speechesThisTurn: [...state.speechesThisTurn, armyId],
-          characters: commanderPatch
-            ? applyCharacterPatches(state.characters, [commanderPatch])
-            : state.characters,
-        };
-      }
+      const speechEvent = eventFromSpeech(
+        state.turn,
+        army,
+        speech,
+        reaction
+      );
 
-      return {
+      const base = {
         ...state,
         armies,
         north,
         westerlands,
         speechesThisTurn: [...state.speechesThisTurn, armyId],
+        speechArmyId: null,
+        factionEvents: [...state.factionEvents, speechEvent].slice(-400),
         characters: commanderPatch
           ? applyCharacterPatches(state.characters, [commanderPatch])
           : state.characters,
+      };
+
+      if (impliedOrder === "none") {
+        const strip = (fo: typeof state.north) => ({
+          ...fo,
+          orders: fo.orders.filter((o) => o.armyId !== armyId),
+          stanceOrders: { ...fo.stanceOrders },
+        });
+        return {
+          ...base,
+          north: faction === "north" ? strip(state.north) : state.north,
+          westerlands:
+            faction === "westerlands"
+              ? strip(state.westerlands)
+              : state.westerlands,
+        };
+      }
+
+      return base;
+    }
+
+    case "APPEND_FACTION_EVENTS": {
+      if (action.events.length === 0) return state;
+      return {
+        ...state,
+        factionEvents: [...state.factionEvents, ...action.events].slice(-400),
+      };
+    }
+
+    case "APPEND_ADVICE": {
+      if (action.records.length === 0) return state;
+      const adviceLog = [...state.adviceLog, ...action.records].slice(-200);
+      let characters = state.characters;
+      for (const r of action.records) {
+        const cur = characters[r.fromCharacterId];
+        if (!cur || cur.kind !== "npc") continue;
+        characters = {
+          ...characters,
+          [r.fromCharacterId]: {
+            ...cur,
+            adviceGivenIds: [...cur.adviceGivenIds, r.id].slice(-40),
+          },
+        };
+      }
+      return { ...state, adviceLog, characters };
+    }
+
+    case "APPEND_TURN_BREAKS": {
+      return {
+        ...state,
+        conversations: withTurnBreaks(state, action.turn),
       };
     }
 

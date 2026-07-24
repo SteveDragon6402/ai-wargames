@@ -314,11 +314,22 @@ export interface NpcAgentState {
   mood: string;
   dispositionToward: Record<string, string>;
   inviteHistory: InviteMemory[];
+  /**
+   * Ids of advice this NPC has recorded (points into GameState.adviceLog).
+   * Kept small — full text lives in the shared advice log.
+   */
+  adviceGivenIds: string[];
 }
 
 export type CharacterState = PlayerLordState | NpcAgentState;
 
-export type ChatMessageKind = "chat" | "invite" | "system" | "leave" | "speech_reaction";
+export type ChatMessageKind =
+  | "chat"
+  | "invite"
+  | "system"
+  | "leave"
+  | "speech_reaction"
+  | "turn_break";
 
 export interface ChatMessage {
   id: string;
@@ -327,6 +338,42 @@ export interface ChatMessage {
   text: string;
   at: number;
   kind: ChatMessageKind;
+}
+
+/** Searchable log of what a faction's hosts actually did — fed to NPC agents. */
+export type FactionEventKind =
+  | "march"
+  | "rest"
+  | "fortify"
+  | "speech"
+  | "battle"
+  | "advice"
+  | "other";
+
+export interface FactionEvent {
+  id: string;
+  turn: number;
+  faction: Faction;
+  kind: FactionEventKind;
+  /** Short line for search / lists */
+  summary: string;
+  /** Fuller detail for tool results (not shown to players) */
+  detail: string;
+  armyId?: string;
+  holdIds?: string[];
+  relatedCharacterIds?: CharacterId[];
+}
+
+/**
+ * Counsel an NPC has given (usually to their lord).
+ * Separate from notepad — used to compare advice against later actions.
+ */
+export interface AdviceRecord {
+  id: string;
+  turn: number;
+  fromCharacterId: CharacterId;
+  toCharacterId: CharacterId;
+  text: string;
 }
 
 export type ConversationKind = "direct" | "war_council";
@@ -365,6 +412,7 @@ export interface NpcRuntimePatch {
   inviteHistory?: InviteMemory[];
   alive?: boolean;
   armyId?: string | null;
+  adviceGivenIds?: string[];
 }
 
 /* ── Game state ───────────────────────────────────────────────── */
@@ -403,10 +451,18 @@ export interface GameState {
   conversations: ConversationThread[];
   /** Army IDs that already gave a speech this turn */
   speechesThisTurn: string[];
-  /** Open chat thread ids in the dock (UI) */
+  /** Army currently composing a speech command (null = none) */
+  speechArmyId: string | null;
+  /** Open chat thread ids in the talk hub (UI) */
   openConversationIds: string[];
-  /** Whether the talk/character picker is open */
+  /** Whether the talk hub column is open */
   talkPickerOpen: boolean;
+  /** Thread currently shown in the talk hub */
+  focusedConversationId: string | null;
+  /** Searchable faction action / battle log for NPC agents */
+  factionEvents: FactionEvent[];
+  /** Advice NPCs have recorded toward lords / others */
+  adviceLog: AdviceRecord[];
 }
 
 export type GameAction =
@@ -435,16 +491,23 @@ export type GameAction =
   | { type: "CLOSE_COMMANDER_CHANGE" }
   | { type: "TOGGLE_TALK_PICKER" }
   | { type: "OPEN_CONVERSATION"; threadId: string }
+  | { type: "FOCUS_CONVERSATION"; threadId: string | null }
   | { type: "CLOSE_CONVERSATION_DOCK"; threadId: string }
   | { type: "UPSERT_CONVERSATION"; thread: ConversationThread }
   | { type: "APPEND_MESSAGES"; threadId: string; messages: ChatMessage[] }
   | { type: "PATCH_CHARACTERS"; patches: NpcRuntimePatch[] }
+  | { type: "OPEN_SPEECH"; armyId: string }
+  | { type: "CLOSE_SPEECH" }
   | {
       type: "APPLY_SPEECH";
       armyId: string;
+      speech: string;
       reaction: string;
       condition: ArmyConditionUpdate;
       impliedOrder: "rest" | "fortify" | "none";
       commanderPatch?: NpcRuntimePatch;
     }
-  | { type: "MARK_CHARACTERS_FALLEN"; names: string[] };
+  | { type: "MARK_CHARACTERS_FALLEN"; names: string[] }
+  | { type: "APPEND_FACTION_EVENTS"; events: FactionEvent[] }
+  | { type: "APPEND_ADVICE"; records: AdviceRecord[] }
+  | { type: "APPEND_TURN_BREAKS"; turn: number };

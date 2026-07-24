@@ -182,6 +182,10 @@ export const INITIAL_GAME_STATE: GameState = {
   characters: buildInitialCharacters(),
   conversations: [],
   speechesThisTurn: [],
+  speechArmyId: null,
   openConversationIds: [],
   talkPickerOpen: false,
+  focusedConversationId: null,
+  factionEvents: [],
+  adviceLog: [],
 };

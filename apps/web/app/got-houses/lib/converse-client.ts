@@ -39,6 +39,8 @@ export function snapshotForApi(state: GameState) {
     battleReports: state.battleReports,
     conversations: state.conversations,
     turn: state.turn,
+    factionEvents: state.factionEvents,
+    adviceLog: state.adviceLog,
   };
 }
 

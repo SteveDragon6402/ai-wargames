@@ -12,10 +12,12 @@ import {
 interface Props {
   state: GameState;
   dispatch: React.Dispatch<GameAction>;
+  /** When true, fills the talk hub instead of floating */
+  embedded?: boolean;
 }
 
-export default function CharacterPicker({ state, dispatch }: Props) {
-  if (!state.talkPickerOpen) return null;
+export default function CharacterPicker({ state, dispatch, embedded }: Props) {
+  if (!embedded && !state.talkPickerOpen) return null;
 
   const faction = state.activeFaction;
   const myLord = factionLordId(faction);
@@ -107,6 +109,7 @@ export default function CharacterPicker({ state, dispatch }: Props) {
           ],
         };
         dispatch({ type: "UPSERT_CONVERSATION", thread: closed });
+        dispatch({ type: "OPEN_CONVERSATION", threadId: closed.id });
       }
     } catch (err) {
       console.error("Invite failed", err);
@@ -143,39 +146,39 @@ export default function CharacterPicker({ state, dispatch }: Props) {
   return (
     <div
       style={{
-        position: "absolute",
-        top: 56,
-        right: 12,
-        width: 300,
-        maxHeight: "70vh",
-        overflow: "auto",
-        background: "#0e0e0e",
-        border: "1px solid #2a2a2a",
-        zIndex: 40,
-        padding: 12,
+        flex: embedded ? 1 : undefined,
+        minHeight: 0,
+        overflowY: "auto",
+        background: embedded ? "transparent" : "#0e0e0e",
+        border: embedded ? "none" : "1px solid #2a2a2a",
+        padding: embedded ? "16px 18px" : 12,
         fontFamily: "var(--font-mono), monospace",
       }}
     >
       <div
         style={{
-          display: "flex",
-          justifyContent: "space-between",
-          marginBottom: 10,
-          color: "#aaa",
-          fontSize: 10,
+          color: "#c8941a",
+          fontSize: 11,
+          fontWeight: 700,
           textTransform: "uppercase",
-          letterSpacing: "0.12em",
+          letterSpacing: "0.14em",
+          marginBottom: 6,
         }}
       >
-        <span>Talk to someone</span>
-        <button
-          type="button"
-          onClick={() => dispatch({ type: "TOGGLE_TALK_PICKER" })}
-          style={btnStyle}
-        >
-          Close
-        </button>
+        Who will you speak with?
       </div>
+      <div style={{ color: "#555", fontSize: 11, marginBottom: 18, lineHeight: 1.4 }}>
+        Invite a vassal, open your war council, or send word to the enemy lord.
+      </div>
+
+      <Section title="War council">
+        <Row
+          label="Assemble the council"
+          sub="Your major commanders in one room"
+          accent
+          onClick={openWarCouncil}
+        />
+      </Section>
 
       <Section title="Enemy lord">
         <Row
@@ -185,16 +188,12 @@ export default function CharacterPicker({ state, dispatch }: Props) {
         />
       </Section>
 
-      <Section title="War council">
-        <Row label="Assemble council" sub="All major commanders" onClick={openWarCouncil} />
-      </Section>
-
       <Section title="Commanders">
         {commanders.map((c) => (
           <Row
             key={c.id}
             label={c.name}
-            sub="Invite"
+            sub="Invite to private word"
             onClick={() => inviteNpc(c.id)}
           />
         ))}
@@ -204,8 +203,16 @@ export default function CharacterPicker({ state, dispatch }: Props) {
         {[...notablesByArmy.entries()].map(([armyId, list]) => {
           const army = state.armies.find((a) => a.id === armyId);
           return (
-            <div key={armyId} style={{ marginBottom: 8 }}>
-              <div style={{ color: "#555", fontSize: 9, marginBottom: 4 }}>
+            <div key={armyId} style={{ marginBottom: 12 }}>
+              <div
+                style={{
+                  color: "#444",
+                  fontSize: 10,
+                  marginBottom: 6,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.1em",
+                }}
+              >
                 {army?.name ?? armyId}
               </div>
               {list.map((c) => (
@@ -232,14 +239,14 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <div style={{ marginBottom: 14 }}>
+    <div style={{ marginBottom: 18 }}>
       <div
         style={{
           color: "#6a8a6a",
-          fontSize: 9,
+          fontSize: 10,
           textTransform: "uppercase",
           letterSpacing: "0.14em",
-          marginBottom: 6,
+          marginBottom: 8,
         }}
       >
         {title}
@@ -253,10 +260,12 @@ function Row({
   label,
   sub,
   onClick,
+  accent,
 }: {
   label: string;
   sub: string;
   onClick: () => void;
+  accent?: boolean;
 }) {
   return (
     <button
@@ -266,28 +275,20 @@ function Row({
         display: "block",
         width: "100%",
         textAlign: "left",
-        background: "#141414",
-        border: "1px solid #222",
-        color: "#ccc",
-        padding: "8px 10px",
-        marginBottom: 4,
+        background: accent ? "#14120c" : "#141414",
+        border: `1px solid ${accent ? "#3a2a00" : "#222"}`,
+        color: "#ddd",
+        padding: "12px 12px",
+        marginBottom: 6,
         cursor: "pointer",
         fontFamily: "inherit",
-        fontSize: 12,
+        fontSize: 13,
       }}
     >
-      <div>{label}</div>
-      {sub && <div style={{ color: "#666", fontSize: 10 }}>{sub}</div>}
+      <div style={{ color: accent ? "#c8941a" : "#ddd" }}>{label}</div>
+      {sub && (
+        <div style={{ color: "#666", fontSize: 11, marginTop: 3 }}>{sub}</div>
+      )}
     </button>
   );
 }
-
-const btnStyle: React.CSSProperties = {
-  background: "transparent",
-  border: "1px solid #333",
-  color: "#888",
-  fontSize: 9,
-  cursor: "pointer",
-  padding: "2px 6px",
-  fontFamily: "inherit",
-};

@@ -34,14 +34,27 @@ interface GameCoreProps {
 }
 
 function normalizeState(raw: GameState): GameState {
+  const characters = raw.characters ?? buildInitialCharacters();
+  const normalizedCharacters = Object.fromEntries(
+    Object.entries(characters).map(([id, c]) => [
+      id,
+      c.kind === "npc"
+        ? { ...c, adviceGivenIds: c.adviceGivenIds ?? [] }
+        : c,
+    ])
+  );
   return {
     ...INITIAL_GAME_STATE,
     ...raw,
-    characters: raw.characters ?? buildInitialCharacters(),
+    characters: normalizedCharacters,
     conversations: raw.conversations ?? [],
     speechesThisTurn: raw.speechesThisTurn ?? [],
+    speechArmyId: raw.speechArmyId ?? null,
     openConversationIds: raw.openConversationIds ?? [],
     talkPickerOpen: raw.talkPickerOpen ?? false,
+    focusedConversationId: raw.focusedConversationId ?? null,
+    factionEvents: raw.factionEvents ?? [],
+    adviceLog: raw.adviceLog ?? [],
   };
 }
 
@@ -52,6 +65,8 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
 
   const resolvingRef = useRef(false);
   const tirednessUpdatedRef = useRef<number | null>(null);
+  const lastDigestedTurnRef = useRef<number | null>(null);
+  const prevPhaseRef = useRef(state.phase);
 
   // Persist state to DB (debounced) whenever it changes — only when onSave is provided
   const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -68,6 +83,45 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
       if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
     };
   }, [state]);
+
+  // When we enter planning after resolve/retreat/rename, NPCs digest the turn that just ended
+  useEffect(() => {
+    const enteredPlanning =
+      state.phase === "planning" && prevPhaseRef.current !== "planning";
+    prevPhaseRef.current = state.phase;
+    if (!enteredPlanning || state.turn <= 1) return;
+
+    const resolvedTurn = state.turn - 1;
+    if (lastDigestedTurnRef.current === resolvedTurn) return;
+    lastDigestedTurnRef.current = resolvedTurn;
+
+    const snap = snapshotForApi(state);
+
+    async function runDigest() {
+      try {
+        console.log(`%c📓 Commander digest — turn ${resolvedTurn}`, "color:#8a9a6a");
+        const res = await fetch("/api/got-houses/converse/digest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            resolvedTurn,
+            ...snap,
+          }),
+        });
+        if (!res.ok) return;
+        const data = (await res.json()) as { patches?: NpcRuntimePatch[] };
+        if (data.patches?.length) {
+          dispatch({ type: "PATCH_CHARACTERS", patches: data.patches });
+        }
+      } catch (err) {
+        console.warn("Digest failed", err);
+      }
+    }
+
+    void runDigest();
+    // Snap frozen when entering planning
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.phase, state.turn, dispatch]);
 
   useEffect(() => {
     if (state.phase !== "resolving") {
@@ -334,6 +388,11 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
 
       <div style={{ display: "flex", flex: 1, minHeight: 0, flexDirection: "column" }}>
         <div style={{ display: "flex", flex: 1, minHeight: 0, position: "relative" }}>
+          {/* Talk hub — full-height column when open */}
+          {state.phase === "planning" && (
+            <ConversationDock state={state} dispatch={dispatch} />
+          )}
+
           {/* Map */}
           <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
             <WesterosMap state={state} dispatch={dispatch} />
@@ -412,10 +471,6 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
 
       {/* Split army overlay */}
       {state.splitPanelArmyId && <SplitPanel state={state} dispatch={dispatch} />}
-
-      {state.phase === "planning" && (
-        <ConversationDock state={state} dispatch={dispatch} />
-      )}
 
       <style>{`
         @keyframes pulse {

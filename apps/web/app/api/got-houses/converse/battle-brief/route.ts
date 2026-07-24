@@ -11,9 +11,9 @@ import type {
   NpcAgentState,
   NpcRuntimePatch,
 } from "@/app/got-houses/types";
-import { getSystemPrompt } from "@/app/got-houses/data/characters";
 import { HOLDS_MAP } from "@/app/got-houses/data/holds";
 import {
+  buildEmbodiedSystemPrompt,
   runCharacterToolLoop,
   type CharacterToolContext,
 } from "@/app/got-houses/lib/character-tools";
@@ -48,8 +48,11 @@ export async function POST(req: NextRequest) {
       );
       if (!inBattle) return;
 
-      const prompt = getSystemPrompt(id);
-      if (!prompt) return;
+      const embodied = buildEmbodiedSystemPrompt(
+        id,
+        "Battle is imminent. Form your private judgment of the fight. This is NOT spoken dialogue to a player — output the JSON judgment only after any tool use."
+      );
+      if (!embodied) return;
 
       if (!apiKey) {
         briefs.push({
@@ -64,13 +67,11 @@ export async function POST(req: NextRequest) {
         return;
       }
 
-      const system = `${prompt}
+      const system = `${embodied}
 
-A battle is about to be fought. Give your personal take.
-Use tools if needed (battlefield, notepad).
-HARD LIMITS — each field ≤ 15 words. Punchy. No speeches.
-Return JSON only:
-{"take":"...","outlook":"...","approach":"...","mood":"optional updated mood"}`;
+EXCEPTION for this task only: after tools, reply with JSON only (not spoken dialogue):
+{"take":"≤15 words","outlook":"≤15 words","approach":"≤15 words","mood":"optional"}
+Use survey_map / inspect_hold / find_forces if you need the field.`;
 
       const ctx: CharacterToolContext = {
         actingCharacterId: id,
@@ -86,13 +87,14 @@ Return JSON only:
         system,
         userMessage: `Battle at ${hold?.name ?? body.battle.holdId}.
 Ground: ${hold?.ground ?? "unknown"}
-Your mood: ${(c as NpcAgentState).mood}
-Your army id: ${armyId}
+Private mood: ${(c as NpcAgentState).mood}
+Your host army id: ${armyId}
 
-Give take, outlook, approach.`,
+        Inquire with tools if needed, then JSON only.`,
         ctx,
-        maxRounds: 3,
-        maxTokens: 250,
+        maxRounds: 4,
+        maxTokens: 300,
+        outputMode: "raw",
       });
 
       patches.push(...result.patches);

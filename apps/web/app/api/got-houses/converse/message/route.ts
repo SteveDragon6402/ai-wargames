@@ -1,16 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import type {
+  AdviceRecord,
   Army,
   BattleReport,
   CharacterId,
   CharacterState,
   ConversationThread,
+  FactionEvent,
   NpcAgentState,
 } from "@/app/got-houses/types";
-import { getSystemPrompt, NPC_CHAT_MAX_WORDS } from "@/app/got-houses/data/characters";
 import {
+  buildEmbodiedSystemPrompt,
   runCharacterToolLoop,
+  sanitizeInCharacterReply,
   type CharacterToolContext,
 } from "@/app/got-houses/lib/character-tools";
 
@@ -22,6 +25,9 @@ interface MessageBody {
   armies: Army[];
   battleReports: BattleReport[];
   conversations: ConversationThread[];
+  turn?: number;
+  factionEvents?: FactionEvent[];
+  adviceLog?: AdviceRecord[];
 }
 
 export async function POST(req: NextRequest) {
@@ -32,12 +38,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "NPC required" }, { status: 400 });
     }
 
-    const prompt = getSystemPrompt(npc.id);
-    if (!prompt) {
+    const system = buildEmbodiedSystemPrompt(
+      npc.id,
+      "Private conversation. Someone is speaking to you. Answer only with the words you say aloud."
+    );
+    if (!system) {
       return NextResponse.json({ error: "No system prompt" }, { status: 400 });
     }
 
     const recent = body.thread.messages
+      .filter((m) => m.kind !== "turn_break")
       .slice(-8)
       .map((m) => `${m.speakerName}: ${m.text}`)
       .join("\n");
@@ -45,18 +55,11 @@ export async function POST(req: NextRequest) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
       return NextResponse.json({
-        reply: "Aye. Speak plain — I am listening.",
+        reply: "Aye. Speak plain.",
         patches: [],
         left: false,
       });
     }
-
-    const system = `${prompt}
-
-You are in a private conversation. Stay in character.
-Hard limit: under ${NPC_CHAT_MAX_WORDS} words per reply. Punchy.
-You may use tools (notepad, battlefield, history). Use leave_conversation if insulted, bored, or done.
-Do not narrate stage directions. Speak as yourself.`;
 
     const ctx: CharacterToolContext = {
       actingCharacterId: npc.id,
@@ -65,43 +68,43 @@ Do not narrate stage directions. Speak as yourself.`;
       battleReports: body.battleReports,
       conversations: body.conversations,
       threadId: body.thread.id,
+      turn: body.turn,
+      inviteFromId: body.thread.inviteFrom,
+      factionEvents: body.factionEvents,
+      adviceLog: body.adviceLog,
     };
 
     const client = new Anthropic({ apiKey });
     const result = await runCharacterToolLoop({
       client,
       system,
-      userMessage: `Your mood: ${(npc as NpcAgentState).mood}
+      userMessage: `Private state (never speak this aloud):
+mood: ${(npc as NpcAgentState).mood}
 
-Recent thread:
-${recent || "(just started)"}
+What has been said:
+${recent || "(just begun)"}
 
-Latest message to you:
+They say to you:
 ${body.playerMessage}
 
-Reply in character.`,
+If you give clear counsel, record_advice privately. Search faction events / advice freely when useful.
+Then answer with ONLY the words you speak aloud.`,
       ctx,
-      maxRounds: 4,
-      maxTokens: 350,
+      maxRounds: 6,
+      maxTokens: 400,
     });
 
-    let reply = result.text.trim();
-    // Strip accidental JSON wrappers
-    if (reply.startsWith("{")) {
-      try {
-        const p = JSON.parse(reply) as { reply?: string; text?: string };
-        reply = p.reply ?? p.text ?? reply;
-      } catch {
-        /* keep */
-      }
-    }
-    if (!reply) reply = result.leaveReason ?? "…";
+    const reply =
+      sanitizeInCharacterReply(result.text) ||
+      result.leaveReason ||
+      "…";
 
     return NextResponse.json({
-      reply: reply.slice(0, 500),
+      reply,
       patches: result.patches,
       left: result.leftConversation,
       leaveReason: result.leaveReason,
+      adviceRecords: result.adviceRecords ?? [],
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

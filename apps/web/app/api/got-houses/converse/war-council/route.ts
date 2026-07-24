@@ -1,23 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import type {
+  AdviceRecord,
   Army,
   BattleReport,
   CharacterId,
   CharacterState,
   ConversationThread,
+  FactionEvent,
   NpcAgentState,
   NpcRuntimePatch,
 } from "@/app/got-houses/types";
-import { getSystemPrompt, NPC_CHAT_MAX_WORDS } from "@/app/got-houses/data/characters";
 import {
+  buildEmbodiedSystemPrompt,
   runCharacterToolLoop,
+  sanitizeInCharacterReply,
   type CharacterToolContext,
 } from "@/app/got-houses/lib/character-tools";
 
 interface WarCouncilBody {
   thread: ConversationThread;
-  /** NPC ids that should respond (never player lords) */
   responderIds: CharacterId[];
   playerMessage: string;
   playerName: string;
@@ -25,6 +27,9 @@ interface WarCouncilBody {
   armies: Army[];
   battleReports: BattleReport[];
   conversations: ConversationThread[];
+  turn?: number;
+  factionEvents?: FactionEvent[];
+  adviceLog?: AdviceRecord[];
 }
 
 export async function POST(req: NextRequest) {
@@ -40,13 +45,14 @@ export async function POST(req: NextRequest) {
       leaveReason?: string;
     }[] = [];
     const patches: NpcRuntimePatch[] = [];
+    const adviceRecords: AdviceRecord[] = [];
 
     const recent = body.thread.messages
       .slice(-10)
+      .filter((m) => m.kind !== "turn_break")
       .map((m) => `${m.speakerName}: ${m.text}`)
       .join("\n");
 
-    // Sequential so later members "hear" earlier replies in the user message snapshot
     let rolling = recent;
 
     for (const id of body.responderIds) {
@@ -54,8 +60,11 @@ export async function POST(req: NextRequest) {
       if (!npc || npc.kind !== "npc" || !npc.alive) continue;
       if (body.thread.leftParticipantIds.includes(id)) continue;
 
-      const prompt = getSystemPrompt(id);
-      if (!prompt) continue;
+      const system = buildEmbodiedSystemPrompt(
+        id,
+        "War council with your lord and fellow commanders. When you speak, only the words you say at the table."
+      );
+      if (!system) continue;
 
       if (!apiKey) {
         replies.push({
@@ -68,13 +77,6 @@ export async function POST(req: NextRequest) {
         continue;
       }
 
-      const system = `${prompt}
-
-You are in a WAR COUNCIL with your lord and fellow commanders.
-Hard limit: under ${NPC_CHAT_MAX_WORDS} words. Punchy. Address the matter; do not speechify.
-You may use tools. Use leave_conversation only if truly done with this council.
-Speak as yourself — one reply.`;
-
       const ctx: CharacterToolContext = {
         actingCharacterId: id,
         characters: body.characters,
@@ -82,13 +84,18 @@ Speak as yourself — one reply.`;
         battleReports: body.battleReports,
         conversations: body.conversations,
         threadId: body.thread.id,
+        turn: body.turn,
+        inviteFromId: body.thread.inviteFrom,
+        factionEvents: body.factionEvents,
+        adviceLog: body.adviceLog,
       };
 
       const client = new Anthropic({ apiKey });
       const result = await runCharacterToolLoop({
         client,
         system,
-        userMessage: `Your mood: ${(npc as NpcAgentState).mood}
+        userMessage: `Private state (never speak aloud):
+mood: ${(npc as NpcAgentState).mood}
 
 Council so far:
 ${rolling || "(opening)"}
@@ -96,13 +103,16 @@ ${rolling || "(opening)"}
 ${body.playerName} says:
 ${body.playerMessage}
 
-Your turn to speak.`,
+If you give counsel, record_advice. Search faction events freely if needed.
+Then speak ONLY your words at the table — one short reply.`,
         ctx,
-        maxRounds: 3,
-        maxTokens: 300,
+        maxRounds: 5,
+        maxTokens: 380,
       });
 
-      const text = (result.text.trim() || "…").slice(0, 500);
+      const text =
+        sanitizeInCharacterReply(result.text) ||
+        (result.leftConversation ? "I am done here." : "…");
       replies.push({
         characterId: id,
         name: npc.name,
@@ -111,10 +121,13 @@ Your turn to speak.`,
         leaveReason: result.leaveReason,
       });
       patches.push(...result.patches);
+      if (result.adviceRecords?.length) {
+        adviceRecords.push(...result.adviceRecords);
+      }
       rolling += `\n${npc.name}: ${text}`;
     }
 
-    return NextResponse.json({ replies, patches });
+    return NextResponse.json({ replies, patches, adviceRecords });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[converse/war-council]", msg);

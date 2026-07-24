@@ -26,11 +26,21 @@ interface Props {
   isSelected: boolean;
   hasOrder: boolean;
   stanceOrder?: StanceOrder;
+  /** True if this host already received a speech command this turn */
+  hadSpeech?: boolean;
   isLocked: boolean;
   onClick: (armyId: string, shift: boolean) => void;
 }
 
-export default function ArmyCard({ army, isSelected, hasOrder, stanceOrder, isLocked, onClick }: Props) {
+export default function ArmyCard({
+  army,
+  isSelected,
+  hasOrder,
+  stanceOrder,
+  hadSpeech,
+  isLocked,
+  onClick,
+}: Props) {
   const colors = FACTION_COLORS[army.faction];
 
   const totalUnits = army.units.reduce((s, u) => s + u.count, 0);
@@ -93,13 +103,16 @@ export default function ArmyCard({ army, isSelected, hasOrder, stanceOrder, isLo
         >
           {army.name}
         </span>
+        {hadSpeech && (
+          <span style={orderBadgeStyle("#2a3a2a", "#6a8a6a")}>SPEECH</span>
+        )}
         {stanceOrder === "rest" && (
           <span style={orderBadgeStyle("#2a4a2a", "#4a8a4a")}>REST</span>
         )}
         {stanceOrder === "fortify" && (
           <span style={orderBadgeStyle("#1a2a4a", "#4a6aaa")}>FORTIFY</span>
         )}
-        {hasOrder && !stanceOrder && (
+        {hasOrder && !stanceOrder && !hadSpeech && (
           <span style={orderBadgeStyle("#3a2a00", "#c8941a")}>ORDERED</span>
         )}
       </div>

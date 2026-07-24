@@ -1,17 +1,20 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import type {
+  AdviceRecord,
   Army,
   BattleReport,
   CharacterId,
   CharacterState,
   ConversationThread,
+  FactionEvent,
   InviteMemory,
   NpcAgentState,
 } from "@/app/got-houses/types";
-import { getSystemPrompt } from "@/app/got-houses/data/characters";
 import {
+  buildEmbodiedSystemPrompt,
   runCharacterToolLoop,
+  sanitizeInCharacterReply,
   type CharacterToolContext,
 } from "@/app/got-houses/lib/character-tools";
 
@@ -23,6 +26,8 @@ interface InviteBody {
   armies: Army[];
   battleReports: BattleReport[];
   conversations: ConversationThread[];
+  factionEvents?: FactionEvent[];
+  adviceLog?: AdviceRecord[];
 }
 
 export async function POST(req: NextRequest) {
@@ -37,27 +42,24 @@ export async function POST(req: NextRequest) {
     }
 
     const from = body.characters[body.fromCharacterId];
-    const prompt = getSystemPrompt(target.id);
-    if (!prompt) {
+    const system = buildEmbodiedSystemPrompt(
+      target.id,
+      "Someone seeks a private word with you. Decide with accept_invitation or decline_invitation, then speak ONLY your spoken reply aloud."
+    );
+    if (!system) {
       return NextResponse.json({ error: "No system prompt" }, { status: 400 });
     }
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
-      return NextResponse.json(fallbackInvite(target, from?.name ?? "Someone", body.turn));
+      return NextResponse.json(
+        fallbackInvite(target, from?.name ?? "Someone", body.turn, body.fromCharacterId)
+      );
     }
 
     const history = (target as NpcAgentState).inviteHistory
       .map((h) => `- turn ${h.turn}: ${h.outcome} — ${h.reason}`)
       .join("\n");
-
-    const system = `${prompt}
-
-You have been invited to a private conversation.
-Decide: ACCEPT or DECLINE.
-Use tools if you need notepad, background, or battlefield context.
-Respond with JSON only at the end:
-{"accept": true or false, "reason": "punchy reason under 25 words", "mood": "optional new mood line"}`;
 
     const ctx: CharacterToolContext = {
       actingCharacterId: target.id,
@@ -65,60 +67,59 @@ Respond with JSON only at the end:
       armies: body.armies,
       battleReports: body.battleReports,
       conversations: body.conversations,
+      turn: body.turn,
+      inviteFromId: body.fromCharacterId,
+      factionEvents: body.factionEvents,
+      adviceLog: body.adviceLog,
     };
 
     const client = new Anthropic({ apiKey });
     const result = await runCharacterToolLoop({
       client,
       system,
-      userMessage: `Invitation from ${from?.name ?? body.fromCharacterId}.
-Your mood: ${(target as NpcAgentState).mood}
-Prior invite history:
+      userMessage: `Private state (never speak aloud):
+mood: ${(target as NpcAgentState).mood}
+prior invites:
 ${history || "(none)"}
 
-Accept or decline this invitation.`,
+${from?.name ?? body.fromCharacterId} asks for a private word with you.
+
+1) Call accept_invitation OR decline_invitation (required).
+2) Then speak ONLY the words you say to them — acceptance or refusal in your own voice. No JSON.`,
       ctx,
-      maxRounds: 3,
-      maxTokens: 300,
+      maxRounds: 4,
+      maxTokens: 350,
     });
 
-    const jsonMatch = result.text.match(/\{[\s\S]*\}/);
-    let accept = true;
-    let reason = result.text.slice(0, 120) || "Very well.";
-    let mood = (target as NpcAgentState).mood;
+    const speech =
+      sanitizeInCharacterReply(result.text) ||
+      (result.inviteDecision?.accept
+        ? "Very well. Speak."
+        : "Not now.");
 
-    if (jsonMatch) {
-      try {
-        const parsed = JSON.parse(jsonMatch[0]) as {
-          accept?: boolean;
-          reason?: string;
-          mood?: string;
-        };
-        accept = !!parsed.accept;
-        reason = (parsed.reason ?? reason).slice(0, 160);
-        if (parsed.mood) mood = parsed.mood.slice(0, 160);
-      } catch {
-        /* keep defaults */
-      }
-    }
+    const accept = result.inviteDecision?.accept ?? !/not now|no\.|refuse|decline/i.test(speech);
 
+    // Ensure invite history exists even if tools were skipped
     const inviteEntry: InviteMemory = {
       fromCharacterId: body.fromCharacterId,
       turn: body.turn,
       outcome: accept ? "accepted" : "declined",
-      reason,
+      reason: result.inviteDecision?.reason || speech.slice(0, 120),
     };
-
+    const npc = target as NpcAgentState;
     const patches = [
       ...result.patches,
       {
         id: target.id,
-        mood,
-        inviteHistory: [...(target as NpcAgentState).inviteHistory, inviteEntry].slice(-12),
+        inviteHistory: [...npc.inviteHistory, inviteEntry].slice(-12),
       },
     ];
 
-    return NextResponse.json({ accept, reason, patches });
+    return NextResponse.json({
+      accept,
+      reason: speech, // spoken line shown in chat — not meta
+      patches,
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[converse/invite]", msg);
@@ -126,14 +127,17 @@ Accept or decline this invitation.`,
   }
 }
 
-function fallbackInvite(target: CharacterState, fromName: string, turn: number) {
+function fallbackInvite(
+  target: CharacterState,
+  fromName: string,
+  turn: number,
+  fromId: CharacterId
+) {
   const npc = target as NpcAgentState;
   const accept = !/reluctant|angry|furious/i.test(npc.mood);
-  const reason = accept
-    ? `I will hear ${fromName}.`
-    : `Not now.`;
+  const reason = accept ? `I will hear you, ${fromName}.` : `Not now.`;
   const inviteEntry: InviteMemory = {
-    fromCharacterId: "unknown",
+    fromCharacterId: fromId,
     turn,
     outcome: accept ? "accepted" : "declined",
     reason,

@@ -365,6 +365,7 @@ export function buildInitialCharacters(): Record<CharacterId, CharacterState> {
         mood: seed.mood,
         dispositionToward: {},
         inviteHistory: [],
+        adviceGivenIds: [],
       };
       out[seed.id] = n;
     }

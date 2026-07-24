@@ -10,6 +10,7 @@ interface Props {
   dispatch: React.Dispatch<GameAction>;
 }
 
+/** Army command: address one host. Not part of Talk. */
 export default function SpeechComposer({ army, state, dispatch }: Props) {
   const [speech, setSpeech] = useState("");
   const [reaction, setReaction] = useState<string | null>(null);
@@ -30,6 +31,7 @@ export default function SpeechComposer({ army, state, dispatch }: Props) {
       alert(`Speech must be ≤ ${SPEECH_MAX_WORDS} words.`);
       return;
     }
+    const spoken = speech;
     setBusy(true);
     try {
       const speakerId = factionLordId(army.faction);
@@ -38,7 +40,7 @@ export default function SpeechComposer({ army, state, dispatch }: Props) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           army,
-          speech,
+          speech: spoken,
           speakerName: state.characters[speakerId]?.name ?? "Lord",
           commanderId: commander?.id,
           commanderMood: commander?.kind === "npc" ? commander.mood : undefined,
@@ -64,6 +66,7 @@ export default function SpeechComposer({ army, state, dispatch }: Props) {
       dispatch({
         type: "APPLY_SPEECH",
         armyId: army.id,
+        speech: spoken,
         reaction: data.reaction ?? "",
         condition: data.condition,
         impliedOrder: data.impliedOrder ?? "none",
@@ -87,14 +90,42 @@ export default function SpeechComposer({ army, state, dispatch }: Props) {
     >
       <div
         style={{
-          fontSize: 9,
-          color: "#6a8a6a",
-          textTransform: "uppercase",
-          letterSpacing: "0.12em",
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
           marginBottom: 6,
         }}
       >
-        Address this army
+        <div
+          style={{
+            fontSize: 9,
+            color: "#c8941a",
+            textTransform: "uppercase",
+            letterSpacing: "0.12em",
+          }}
+        >
+          Speech · {army.name}
+        </div>
+        <button
+          type="button"
+          onClick={() => dispatch({ type: "CLOSE_SPEECH" })}
+          style={{
+            background: "none",
+            border: "none",
+            color: "#555",
+            cursor: "pointer",
+            fontFamily: "inherit",
+            fontSize: 9,
+            textTransform: "uppercase",
+            letterSpacing: "0.1em",
+          }}
+        >
+          Cancel
+        </button>
+      </div>
+      <div style={{ color: "#555", fontSize: 10, marginBottom: 8, lineHeight: 1.4 }}>
+        Command to this host. Counts as their action — they will not march.
+        May imply rest or fortify.
       </div>
       {already ? (
         <div style={{ color: "#666", fontSize: 11 }}>
@@ -109,7 +140,7 @@ export default function SpeechComposer({ army, state, dispatch }: Props) {
             value={speech}
             onChange={(e) => setSpeech(e.target.value)}
             rows={4}
-            placeholder="Short speech — the host listens. May imply rest or fortify."
+            placeholder="Words for the host…"
             style={{
               width: "100%",
               background: "#121212",

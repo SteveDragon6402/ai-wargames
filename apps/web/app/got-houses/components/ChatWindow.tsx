@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
+  AdviceRecord,
   ConversationThread,
   GameAction,
   GameState,
@@ -19,13 +20,23 @@ interface Props {
   thread: ConversationThread;
   state: GameState;
   dispatch: React.Dispatch<GameAction>;
+  /** Fill the talk hub */
+  fill?: boolean;
 }
 
-export default function ChatWindow({ thread, state, dispatch }: Props) {
+export default function ChatWindow({ thread, state, dispatch, fill }: Props) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const scrollerRef = useRef<HTMLDivElement>(null);
   const lordId = activeLordId(state.activeFaction);
   const lord = state.characters[lordId];
+  const isCouncil = thread.kind === "war_council";
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [thread.messages.length, thread.id]);
 
   async function acceptInvite() {
     const active = {
@@ -88,11 +99,12 @@ export default function ChatWindow({ thread, state, dispatch }: Props) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            ...snapshotForApi(state),
             thread: liveThread,
             responderIds: responders,
             playerMessage: trimmed,
             playerName: lord?.name ?? "Lord",
-            ...snapshotForApi(state),
+            turn: state.turn,
           }),
         });
         const data = (await res.json()) as {
@@ -104,10 +116,14 @@ export default function ChatWindow({ thread, state, dispatch }: Props) {
             leaveReason?: string;
           }[];
           patches?: NpcRuntimePatch[];
+          adviceRecords?: AdviceRecord[];
         };
 
         if (data.patches?.length) {
           dispatch({ type: "PATCH_CHARACTERS", patches: data.patches });
+        }
+        if (data.adviceRecords?.length) {
+          dispatch({ type: "APPEND_ADVICE", records: data.adviceRecords });
         }
 
         const msgs = (data.replies ?? []).map((r) =>
@@ -140,7 +156,6 @@ export default function ChatWindow({ thread, state, dispatch }: Props) {
         const npcId =
           thread.inviteTo === lordId ? thread.inviteFrom : thread.inviteTo;
         if (!npcId || state.characters[npcId]?.kind !== "npc") {
-          // Player-to-player: other side sees messages via shared state
           setBusy(false);
           return;
         }
@@ -149,10 +164,11 @@ export default function ChatWindow({ thread, state, dispatch }: Props) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            ...snapshotForApi(state),
             thread: liveThread,
             npcCharacterId: npcId,
             playerMessage: trimmed,
-            ...snapshotForApi(state),
+            turn: state.turn,
           }),
         });
         const data = (await res.json()) as {
@@ -160,10 +176,14 @@ export default function ChatWindow({ thread, state, dispatch }: Props) {
           patches?: NpcRuntimePatch[];
           left?: boolean;
           leaveReason?: string;
+          adviceRecords?: AdviceRecord[];
         };
 
         if (data.patches?.length) {
           dispatch({ type: "PATCH_CHARACTERS", patches: data.patches });
+        }
+        if (data.adviceRecords?.length) {
+          dispatch({ type: "APPEND_ADVICE", records: data.adviceRecords });
         }
 
         const replyMsg = makeMessage(
@@ -201,89 +221,238 @@ export default function ChatWindow({ thread, state, dispatch }: Props) {
   const pendingForMe =
     thread.status === "pending_invite" && thread.inviteTo === lordId;
 
+  const title = isCouncil
+    ? "War council"
+    : thread.participantIds
+        .filter((id) => id !== lordId)
+        .map((id) => state.characters[id]?.name ?? id)
+        .join(" · ") || "Conversation";
+
+  const councilPresent = isCouncil
+    ? thread.participantIds.filter(
+        (id) =>
+          id !== lordId &&
+          !thread.leftParticipantIds.includes(id) &&
+          state.characters[id]?.alive !== false
+      )
+    : [];
+
   return (
     <div
       style={{
-        width: 280,
-        height: 340,
+        flex: fill ? 1 : undefined,
+        width: fill ? "100%" : 280,
+        minHeight: 0,
+        height: fill ? "100%" : 340,
         background: "#0c0c0c",
-        border: "1px solid #2a2a2a",
+        border: fill ? "none" : "1px solid #2a2a2a",
         display: "flex",
         flexDirection: "column",
         fontFamily: "var(--font-mono), monospace",
-        fontSize: 11,
       }}
     >
       <div
         style={{
-          padding: "8px 10px",
+          padding: fill ? "14px 16px" : "8px 10px",
           borderBottom: "1px solid #222",
-          display: "flex",
-          justifyContent: "space-between",
-          color: "#9a9a6a",
-          textTransform: "uppercase",
-          letterSpacing: "0.1em",
-          fontSize: 9,
+          flexShrink: 0,
         }}
       >
-        <span>
-          {thread.kind === "war_council"
-            ? "War council"
-            : thread.participantIds
-                .map((id) => state.characters[id]?.name ?? id)
-                .join(" · ")}
-          {thread.status === "closed" ? " (closed)" : ""}
-        </span>
-        <button
-          type="button"
-          onClick={() =>
-            dispatch({ type: "CLOSE_CONVERSATION_DOCK", threadId: thread.id })
-          }
+        <div
           style={{
-            background: "transparent",
-            border: "none",
-            color: "#666",
-            cursor: "pointer",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "flex-start",
+            gap: 12,
           }}
         >
-          ×
-        </button>
-      </div>
-
-      <div style={{ flex: 1, overflow: "auto", padding: 10 }}>
-        {thread.messages.map((m) => (
-          <div key={m.id} style={{ marginBottom: 8 }}>
-            <div style={{ color: "#666", fontSize: 9 }}>{m.speakerName}</div>
+          <div>
             <div
               style={{
-                color: m.kind === "leave" ? "#a66" : m.kind === "system" ? "#888" : "#ddd",
+                color: isCouncil ? "#c8941a" : "#9a9a6a",
+                textTransform: "uppercase",
+                letterSpacing: "0.14em",
+                fontSize: fill ? 11 : 9,
+                fontWeight: 700,
               }}
             >
-              {m.text}
+              {title}
+              {thread.status === "closed" ? " · closed" : ""}
+              {thread.status === "pending_invite" ? " · invitation" : ""}
             </div>
+            {isCouncil && councilPresent.length > 0 && (
+              <div
+                style={{
+                  display: "flex",
+                  flexWrap: "wrap",
+                  gap: 6,
+                  marginTop: 10,
+                }}
+              >
+                {councilPresent.map((id) => (
+                  <span
+                    key={id}
+                    style={{
+                      fontSize: 10,
+                      color: "#8a9a8a",
+                      border: "1px solid #2a332a",
+                      padding: "3px 8px",
+                      background: "#121612",
+                    }}
+                  >
+                    {state.characters[id]?.name ?? id}
+                  </span>
+                ))}
+              </div>
+            )}
           </div>
-        ))}
+          <button
+            type="button"
+            onClick={() =>
+              dispatch({ type: "CLOSE_CONVERSATION_DOCK", threadId: thread.id })
+            }
+            style={{
+              background: "transparent",
+              border: "1px solid #333",
+              color: "#777",
+              cursor: "pointer",
+              fontSize: 10,
+              padding: "4px 8px",
+              fontFamily: "inherit",
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+            }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+
+      <div
+        ref={scrollerRef}
+        style={{
+          flex: 1,
+          overflowY: "auto",
+          padding: fill ? "16px 18px" : 10,
+          minHeight: 0,
+        }}
+      >
+        {thread.messages.map((m) => {
+          if (m.kind === "turn_break") {
+            return (
+              <div
+                key={m.id}
+                style={{
+                  margin: fill ? "18px 0" : "12px 0",
+                  textAlign: "center",
+                  color: "#555",
+                  fontSize: fill ? 10 : 9,
+                  letterSpacing: "0.18em",
+                  textTransform: "uppercase",
+                  borderTop: "1px solid #222",
+                  borderBottom: "1px solid #222",
+                  padding: "8px 0",
+                }}
+              >
+                {m.text}
+              </div>
+            );
+          }
+          const mine = m.speakerId === lordId;
+          return (
+            <div
+              key={m.id}
+              style={{
+                marginBottom: fill ? 14 : 8,
+                maxWidth: isCouncil ? "92%" : "88%",
+                marginLeft: mine ? "auto" : 0,
+              }}
+            >
+              <div
+                style={{
+                  color: mine ? "#6a8aaa" : "#666",
+                  fontSize: fill ? 10 : 9,
+                  marginBottom: 3,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  textAlign: mine ? "right" : "left",
+                }}
+              >
+                {m.speakerName}
+              </div>
+              <div
+                style={{
+                  color:
+                    m.kind === "leave"
+                      ? "#a66"
+                      : m.kind === "system"
+                        ? "#777"
+                        : "#e4e4e4",
+                  fontSize: fill ? 13 : 11,
+                  lineHeight: 1.45,
+                  background: mine ? "#121820" : "#141414",
+                  border: `1px solid ${mine ? "#1e2a38" : "#222"}`,
+                  padding: fill ? "10px 12px" : "6px 8px",
+                }}
+              >
+                {m.text}
+              </div>
+            </div>
+          );
+        })}
         {thread.closedReason && (
-          <div style={{ color: "#744", fontSize: 10 }}>{thread.closedReason}</div>
+          <div style={{ color: "#744", fontSize: 11, marginTop: 8 }}>
+            {thread.closedReason}
+          </div>
+        )}
+        {busy && (
+          <div style={{ color: "#555", fontSize: 11, marginTop: 8 }}>
+            They consider their words…
+          </div>
         )}
       </div>
 
       {pendingForMe ? (
-        <div style={{ display: "flex", gap: 6, padding: 8, borderTop: "1px solid #222" }}>
-          <button type="button" onClick={acceptInvite} style={actionBtn}>
+        <div
+          style={{
+            display: "flex",
+            gap: 8,
+            padding: fill ? 14 : 8,
+            borderTop: "1px solid #222",
+            flexShrink: 0,
+          }}
+        >
+          <button type="button" onClick={acceptInvite} style={actionBtn(true)}>
             Accept
           </button>
-          <button type="button" onClick={declineInvite} style={actionBtn}>
+          <button type="button" onClick={declineInvite} style={actionBtn(false)}>
             Decline
           </button>
         </div>
       ) : thread.status === "active" ? (
-        <div style={{ borderTop: "1px solid #222", padding: 8 }}>
+        <div
+          style={{
+            borderTop: "1px solid #222",
+            padding: fill ? 14 : 8,
+            flexShrink: 0,
+            background: "#0a0a0a",
+          }}
+        >
           <textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            rows={2}
-            placeholder={`Your words (≤${PLAYER_CHAT_MAX_WORDS})`}
+            rows={fill ? 3 : 2}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void send();
+              }
+            }}
+            placeholder={
+              isCouncil
+                ? `Address the council (≤${PLAYER_CHAT_MAX_WORDS} words)`
+                : `Your words (≤${PLAYER_CHAT_MAX_WORDS})`
+            }
             style={{
               width: "100%",
               background: "#141414",
@@ -291,29 +460,32 @@ export default function ChatWindow({ thread, state, dispatch }: Props) {
               color: "#ddd",
               resize: "none",
               fontFamily: "inherit",
-              fontSize: 11,
-              padding: 6,
+              fontSize: fill ? 13 : 11,
+              lineHeight: 1.4,
+              padding: fill ? 10 : 6,
             }}
           />
           <div
             style={{
               display: "flex",
               justifyContent: "space-between",
-              marginTop: 4,
+              alignItems: "center",
+              marginTop: 8,
               color: "#555",
-              fontSize: 9,
+              fontSize: 10,
             }}
           >
             <span>
               {countWords(text)}/{PLAYER_CHAT_MAX_WORDS}
+              {fill ? " · Enter to send" : ""}
             </span>
             <button
               type="button"
               disabled={busy}
               onClick={send}
-              style={actionBtn}
+              style={actionBtn(true)}
             >
-              {busy ? "…" : "Send"}
+              {busy ? "…" : isCouncil ? "Speak" : "Send"}
             </button>
           </div>
         </div>
@@ -322,12 +494,16 @@ export default function ChatWindow({ thread, state, dispatch }: Props) {
   );
 }
 
-const actionBtn: React.CSSProperties = {
-  background: "#1a1a1a",
-  border: "1px solid #333",
-  color: "#aaa",
-  fontSize: 10,
-  padding: "4px 8px",
-  cursor: "pointer",
-  fontFamily: "inherit",
-};
+function actionBtn(accent: boolean): React.CSSProperties {
+  return {
+    background: accent ? "#1a1810" : "#1a1a1a",
+    border: `1px solid ${accent ? "#3a2a00" : "#333"}`,
+    color: accent ? "#c8941a" : "#aaa",
+    fontSize: 11,
+    padding: "8px 14px",
+    cursor: "pointer",
+    fontFamily: "inherit",
+    textTransform: "uppercase",
+    letterSpacing: "0.1em",
+  };
+}

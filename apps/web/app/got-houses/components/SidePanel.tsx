@@ -282,6 +282,21 @@ export default function SidePanel({ state, dispatch }: Props) {
                   }
                 />
               )}
+              {canIssueStance && (
+                <ActionButton
+                  label="Speech"
+                  disabled={state.speechesThisTurn.includes(singleSelected!.id)}
+                  active={state.speechArmyId === singleSelected!.id}
+                  onClick={() =>
+                    state.speechArmyId === singleSelected!.id
+                      ? dispatch({ type: "CLOSE_SPEECH" })
+                      : dispatch({
+                          type: "OPEN_SPEECH",
+                          armyId: singleSelected!.id,
+                        })
+                  }
+                />
+              )}
               <ActionButton
                 label="Deselect"
                 disabled={false}
@@ -380,6 +395,7 @@ export default function SidePanel({ state, dispatch }: Props) {
                       isSelected={selectedArmyIds.includes(army.id)}
                       hasOrder={hasOrder}
                       stanceOrder={stanceOrder}
+                      hadSpeech={state.speechesThisTurn.includes(army.id)}
                       isLocked={state.north.submitted}
                       onClick={(id, shift) =>
                         dispatch({ type: "SELECT_ARMY", armyId: id, shift })
@@ -401,6 +417,7 @@ export default function SidePanel({ state, dispatch }: Props) {
                       isSelected={selectedArmyIds.includes(army.id)}
                       hasOrder={hasOrder}
                       stanceOrder={stanceOrder}
+                      hadSpeech={state.speechesThisTurn.includes(army.id)}
                       isLocked={state.westerlands.submitted}
                       onClick={(id, shift) =>
                         dispatch({ type: "SELECT_ARMY", armyId: id, shift })
@@ -415,6 +432,7 @@ export default function SidePanel({ state, dispatch }: Props) {
       </div>
 
       {singleSelected &&
+        state.speechArmyId === singleSelected.id &&
         (adminMode || singleSelected.faction === activeFaction) && (
           <SpeechComposer army={singleSelected} state={state} dispatch={dispatch} />
         )}
