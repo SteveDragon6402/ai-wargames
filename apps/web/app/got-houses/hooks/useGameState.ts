@@ -19,6 +19,8 @@ import type {
   NpcAgentState,
   NpcRuntimePatch,
   ChatMessage,
+  Leader,
+  Notable,
 } from "../types";
 import { INITIAL_GAME_STATE } from "../data/initial-state";
 import { HOLDS_MAP } from "../data/holds";
@@ -29,6 +31,148 @@ import {
   eventsFromBattleReports,
   eventsFromResolvedOrders,
 } from "../lib/faction-events";
+import { armyNameForCommander } from "../lib/army-naming";
+
+/** Appoint lead commander (or clear). Promotes notables into leaders and syncs NPC roles. */
+function appointLeadCommander(
+  army: Army,
+  leaderName: string | null,
+  characters: Record<string, CharacterState>
+): { army: Army; characters: Record<string, CharacterState> } {
+  let leaders = [...army.leaders];
+  let notables = [...(army.notables ?? [])];
+  let nextChars = { ...characters };
+
+  if (leaderName) {
+    const asLeader = leaders.find((l) => l.name === leaderName);
+    const asNotable = notables.find((n) => n.name === leaderName);
+
+    if (asNotable && !asLeader) {
+      notables = notables.filter((n) => n.name !== leaderName);
+      leaders = [{ name: asNotable.name }, ...leaders];
+    } else if (asLeader) {
+      leaders = [asLeader, ...leaders.filter((l) => l.name !== leaderName)];
+    } else {
+      // Unknown name — still allow naming the host after them
+      leaders = [{ name: leaderName }, ...leaders];
+    }
+
+    // NPC role: appointed person becomes commander; prior commanders on this army demote
+    for (const [id, c] of Object.entries(nextChars)) {
+      if (c.kind !== "npc" || !c.alive) continue;
+      if (c.armyId !== army.id) continue;
+      if (c.name === leaderName) {
+        nextChars[id] = { ...c, role: "commander", armyId: army.id };
+      } else if (c.role === "commander") {
+        nextChars[id] = { ...c, role: "notable" };
+      }
+    }
+
+    // If character exists but wasn't on this army yet, attach them
+    const cid = findCharacterIdByName(nextChars, leaderName);
+    if (cid) {
+      const c = nextChars[cid];
+      if (c?.kind === "npc") {
+        nextChars[cid] = { ...c, role: "commander", armyId: army.id };
+      } else if (c?.kind === "player") {
+        nextChars[cid] = { ...c, armyId: army.id };
+      }
+    }
+  } else {
+    // No commander — demote NPC commanders on this host to notables
+    for (const [id, c] of Object.entries(nextChars)) {
+      if (c.kind !== "npc" || !c.alive) continue;
+      if (c.armyId === army.id && c.role === "commander") {
+        nextChars[id] = { ...c, role: "notable" };
+      }
+    }
+  }
+
+  const updated: Army = {
+    ...army,
+    leaders,
+    notables,
+    name: armyNameForCommander(
+      leaderName,
+      army.units,
+      army.faction,
+      army.name
+    ),
+  };
+
+  return { army: updated, characters: nextChars };
+}
+
+function resolveSplitHalf(
+  source: Army,
+  half: SplitConfig["army1"]
+): { leaders: Leader[]; notables: Notable[] } {
+  const leaders: Leader[] = [];
+  for (const name of half.leaderNames) {
+    const fromLeader = source.leaders.find((l) => l.name === name);
+    if (fromLeader) {
+      leaders.push(fromLeader);
+      continue;
+    }
+    const fromNotable = source.notables?.find((n) => n.name === name);
+    if (fromNotable) {
+      leaders.push({ name: fromNotable.name });
+    }
+  }
+  const notables = (source.notables ?? []).filter(
+    (n) =>
+      half.notableNames.includes(n.name) && !half.leaderNames.includes(n.name)
+  );
+  return { leaders, notables };
+}
+
+function syncCharactersAfterSplit(
+  characters: Record<string, CharacterState>,
+  army1: Army,
+  army2: Army,
+  sourceArmyId: string
+): Record<string, CharacterState> {
+  const next = { ...characters };
+
+  const place = (army: Army) => {
+    const names = new Set([
+      ...army.leaders.map((l) => l.name),
+      ...(army.notables ?? []).map((n) => n.name),
+    ]);
+    const lead = army.leaders[0]?.name ?? null;
+    for (const [id, c] of Object.entries(next)) {
+      if (!c.alive || !names.has(c.name)) continue;
+      if (c.kind === "npc") {
+        const role =
+          lead && c.name === lead
+            ? "commander"
+            : c.role === "commander"
+              ? "notable"
+              : c.role;
+        next[id] = { ...c, armyId: army.id, role };
+      } else {
+        next[id] = { ...c, armyId: army.id };
+      }
+    }
+  };
+
+  place(army1);
+  place(army2);
+
+  for (const [id, c] of Object.entries(next)) {
+    if (c.armyId !== sourceArmyId) continue;
+    if (c.kind === "npc") {
+      next[id] = {
+        ...c,
+        armyId: null,
+        role: c.role === "commander" ? "notable" : c.role,
+      };
+    } else {
+      next[id] = { ...c, armyId: null };
+    }
+  }
+  return next;
+}
 
 function applyCharacterPatches(
   characters: Record<string, CharacterState>,
@@ -52,6 +196,7 @@ function applyCharacterPatches(
       ...(p.adviceGivenIds !== undefined
         ? { adviceGivenIds: p.adviceGivenIds }
         : {}),
+      ...(p.role !== undefined ? { role: p.role } : {}),
     };
     next[p.id] = updated;
   }
@@ -790,50 +935,53 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case "SELECT_LEAD_COMMANDER": {
-      const updatedArmies = state.armies.map((army) => {
-        if (army.id !== action.armyId) return army;
+      const target = state.armies.find((a) => a.id === action.armyId);
+      if (!target) return state;
 
-        // Derive a suffix from the old army name (e.g. "Host", "Vanguard", "Spearmen", etc.)
-        const oldWords = army.name.split(" ");
-        const suffix = oldWords.length >= 2 ? oldWords[oldWords.length - 1] : "Host";
+      const { army: appointed, characters } = appointLeadCommander(
+        target,
+        action.leaderName,
+        state.characters
+      );
+      const updatedArmies = state.armies.map((a) =>
+        a.id === action.armyId ? appointed : a
+      );
 
-        return {
-          ...army,
-          name: `${action.leaderName}'s ${suffix}`,
-        };
-      });
-
-      // Handle voluntary commander reassignment
       if (state.voluntaryCommanderChange === action.armyId) {
         return {
           ...state,
           armies: updatedArmies,
+          characters,
           voluntaryCommanderChange: null,
         };
       }
 
-      const newPendingRenames = state.pendingRenames.filter((id) => id !== action.armyId);
+      const newPendingRenames = state.pendingRenames.filter(
+        (id) => id !== action.armyId
+      );
 
       if (newPendingRenames.length > 0) {
         return {
           ...state,
           armies: updatedArmies,
+          characters,
           pendingRenames: newPendingRenames,
         };
       }
 
-      // All renames done — move to retreat or planning
       if (state.retreats.length > 0) {
         return {
           ...state,
           phase: "retreat",
           armies: updatedArmies,
+          characters,
           pendingRenames: [],
         };
       }
 
       return advanceToPlanning(state, {
         armies: updatedArmies,
+        characters,
         pendingRenames: [],
       });
     }
@@ -954,32 +1102,30 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const sourceArmy = state.armies.find((a) => a.id === config.sourceArmyId);
       if (!sourceArmy) return state;
 
+      // Both halves need troops; commanders are optional
+      const a1Troops = config.army1.units.reduce((s, u) => s + u.count, 0);
+      const a2Troops = config.army2.units.reduce((s, u) => s + u.count, 0);
+      if (a1Troops <= 0 || a2Troops <= 0) return state;
+
       const splitActivity: ArmyActivity = {
         turnsResting: 0,
         turnsFortiying: 0,
         turnsMarching: 0,
         turnsSinceMerge: sourceArmy.activity.turnsSinceMerge,
-        turnsSinceSplit: 0, // just split this turn
+        turnsSinceSplit: 0,
       };
 
-      function buildSplitArmy(
-        half: SplitConfig["army1"],
-        nameSuffix: string
-      ): Army {
-        const leaders = sourceArmy!.leaders.filter((l) =>
-          half.leaderNames.includes(l.name)
-        );
-        const notables = sourceArmy!.notables?.filter((n) =>
-          half.notableNames.includes(n.name)
-        ) ?? [];
-        const leadName = leaders[0]?.name ?? nameSuffix;
-        // Derive suffix from source army name
-        const srcWords = sourceArmy!.name.split(" ");
-        const suffix = srcWords.length >= 2 ? srcWords[srcWords.length - 1] : "Host";
-
+      function buildSplitArmy(half: SplitConfig["army1"]): Army {
+        const { leaders, notables } = resolveSplitHalf(sourceArmy!, half);
+        const leadName = leaders[0]?.name ?? null;
         return {
           id: crypto.randomUUID(),
-          name: `${leadName}'s ${suffix}`,
+          name: armyNameForCommander(
+            leadName,
+            half.units,
+            sourceArmy!.faction,
+            sourceArmy!.name
+          ),
           holdId: sourceArmy!.holdId,
           faction: sourceArmy!.faction,
           units: half.units,
@@ -994,8 +1140,14 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         };
       }
 
-      const army1 = buildSplitArmy(config.army1, "First");
-      const army2 = buildSplitArmy(config.army2, "Second");
+      const army1 = buildSplitArmy(config.army1);
+      const army2 = buildSplitArmy(config.army2);
+      const characters = syncCharactersAfterSplit(
+        state.characters,
+        army1,
+        army2,
+        sourceArmy.id
+      );
 
       const updatedArmies = state.armies
         .filter((a) => a.id !== config.sourceArmyId)
@@ -1004,6 +1156,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return {
         ...state,
         armies: updatedArmies,
+        characters,
         splitPanelArmyId: null,
         selectedArmyIds: [army1.id],
         moveMode: { active: false, validTargets: [] },

@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { GameState, GameAction, Army } from "../types";
+import { armyNameForCommander } from "../lib/army-naming";
 
 interface Props {
   state: GameState;
@@ -16,7 +17,6 @@ const FACTION_COLORS = {
 };
 
 export default function CommanderRenamePanel({ state, dispatch }: Props) {
-  // Voluntary reassignment takes priority (player-initiated)
   if (state.voluntaryCommanderChange) {
     const army = state.armies.find((a) => a.id === state.voluntaryCommanderChange);
     if (army) {
@@ -31,7 +31,6 @@ export default function CommanderRenamePanel({ state, dispatch }: Props) {
     }
   }
 
-  // Post-battle forced commander selection
   const armies = state.pendingRenames
     .map((id) => state.armies.find((a) => a.id === id))
     .filter(Boolean) as Army[];
@@ -52,19 +51,33 @@ function ArmyRenameCard({
   mode: "forced" | "voluntary";
 }) {
   const colors = FACTION_COLORS[army.faction];
-  const [selected, setSelected] = useState<string | null>(null);
-  const [promoted, setPromoted] = useState<string | null>(null);
+  /** null = explicitly no commander; undefined = not chosen yet */
+  const [selected, setSelected] = useState<string | null | undefined>(undefined);
 
-  // A notable can be "promoted" — they become the lead commander
   const leaderNames = army.leaders.map((l) => l.name);
   const notableNames = (army.notables ?? []).map((n) => n.name);
   const allCandidates = [...leaderNames, ...notableNames];
 
-  const effectiveSelected = selected ?? promoted ?? leaderNames[0] ?? null;
+  const effectiveSelected =
+    selected === undefined
+      ? mode === "forced" && allCandidates.length === 0
+        ? null
+        : leaderNames[0] ?? notableNames[0] ?? null
+      : selected;
+
+  const previewName = armyNameForCommander(
+    effectiveSelected,
+    army.units,
+    army.faction,
+    army.name
+  );
 
   function handleConfirm() {
-    if (!effectiveSelected) return;
-    dispatch({ type: "SELECT_LEAD_COMMANDER", armyId: army.id, leaderName: effectiveSelected });
+    dispatch({
+      type: "SELECT_LEAD_COMMANDER",
+      armyId: army.id,
+      leaderName: effectiveSelected,
+    });
   }
 
   const totalUnits = army.units.reduce((s, u) => s + u.count, 0);
@@ -92,7 +105,6 @@ function ArmyRenameCard({
           overflow: "hidden",
         }}
       >
-        {/* Header */}
         <div
           style={{
             borderBottom: "1px solid #1e1e1e",
@@ -130,18 +142,16 @@ function ArmyRenameCard({
           </div>
           <div style={{ ...MONO, fontSize: 9, color: "#666", lineHeight: 1.6 }}>
             {mode === "voluntary"
-              ? "Choose who leads this army. The army will be renamed accordingly."
-              : "This army has lost its lead commander. Choose who will take command."}
+              ? "Choose who leads this army, promote a notable, or leave it without a named commander."
+              : "This army has lost its lead commander. Appoint a successor, promote a notable, or leave it commanderless."}
           </div>
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px" }}>
-
-          {/* Current leaders */}
           {leaderNames.length > 0 && (
             <div style={{ marginBottom: 12 }}>
               <div style={{ ...MONO, fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", borderBottom: "1px solid #1a1a1a", paddingBottom: 3, marginBottom: 8 }}>
-                Surviving commanders
+                Commanders
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                 {army.leaders.map((l) => {
@@ -150,7 +160,7 @@ function ArmyRenameCard({
                     <button
                       key={l.name}
                       type="button"
-                      onClick={() => { setSelected(l.name); setPromoted(null); }}
+                      onClick={() => setSelected(l.name)}
                       style={{
                         ...MONO,
                         background: isSelected ? "#1a1200" : "#0a0a0a",
@@ -159,19 +169,6 @@ function ArmyRenameCard({
                         padding: "7px 10px",
                         cursor: "pointer",
                         textAlign: "left",
-                        transition: "border-color 0.12s, color 0.12s",
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!isSelected) {
-                          e.currentTarget.style.borderColor = "#555";
-                          e.currentTarget.style.color = "#aaa";
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!isSelected) {
-                          e.currentTarget.style.borderColor = "#2a2a2a";
-                          e.currentTarget.style.color = "#888";
-                        }
                       }}
                     >
                       <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
@@ -189,9 +186,8 @@ function ArmyRenameCard({
             </div>
           )}
 
-          {/* Notables that can be promoted */}
           {notableNames.length > 0 && (
-            <div>
+            <div style={{ marginBottom: 12 }}>
               <div style={{ ...MONO, fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.12em", borderBottom: "1px solid #1a1a1a", paddingBottom: 3, marginBottom: 8 }}>
                 Notable figures — promote to commander
               </div>
@@ -202,7 +198,7 @@ function ArmyRenameCard({
                     <button
                       key={n.name}
                       type="button"
-                      onClick={() => { setPromoted(n.name); setSelected(null); }}
+                      onClick={() => setSelected(n.name)}
                       style={{
                         ...MONO,
                         background: isSelected ? "#0d1a0d" : "#0a0a0a",
@@ -211,18 +207,6 @@ function ArmyRenameCard({
                         padding: "7px 10px",
                         cursor: "pointer",
                         textAlign: "left",
-                      }}
-                      onMouseEnter={(e) => {
-                        if (!isSelected) {
-                          e.currentTarget.style.borderColor = "#444";
-                          e.currentTarget.style.color = "#888";
-                        }
-                      }}
-                      onMouseLeave={(e) => {
-                        if (!isSelected) {
-                          e.currentTarget.style.borderColor = "#2a2a2a";
-                          e.currentTarget.style.color = "#666";
-                        }
                       }}
                     >
                       <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
@@ -239,25 +223,38 @@ function ArmyRenameCard({
             </div>
           )}
 
-          {/* No one left */}
-          {allCandidates.length === 0 && (
-            <div style={{ ...MONO, fontSize: 9, color: "#555", fontStyle: "italic", textAlign: "center", padding: "20px 0" }}>
-              No leaders or notables remain. The army has no commander.
-            </div>
-          )}
+          <div style={{ marginBottom: 8 }}>
+            <button
+              type="button"
+              onClick={() => setSelected(null)}
+              style={{
+                ...MONO,
+                width: "100%",
+                background: effectiveSelected === null ? "#1a1510" : "#0a0a0a",
+                border: `1px solid ${effectiveSelected === null ? "#3a2a00" : "#2a2a2a"}`,
+                color: effectiveSelected === null ? "#c8941a" : "#666",
+                padding: "7px 10px",
+                cursor: "pointer",
+                textAlign: "left",
+              }}
+            >
+              <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>
+                No commander
+              </div>
+              <div style={{ fontSize: 8, color: "#555", marginTop: 2 }}>
+                Host takes a house name (e.g. Lannister Host)
+              </div>
+            </button>
+          </div>
 
-          {/* Preview of new name */}
-          {effectiveSelected && (
-            <div style={{ marginTop: 14, padding: "8px 10px", border: "1px solid #1e1e1e", background: "#080808" }}>
-              <span style={{ ...MONO, fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em" }}>New name: </span>
-              <span style={{ ...MONO, fontSize: 9, color: "#c8941a" }}>
-                {effectiveSelected}&apos;s {getArmySuffix(army.name)}
-              </span>
-            </div>
-          )}
+          <div style={{ marginTop: 14, padding: "8px 10px", border: "1px solid #1e1e1e", background: "#080808" }}>
+            <span style={{ ...MONO, fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em" }}>Name: </span>
+            <span style={{ ...MONO, fontSize: 9, color: "#c8941a" }}>
+              {previewName}
+            </span>
+          </div>
         </div>
 
-        {/* Footer */}
         <div
           style={{
             borderTop: "1px solid #1e1e1e",
@@ -269,7 +266,6 @@ function ArmyRenameCard({
         >
           <button
             type="button"
-            disabled={!effectiveSelected}
             onClick={handleConfirm}
             style={{
               ...MONO,
@@ -281,19 +277,13 @@ function ArmyRenameCard({
               border: "1px solid #3a2a00",
               background: "#1a1200",
               color: "#c8941a",
-              cursor: effectiveSelected ? "pointer" : "default",
-              opacity: effectiveSelected ? 1 : 0.4,
+              cursor: "pointer",
             }}
           >
-            Confirm Command
+            Confirm
           </button>
         </div>
       </div>
     </div>
   );
-}
-
-function getArmySuffix(armyName: string): string {
-  const words = armyName.split(" ");
-  return words.length >= 2 ? words[words.length - 1] : "Host";
 }

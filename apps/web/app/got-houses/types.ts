@@ -413,6 +413,8 @@ export interface NpcRuntimePatch {
   alive?: boolean;
   armyId?: string | null;
   adviceGivenIds?: string[];
+  /** Promote/demote between battlefield commander and notable */
+  role?: "commander" | "notable";
 }
 
 /* ── Game state ───────────────────────────────────────────────── */
@@ -486,7 +488,12 @@ export type GameAction =
   | { type: "OPEN_SPLIT"; armyId: string }
   | { type: "CLOSE_SPLIT" }
   | { type: "SPLIT_ARMY"; config: SplitConfig }
-  | { type: "SELECT_LEAD_COMMANDER"; armyId: string; leaderName: string }
+  | {
+      type: "SELECT_LEAD_COMMANDER";
+      armyId: string;
+      /** null = no commander; army takes a house host name */
+      leaderName: string | null;
+    }
   | { type: "OPEN_COMMANDER_CHANGE"; armyId: string }
   | { type: "CLOSE_COMMANDER_CHANGE" }
   | { type: "TOGGLE_TALK_PICKER" }

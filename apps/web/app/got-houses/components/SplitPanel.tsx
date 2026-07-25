@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import type { GameState, GameAction, Army, ArmyUnit, SplitConfig } from "../types";
+import { armyNameForCommander } from "../lib/army-naming";
 
 interface Props {
   state: GameState;
@@ -24,25 +25,22 @@ function SplitPanelInner({
   army: Army;
   dispatch: React.Dispatch<GameAction>;
 }) {
-  // Per unit group: how many go to army 1 (remainder go to army 2)
   const [unitSplit, setUnitSplit] = useState<Record<string, number>>(() => {
     const init: Record<string, number> = {};
     for (const u of army.units) {
-      init[unitKey(u)] = 0; // default: all to army 2
+      init[unitKey(u)] = 0;
     }
     return init;
   });
 
-  // Leaders: "1" or "2"
   const [leaderSplit, setLeaderSplit] = useState<Record<string, "1" | "2">>(() => {
     const init: Record<string, "1" | "2"> = {};
     for (const l of army.leaders) {
-      init[l.name] = "2"; // default: all to army 2
+      init[l.name] = "2";
     }
     return init;
   });
 
-  // Notables: "1" or "2"
   const [notableSplit, setNotableSplit] = useState<Record<string, "1" | "2">>(() => {
     const init: Record<string, "1" | "2"> = {};
     for (const n of army.notables ?? []) {
@@ -51,7 +49,9 @@ function SplitPanelInner({
     return init;
   });
 
-  // Validate: each army must have at least 1 unit and at least 1 leader
+  /** Notables promoted to commanders for this split (removed from notables list). */
+  const [promoted, setPromoted] = useState<Set<string>>(() => new Set());
+
   const army1Units: ArmyUnit[] = army.units
     .map((u) => ({ ...u, count: unitSplit[unitKey(u)] ?? 0 }))
     .filter((u) => u.count > 0);
@@ -59,37 +59,70 @@ function SplitPanelInner({
     .map((u) => ({ ...u, count: u.count - (unitSplit[unitKey(u)] ?? 0) }))
     .filter((u) => u.count > 0);
 
-  const army1Leaders = army.leaders.filter((l) => leaderSplit[l.name] === "1");
-  const army2Leaders = army.leaders.filter((l) => leaderSplit[l.name] === "2");
+  const commanderNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const l of army.leaders) names.add(l.name);
+    for (const name of promoted) names.add(name);
+    return names;
+  }, [army.leaders, promoted]);
+
+  const army1Leaders = [...commanderNames].filter(
+    (name) => (leaderSplit[name] ?? notableSplit[name] ?? "2") === "1"
+  );
+  const army2Leaders = [...commanderNames].filter(
+    (name) => (leaderSplit[name] ?? notableSplit[name] ?? "2") === "2"
+  );
+
+  const remainingNotables = (army.notables ?? []).filter((n) => !promoted.has(n.name));
+  const army1Notables = remainingNotables
+    .filter((n) => notableSplit[n.name] === "1")
+    .map((n) => n.name);
+  const army2Notables = remainingNotables
+    .filter((n) => notableSplit[n.name] === "2")
+    .map((n) => n.name);
 
   const army1TotalUnits = army1Units.reduce((s, u) => s + u.count, 0);
   const army2TotalUnits = army2Units.reduce((s, u) => s + u.count, 0);
 
-  const canConfirm =
-    army1TotalUnits > 0 &&
-    army2TotalUnits > 0 &&
-    army1Leaders.length > 0 &&
-    army2Leaders.length > 0;
+  const canConfirm = army1TotalUnits > 0 && army2TotalUnits > 0;
 
-  const isValid = useMemo(() => canConfirm, [canConfirm]);
+  const preview1 = armyNameForCommander(
+    army1Leaders[0] ?? null,
+    army1Units,
+    army.faction,
+    army.name
+  );
+  const preview2 = armyNameForCommander(
+    army2Leaders[0] ?? null,
+    army2Units,
+    army.faction,
+    army.name
+  );
+
+  function promoteNotable(name: string) {
+    setPromoted((prev) => new Set(prev).add(name));
+    const side = notableSplit[name] ?? "2";
+    setLeaderSplit((prev) => ({ ...prev, [name]: side }));
+    setNotableSplit((prev) => {
+      const next = { ...prev };
+      delete next[name];
+      return next;
+    });
+  }
 
   function handleConfirm() {
-    if (!isValid) return;
+    if (!canConfirm) return;
     const config: SplitConfig = {
       sourceArmyId: army.id,
       army1: {
         units: army1Units,
-        leaderNames: army1Leaders.map((l) => l.name),
-        notableNames: (army.notables ?? [])
-          .filter((n) => notableSplit[n.name] === "1")
-          .map((n) => n.name),
+        leaderNames: army1Leaders,
+        notableNames: army1Notables,
       },
       army2: {
         units: army2Units,
-        leaderNames: army2Leaders.map((l) => l.name),
-        notableNames: (army.notables ?? [])
-          .filter((n) => notableSplit[n.name] === "2")
-          .map((n) => n.name),
+        leaderNames: army2Leaders,
+        notableNames: army2Notables,
       },
     };
     dispatch({ type: "SPLIT_ARMY", config });
@@ -118,7 +151,6 @@ function SplitPanelInner({
           overflow: "hidden",
         }}
       >
-        {/* Header */}
         <div
           style={{
             borderBottom: "1px solid #1e1e1e",
@@ -149,8 +181,6 @@ function SplitPanelInner({
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px" }}>
-
-          {/* Column headers */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px 80px 80px", gap: 4, marginBottom: 8, alignItems: "center" }}>
             <div style={{ ...MONO, fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em" }}>Unit Group</div>
             <div style={{ ...MONO, fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", textAlign: "center" }}>← All A1</div>
@@ -159,7 +189,6 @@ function SplitPanelInner({
             <div style={{ ...MONO, fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", textAlign: "center" }}>All A2 →</div>
           </div>
 
-          {/* Unit rows */}
           <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 16 }}>
             {army.units.map((u) => {
               const key = unitKey(u);
@@ -215,51 +244,79 @@ function SplitPanelInner({
             })}
           </div>
 
-          {/* Totals */}
           <div style={{ display: "flex", gap: 16, marginBottom: 16, padding: "6px 0", borderTop: "1px solid #1a1a1a", borderBottom: "1px solid #1a1a1a" }}>
             <span style={{ ...MONO, fontSize: 9, color: "#3a6ea8" }}>
-              Army 1 total: {army1TotalUnits.toLocaleString()}
+              Army 1: {army1TotalUnits.toLocaleString()}
               {army1TotalUnits === 0 && <span style={{ color: "#c04040" }}> — needs troops</span>}
+              <span style={{ color: "#555" }}> · {preview1}</span>
             </span>
             <span style={{ ...MONO, fontSize: 9, color: "#b03030" }}>
-              Army 2 total: {army2TotalUnits.toLocaleString()}
+              Army 2: {army2TotalUnits.toLocaleString()}
               {army2TotalUnits === 0 && <span style={{ color: "#c04040" }}> — needs troops</span>}
+              <span style={{ color: "#555" }}> · {preview2}</span>
             </span>
           </div>
 
-          {/* Commanders */}
           <div style={{ marginBottom: 16 }}>
-            <SectionHeader label="Commanders" />
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 6 }}>
-              {army.leaders.map((l) => (
-                <div key={l.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                  <span style={{ ...MONO, fontSize: 9, color: "#aaa" }}>
-                    {l.name}{l.title ? ` — ${l.title}` : ""}
-                  </span>
-                  <AssignToggle
-                    value={leaderSplit[l.name] ?? "2"}
-                    onChange={(v) => setLeaderSplit((prev) => ({ ...prev, [l.name]: v }))}
-                  />
-                </div>
-              ))}
+            <SectionHeader label="Commanders (optional)" />
+            <div style={{ ...MONO, fontSize: 8, color: "#555", marginTop: 4, marginBottom: 6, lineHeight: 1.4 }}>
+              A host may march with no commander — it will take a house name (e.g. Lannister Host).
             </div>
-            {(army1Leaders.length === 0 || army2Leaders.length === 0) && (
-              <div style={{ ...MONO, fontSize: 8, color: "#c04040", marginTop: 4 }}>
-                Each army needs at least one commander
-              </div>
-            )}
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 6 }}>
+              {[...commanderNames].map((name) => {
+                const leader = army.leaders.find((l) => l.name === name);
+                const wasPromoted = promoted.has(name);
+                return (
+                  <div key={name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                    <span style={{ ...MONO, fontSize: 9, color: "#aaa" }}>
+                      {name}
+                      {leader?.title ? ` — ${leader.title}` : ""}
+                      {wasPromoted && (
+                        <span style={{ color: "#4a8a4a", marginLeft: 6, fontSize: 7 }}>PROMOTED</span>
+                      )}
+                    </span>
+                    <AssignToggle
+                      value={leaderSplit[name] ?? "2"}
+                      onChange={(v) => setLeaderSplit((prev) => ({ ...prev, [name]: v }))}
+                    />
+                  </div>
+                );
+              })}
+              {commanderNames.size === 0 && (
+                <div style={{ ...MONO, fontSize: 8, color: "#444", fontStyle: "italic" }}>
+                  No commanders assigned — both hosts will use house names.
+                </div>
+              )}
+            </div>
           </div>
 
-          {/* Notables */}
-          {(army.notables?.length ?? 0) > 0 && (
+          {remainingNotables.length > 0 && (
             <div style={{ marginBottom: 8 }}>
-              <SectionHeader label="Notable Figures" />
+              <SectionHeader label="Notable figures" />
               <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 6 }}>
-                {army.notables!.map((n) => (
-                  <div key={n.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <span style={{ ...MONO, fontSize: 9, color: "#888" }}>
+                {remainingNotables.map((n) => (
+                  <div key={n.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                    <span style={{ ...MONO, fontSize: 9, color: "#888", flex: 1 }}>
                       {n.name}
                     </span>
+                    <button
+                      type="button"
+                      onClick={() => promoteNotable(n.name)}
+                      style={{
+                        ...MONO,
+                        fontSize: 7,
+                        fontWeight: 700,
+                        letterSpacing: "0.08em",
+                        textTransform: "uppercase",
+                        padding: "2px 6px",
+                        cursor: "pointer",
+                        border: "1px solid #2a3a2a",
+                        background: "#0d1a0d",
+                        color: "#6a8a6a",
+                      }}
+                    >
+                      Promote
+                    </button>
                     <AssignToggle
                       value={notableSplit[n.name] ?? "2"}
                       onChange={(v) => setNotableSplit((prev) => ({ ...prev, [n.name]: v }))}
@@ -271,7 +328,6 @@ function SplitPanelInner({
           )}
         </div>
 
-        {/* Footer */}
         <div
           style={{
             borderTop: "1px solid #1e1e1e",
@@ -291,13 +347,13 @@ function SplitPanelInner({
           </button>
           <button
             type="button"
-            disabled={!isValid}
+            disabled={!canConfirm}
             onClick={handleConfirm}
             style={{
               ...MONO,
               ...primaryButtonStyle,
-              opacity: isValid ? 1 : 0.4,
-              cursor: isValid ? "pointer" : "default",
+              opacity: canConfirm ? 1 : 0.4,
+              cursor: canConfirm ? "pointer" : "default",
             }}
           >
             Split Army

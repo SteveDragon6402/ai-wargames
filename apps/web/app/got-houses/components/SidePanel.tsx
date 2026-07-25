@@ -79,11 +79,8 @@ export default function SidePanel({ state, dispatch }: Props) {
     !isLocked &&
     (singleSelected.leaders.length >= 2 || singleSelected.units.length >= 2);
 
-  // Can change commander: exactly 1 selected, not locked, has 2+ candidates (leaders + notables)
-  const canChangeCommander =
-    !!singleSelected &&
-    !isLocked &&
-    (singleSelected.leaders.length + (singleSelected.notables?.length ?? 0)) >= 2;
+  // Can change commander: any single controllable army (including appointing / clearing)
+  const canChangeCommander = !!singleSelected && !isLocked;
 
   // Can move: 1+ selected, not locked, not in move mode
   const canMove = selectedArmies.length > 0 && !isLocked;
