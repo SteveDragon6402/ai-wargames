@@ -63,54 +63,37 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
         }),
       });
       const data = (await res.json()) as {
-        accept?: boolean;
         reason?: string;
         patches?: NpcRuntimePatch[];
         error?: string;
       };
 
+      if (!res.ok || !data.reason?.trim()) {
+        console.error("Invite failed", data.error);
+        return;
+      }
+
       if (data.patches?.length) {
         dispatch({ type: "PATCH_CHARACTERS", patches: data.patches });
       }
 
-      if (data.accept) {
-        const active = {
-          ...thread,
-          status: "active" as const,
-          messages: [
-            ...thread.messages,
-            {
-              id: `msg-${Date.now()}`,
-              speakerId: toId,
-              speakerName: state.characters[toId]?.name ?? toId,
-              text: data.reason ?? "I will speak with you.",
-              at: Date.now(),
-              kind: "chat" as const,
-            },
-          ],
-        };
-        dispatch({ type: "UPSERT_CONVERSATION", thread: active });
-        dispatch({ type: "OPEN_CONVERSATION", threadId: active.id });
-      } else {
-        const closed = {
-          ...thread,
-          status: "closed" as const,
-          closedReason: data.reason ?? "Declined.",
-          messages: [
-            ...thread.messages,
-            {
-              id: `msg-${Date.now()}`,
-              speakerId: toId,
-              speakerName: state.characters[toId]?.name ?? toId,
-              text: data.reason ?? "Not now.",
-              at: Date.now(),
-              kind: "system" as const,
-            },
-          ],
-        };
-        dispatch({ type: "UPSERT_CONVERSATION", thread: closed });
-        dispatch({ type: "OPEN_CONVERSATION", threadId: closed.id });
-      }
+      const active = {
+        ...thread,
+        status: "active" as const,
+        messages: [
+          ...thread.messages,
+          {
+            id: `msg-${Date.now()}`,
+            speakerId: toId,
+            speakerName: state.characters[toId]?.name ?? toId,
+            text: data.reason,
+            at: Date.now(),
+            kind: "chat" as const,
+          },
+        ],
+      };
+      dispatch({ type: "UPSERT_CONVERSATION", thread: active });
+      dispatch({ type: "OPEN_CONVERSATION", threadId: active.id });
     } catch (err) {
       console.error("Invite failed", err);
     }
@@ -168,7 +151,7 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
         Who will you speak with?
       </div>
       <div style={{ color: "#555", fontSize: 11, marginBottom: 18, lineHeight: 1.4 }}>
-        Invite a vassal, open your war council, or send word to the enemy lord.
+        Speak with a vassal, open your war council, or send word to the enemy lord.
       </div>
 
       <Section title="War council">
@@ -193,7 +176,7 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
           <Row
             key={c.id}
             label={c.name}
-            sub="Invite to private word"
+            sub="Private word"
             onClick={() => inviteNpc(c.id)}
           />
         ))}
@@ -219,7 +202,7 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
                 <Row
                   key={c.id}
                   label={c.name}
-                  sub="Invite"
+                  sub="Private word"
                   onClick={() => inviteNpc(c.id)}
                 />
               ))}

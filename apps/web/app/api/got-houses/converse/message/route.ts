@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
 
     const system = buildEmbodiedSystemPrompt(
       npc.id,
-      "Private conversation. Someone is speaking to you. Answer only with the words you say aloud."
+      "Private conversation. Someone is speaking to you. Stay and answer only with the words you say aloud. You cannot leave or end the talk."
     );
     if (!system) {
       return NextResponse.json({ error: "No system prompt" }, { status: 400 });
@@ -54,11 +54,10 @@ export async function POST(req: NextRequest) {
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({
-        reply: "Aye. Speak plain.",
-        patches: [],
-        left: false,
-      });
+      return NextResponse.json(
+        { error: "ANTHROPIC_API_KEY missing" },
+        { status: 500 }
+      );
     }
 
     const ctx: CharacterToolContext = {
@@ -88,22 +87,23 @@ They say to you:
 ${body.playerMessage}
 
 If you give clear counsel, record_advice privately. Search faction events / advice freely when useful.
-Then answer with ONLY the words you speak aloud.`,
+Then answer with ONLY the words you speak aloud. You cannot leave or refuse the conversation.`,
       ctx,
       maxRounds: 6,
       maxTokens: 400,
     });
 
-    const reply =
-      sanitizeInCharacterReply(result.text) ||
-      result.leaveReason ||
-      "…";
+    const reply = sanitizeInCharacterReply(result.text);
+    if (!reply) {
+      return NextResponse.json(
+        { error: "No spoken reply from character" },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       reply,
       patches: result.patches,
-      left: result.leftConversation,
-      leaveReason: result.leaveReason,
       adviceRecords: result.adviceRecords ?? [],
     });
   } catch (err) {

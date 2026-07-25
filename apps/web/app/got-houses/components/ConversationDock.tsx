@@ -20,9 +20,11 @@ function threadLabel(thread: ConversationThread, state: GameState): string {
   return state.characters[other ?? ""]?.name ?? "Conversation";
 }
 
+/**
+ * Talk UI for the right rail — map stays full-bleed; this replaces the army panel.
+ */
 export default function ConversationDock({ state, dispatch }: Props) {
-  // Hub visibility is explicit (Talk / Hide). Open threads persist and return when Talk is pressed again.
-  if (!state.talkPickerOpen || state.phase !== "planning") return null;
+  if (state.phase !== "planning") return null;
 
   const invites = pendingInvitesForFaction(state, state.activeFaction);
   const threadIds = [...state.openConversationIds];
@@ -46,24 +48,22 @@ export default function ConversationDock({ state, dispatch }: Props) {
 
   const showCompose = !focused;
   const isCouncil = focused?.kind === "war_council";
-  const hubWidth = isCouncil ? 520 : 440;
+  const width = isCouncil ? 380 : 340;
 
   return (
     <div
       style={{
-        width: hubWidth,
+        width,
         flexShrink: 0,
         height: "100%",
         minHeight: 0,
-        borderRight: "1px solid #1e1e1e",
+        borderLeft: "1px solid #1e1e1e",
         background: "#0a0a0a",
         display: "flex",
         flexDirection: "column",
         fontFamily: "var(--font-mono), monospace",
-        zIndex: 20,
       }}
     >
-      {/* Hub chrome */}
       <div
         style={{
           display: "flex",
@@ -105,18 +105,17 @@ export default function ConversationDock({ state, dispatch }: Props) {
             onClick={() => dispatch({ type: "TOGGLE_TALK_PICKER" })}
             style={chipBtn}
           >
-            Hide
+            Close
           </button>
         </div>
       </div>
 
-      {/* Thread rail */}
       {threads.length > 0 && (
         <div
           style={{
             display: "flex",
             gap: 6,
-            padding: "10px 12px",
+            padding: "8px 10px",
             borderBottom: "1px solid #1a1a1a",
             overflowX: "auto",
             flexShrink: 0,
@@ -149,12 +148,12 @@ export default function ConversationDock({ state, dispatch }: Props) {
                       : "#222"
                   }`,
                   color: active ? "#ddd" : "#777",
-                  padding: "8px 12px",
+                  padding: "6px 10px",
                   cursor: "pointer",
                   fontFamily: "inherit",
-                  fontSize: 11,
+                  fontSize: 10,
                   textAlign: "left",
-                  minWidth: 120,
+                  minWidth: 100,
                 }}
               >
                 <div
@@ -164,7 +163,7 @@ export default function ConversationDock({ state, dispatch }: Props) {
                         ? "#c8941a"
                         : "#8ab"
                       : "#666",
-                    fontSize: 9,
+                    fontSize: 8,
                     textTransform: "uppercase",
                     letterSpacing: "0.1em",
                     marginBottom: 2,
@@ -183,7 +182,6 @@ export default function ConversationDock({ state, dispatch }: Props) {
         </div>
       )}
 
-      {/* Main area */}
       <div
         style={{
           flex: 1,

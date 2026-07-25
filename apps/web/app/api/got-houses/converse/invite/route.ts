@@ -30,6 +30,9 @@ interface InviteBody {
   adviceLog?: AdviceRecord[];
 }
 
+/**
+ * Player-initiated talk always opens. NPCs cannot decline — they greet in character.
+ */
 export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as InviteBody;
@@ -44,7 +47,7 @@ export async function POST(req: NextRequest) {
     const from = body.characters[body.fromCharacterId];
     const system = buildEmbodiedSystemPrompt(
       target.id,
-      "Someone seeks a private word with you. Decide with accept_invitation or decline_invitation, then speak ONLY your spoken reply aloud."
+      "Your lord (or peer) has called you to speak. The conversation is happening — greet them and engage. You cannot decline or walk away."
     );
     if (!system) {
       return NextResponse.json({ error: "No system prompt" }, { status: 400 });
@@ -52,9 +55,7 @@ export async function POST(req: NextRequest) {
 
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!apiKey) {
-      return NextResponse.json(
-        fallbackInvite(target, from?.name ?? "Someone", body.turn, body.fromCharacterId)
-      );
+      return NextResponse.json({ error: "ANTHROPIC_API_KEY missing" }, { status: 500 });
     }
 
     const history = (target as NpcAgentState).inviteHistory
@@ -79,32 +80,30 @@ export async function POST(req: NextRequest) {
       system,
       userMessage: `Private state (never speak aloud):
 mood: ${(target as NpcAgentState).mood}
-prior invites:
+prior talks:
 ${history || "(none)"}
 
-${from?.name ?? body.fromCharacterId} asks for a private word with you.
+${from?.name ?? body.fromCharacterId} has called you to speak.
 
-1) Call accept_invitation OR decline_invitation (required).
-2) Then speak ONLY the words you say to them — acceptance or refusal in your own voice. No JSON.`,
+Speak ONLY your opening words aloud — in your voice. No refusal. No leaving.`,
       ctx,
       maxRounds: 4,
       maxTokens: 350,
     });
 
-    const speech =
-      sanitizeInCharacterReply(result.text) ||
-      (result.inviteDecision?.accept
-        ? "Very well. Speak."
-        : "Not now.");
+    const speech = sanitizeInCharacterReply(result.text);
+    if (!speech) {
+      return NextResponse.json(
+        { error: "No spoken reply from character" },
+        { status: 500 }
+      );
+    }
 
-    const accept = result.inviteDecision?.accept ?? !/not now|no\.|refuse|decline/i.test(speech);
-
-    // Ensure invite history exists even if tools were skipped
     const inviteEntry: InviteMemory = {
       fromCharacterId: body.fromCharacterId,
       turn: body.turn,
-      outcome: accept ? "accepted" : "declined",
-      reason: result.inviteDecision?.reason || speech.slice(0, 120),
+      outcome: "accepted",
+      reason: speech.slice(0, 120),
     };
     const npc = target as NpcAgentState;
     const patches = [
@@ -116,40 +115,14 @@ ${from?.name ?? body.fromCharacterId} asks for a private word with you.
     ];
 
     return NextResponse.json({
-      accept,
-      reason: speech, // spoken line shown in chat — not meta
+      accept: true,
+      reason: speech,
       patches,
+      adviceRecords: result.adviceRecords ?? [],
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     console.error("[converse/invite]", msg);
     return NextResponse.json({ error: msg }, { status: 500 });
   }
-}
-
-function fallbackInvite(
-  target: CharacterState,
-  fromName: string,
-  turn: number,
-  fromId: CharacterId
-) {
-  const npc = target as NpcAgentState;
-  const accept = !/reluctant|angry|furious/i.test(npc.mood);
-  const reason = accept ? `I will hear you, ${fromName}.` : `Not now.`;
-  const inviteEntry: InviteMemory = {
-    fromCharacterId: fromId,
-    turn,
-    outcome: accept ? "accepted" : "declined",
-    reason,
-  };
-  return {
-    accept,
-    reason,
-    patches: [
-      {
-        id: npc.id,
-        inviteHistory: [...npc.inviteHistory, inviteEntry].slice(-12),
-      },
-    ],
-  };
 }

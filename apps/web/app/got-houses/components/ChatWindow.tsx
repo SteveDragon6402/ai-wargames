@@ -93,7 +93,7 @@ export default function ChatWindow({ thread, state, dispatch, fill }: Props) {
         const responders = warCouncilNpcIds(
           state.characters,
           state.activeFaction
-        ).filter((id) => !liveThread.leftParticipantIds.includes(id));
+        );
 
         const res = await fetch("/api/got-houses/converse/war-council", {
           method: "POST",
@@ -112,45 +112,32 @@ export default function ChatWindow({ thread, state, dispatch, fill }: Props) {
             characterId: string;
             name: string;
             text: string;
-            left: boolean;
-            leaveReason?: string;
           }[];
           patches?: NpcRuntimePatch[];
           adviceRecords?: AdviceRecord[];
+          error?: string;
         };
 
-        if (data.patches?.length) {
-          dispatch({ type: "PATCH_CHARACTERS", patches: data.patches });
-        }
-        if (data.adviceRecords?.length) {
-          dispatch({ type: "APPEND_ADVICE", records: data.adviceRecords });
-        }
+        if (!res.ok) {
+          console.error("War council failed", data.error);
+        } else {
+          if (data.patches?.length) {
+            dispatch({ type: "PATCH_CHARACTERS", patches: data.patches });
+          }
+          if (data.adviceRecords?.length) {
+            dispatch({ type: "APPEND_ADVICE", records: data.adviceRecords });
+          }
 
-        const msgs = (data.replies ?? []).map((r) =>
-          makeMessage(r.characterId, r.name, r.text, r.left ? "leave" : "chat")
-        );
-        if (msgs.length) {
-          dispatch({
-            type: "APPEND_MESSAGES",
-            threadId: thread.id,
-            messages: msgs,
-          });
-        }
-
-        const leftIds = (data.replies ?? [])
-          .filter((r) => r.left)
-          .map((r) => r.characterId);
-        if (leftIds.length) {
-          dispatch({
-            type: "UPSERT_CONVERSATION",
-            thread: {
-              ...liveThread,
-              messages: [...liveThread.messages, ...msgs],
-              leftParticipantIds: [
-                ...new Set([...liveThread.leftParticipantIds, ...leftIds]),
-              ],
-            },
-          });
+          const msgs = (data.replies ?? [])
+            .filter((r) => r.text?.trim())
+            .map((r) => makeMessage(r.characterId, r.name, r.text, "chat"));
+          if (msgs.length) {
+            dispatch({
+              type: "APPEND_MESSAGES",
+              threadId: thread.id,
+              messages: msgs,
+            });
+          }
         }
       } else {
         const npcId =
@@ -174,40 +161,31 @@ export default function ChatWindow({ thread, state, dispatch, fill }: Props) {
         const data = (await res.json()) as {
           reply?: string;
           patches?: NpcRuntimePatch[];
-          left?: boolean;
-          leaveReason?: string;
           adviceRecords?: AdviceRecord[];
+          error?: string;
         };
 
-        if (data.patches?.length) {
-          dispatch({ type: "PATCH_CHARACTERS", patches: data.patches });
-        }
-        if (data.adviceRecords?.length) {
-          dispatch({ type: "APPEND_ADVICE", records: data.adviceRecords });
-        }
+        if (!res.ok || !data.reply?.trim()) {
+          console.error("Chat send failed", data.error);
+        } else {
+          if (data.patches?.length) {
+            dispatch({ type: "PATCH_CHARACTERS", patches: data.patches });
+          }
+          if (data.adviceRecords?.length) {
+            dispatch({ type: "APPEND_ADVICE", records: data.adviceRecords });
+          }
 
-        const replyMsg = makeMessage(
-          npcId,
-          state.characters[npcId]?.name ?? npcId,
-          data.reply ?? "…",
-          data.left ? "leave" : "chat"
-        );
-        dispatch({
-          type: "APPEND_MESSAGES",
-          threadId: thread.id,
-          messages: [replyMsg],
-        });
-
-        if (data.left) {
           dispatch({
-            type: "UPSERT_CONVERSATION",
-            thread: {
-              ...liveThread,
-              messages: [...liveThread.messages, replyMsg],
-              status: "closed",
-              closedReason: data.leaveReason ?? "Left the conversation",
-              leftParticipantIds: [...liveThread.leftParticipantIds, npcId],
-            },
+            type: "APPEND_MESSAGES",
+            threadId: thread.id,
+            messages: [
+              makeMessage(
+                npcId,
+                state.characters[npcId]?.name ?? npcId,
+                data.reply,
+                "chat"
+              ),
+            ],
           });
         }
       }
@@ -231,9 +209,7 @@ export default function ChatWindow({ thread, state, dispatch, fill }: Props) {
   const councilPresent = isCouncil
     ? thread.participantIds.filter(
         (id) =>
-          id !== lordId &&
-          !thread.leftParticipantIds.includes(id) &&
-          state.characters[id]?.alive !== false
+          id !== lordId && state.characters[id]?.alive !== false
       )
     : [];
 
@@ -382,12 +358,7 @@ export default function ChatWindow({ thread, state, dispatch, fill }: Props) {
               </div>
               <div
                 style={{
-                  color:
-                    m.kind === "leave"
-                      ? "#a66"
-                      : m.kind === "system"
-                        ? "#777"
-                        : "#e4e4e4",
+                  color: m.kind === "system" ? "#777" : "#e4e4e4",
                   fontSize: fill ? 13 : 11,
                   lineHeight: 1.45,
                   background: mine ? "#121820" : "#141414",

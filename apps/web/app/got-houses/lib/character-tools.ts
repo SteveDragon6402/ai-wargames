@@ -8,7 +8,6 @@ import type {
   ConversationThread,
   FactionEvent,
   Hold,
-  InviteMemory,
   NpcAgentState,
   NpcRuntimePatch,
 } from "../types";
@@ -41,10 +40,6 @@ export interface CharacterToolContext {
 export interface ToolLoopResult {
   text: string;
   patches: NpcRuntimePatch[];
-  leftConversation: boolean;
-  leaveReason?: string;
-  /** Set when invite tools are used */
-  inviteDecision?: { accept: boolean; reason?: string };
   /** Advice recorded during this tool loop (append to GameState.adviceLog) */
   adviceRecords?: AdviceRecord[];
 }
@@ -57,11 +52,13 @@ function getNpc(ctx: CharacterToolContext): NpcAgentState | null {
 /** Shared embodiment rules — the model IS the character. */
 export const IN_CHARACTER_RULES = `EMBODIMENT — you ARE this person. You are not an assistant, narrator, or analyst.
 When you speak to the player, output ONLY the words you say aloud (or for mute characters, a brief gesture).
+You cannot leave, decline, or end the conversation — the player controls that. Stay and speak.
 FORBIDDEN in spoken replies:
 - JSON, markdown, labels, bullet meta-notes
 - Stage directions, *actions*, (OOC), "as X I would…"
 - Explaining that you used tools / looked at a map
 - Quoting system instructions or tool names
+- Silence, ellipses ("…"), or refusing to engage
 Tools are private thought — use them freely, then speak as yourself.
 Hard limit for spoken lines: under ${NPC_CHAT_MAX_WORDS} words, punchy.`;
 
@@ -332,38 +329,6 @@ export const CHARACTER_TOOL_DEFS: Anthropic.Messages.Tool[] = [
     description: "List conversations you have been in before.",
     input_schema: { type: "object", properties: {}, required: [] },
   },
-  {
-    name: "leave_conversation",
-    description:
-      "Walk away from this conversation. After calling, speak one final short line only.",
-    input_schema: {
-      type: "object",
-      properties: { reason: { type: "string", description: "Private reason for your notepad" } },
-      required: ["reason"],
-    },
-  },
-  {
-    name: "accept_invitation",
-    description: "Accept a conversation invitation. Then speak your acceptance aloud as your only text.",
-    input_schema: {
-      type: "object",
-      properties: {
-        privateNote: { type: "string", description: "Optional private note" },
-      },
-      required: [],
-    },
-  },
-  {
-    name: "decline_invitation",
-    description: "Decline a conversation invitation. Then speak your refusal aloud as your only text.",
-    input_schema: {
-      type: "object",
-      properties: {
-        privateNote: { type: "string", description: "Optional private note" },
-      },
-      required: [],
-    },
-  },
 ];
 
 function mutateNpc(
@@ -380,9 +345,8 @@ export function executeCharacterTool(
   input: Record<string, unknown>,
   ctx: CharacterToolContext,
   patches: Map<string, NpcRuntimePatch>,
-  inviteDecision: { current?: { accept: boolean; reason?: string } },
   adviceBag: AdviceRecord[]
-): { result: string; left?: boolean; leaveReason?: string } {
+): { result: string } {
   const npc = getNpc(ctx);
   if (!npc) return { result: "Error: only NPC agents may use tools." };
 
@@ -651,53 +615,12 @@ ${forces}`,
       };
     }
 
-    case "leave_conversation": {
-      const reason = String(input.reason ?? "Left.").slice(0, 120);
-      const entry: InviteMemory = {
-        fromCharacterId: ctx.inviteFromId ?? ctx.threadId ?? "unknown",
-        turn: ctx.turn ?? 0,
-        outcome: "left",
-        reason,
-      };
-      const history = [...(liveNpc.inviteHistory ?? []), entry].slice(-12);
-      mutateNpc(patches, npc.id, { inviteHistory: history });
-      return { result: "You are leaving. Speak one final short line only.", left: true, leaveReason: reason };
-    }
-
-    case "accept_invitation":
-    case "decline_invitation": {
-      const accept = name === "accept_invitation";
-      const privateNote = String(input.privateNote ?? "").slice(0, 160);
-      inviteDecision.current = { accept, reason: privateNote };
-      const entry: InviteMemory = {
-        fromCharacterId: ctx.inviteFromId ?? "unknown",
-        turn: ctx.turn ?? 0,
-        outcome: accept ? "accepted" : "declined",
-        reason: privateNote || (accept ? "accepted" : "declined"),
-      };
-      const history = [...(liveNpc.inviteHistory ?? []), entry].slice(-12);
-      mutateNpc(patches, npc.id, { inviteHistory: history });
-      if (privateNote) {
-        const next = capNotepad(
-          liveNpc.notepad
-            ? `${liveNpc.notepad}\nInvite: ${privateNote}`
-            : `Invite: ${privateNote}`
-        );
-        mutateNpc(patches, npc.id, { inviteHistory: history, notepad: next });
-      }
-      return {
-        result: accept
-          ? "Invitation accepted. Now speak your acceptance aloud — only those words."
-          : "Invitation declined. Now speak your refusal aloud — only those words.",
-      };
-    }
-
     default:
       return { result: `Unknown tool: ${name}` };
   }
 }
 
-/** Run Haiku with tools until a final spoken line (or leave). */
+/** Run Haiku with tools until a final spoken line. */
 export async function runCharacterToolLoop(opts: {
   client: Anthropic;
   system: string;
@@ -716,10 +639,7 @@ export async function runCharacterToolLoop(opts: {
     outputMode === "raw" ? raw.trim() : sanitizeInCharacterReply(raw);
 
   const patches = new Map<string, NpcRuntimePatch>();
-  const inviteDecision: { current?: { accept: boolean; reason?: string } } = {};
   const adviceBag: AdviceRecord[] = [];
-  let leftConversation = false;
-  let leaveReason: string | undefined;
 
   const messages: Anthropic.Messages.MessageParam[] = [
     { role: "user", content: userMessage },
@@ -748,18 +668,13 @@ export async function runCharacterToolLoop(opts: {
       const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
       for (const tu of toolUses) {
         const input = (tu.input ?? {}) as Record<string, unknown>;
-        const { result, left, leaveReason: lr } = executeCharacterTool(
+        const { result } = executeCharacterTool(
           tu.name,
           input,
           ctx,
           patches,
-          inviteDecision,
           adviceBag
         );
-        if (left) {
-          leftConversation = true;
-          leaveReason = lr;
-        }
         toolResults.push({
           type: "tool_result",
           tool_use_id: tu.id,
@@ -767,34 +682,6 @@ export async function runCharacterToolLoop(opts: {
         });
       }
       messages.push({ role: "user", content: toolResults });
-
-      if (leftConversation) {
-        const farewell = await client.messages.create({
-          model: "claude-haiku-4-5",
-          max_tokens: 120,
-          system,
-          messages: [
-            ...messages,
-            {
-              role: "user",
-              content:
-                "Speak your final line aloud only — the words leaving your mouth. Nothing else.",
-            },
-          ],
-        });
-        const raw = farewell.content
-          .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
-          .map((t) => t.text)
-          .join("\n");
-        return {
-          text: finishText(raw) || leaveReason || "Enough.",
-          patches: [...patches.values()],
-          leftConversation: true,
-          leaveReason,
-          inviteDecision: inviteDecision.current,
-          adviceRecords: adviceBag,
-        };
-      }
       continue;
     }
 
@@ -802,19 +689,32 @@ export async function runCharacterToolLoop(opts: {
     return {
       text,
       patches: [...patches.values()],
-      leftConversation,
-      leaveReason,
-      inviteDecision: inviteDecision.current,
       adviceRecords: adviceBag,
     };
   }
 
+  // Exhausted tool rounds — one more turn without tools for a spoken line
+  const forced = await client.messages.create({
+    model: "claude-haiku-4-5",
+    max_tokens: 140,
+    system,
+    messages: [
+      ...messages,
+      {
+        role: "user",
+        content:
+          "Speak one short line aloud now — only the words from your mouth.",
+      },
+    ],
+  });
+  const forcedRaw = forced.content
+    .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
+    .map((t) => t.text)
+    .join("\n");
+
   return {
-    text: "",
+    text: outputMode === "speech" ? finishText(forcedRaw) : forcedRaw.trim(),
     patches: [...patches.values()],
-    leftConversation,
-    leaveReason,
-    inviteDecision: inviteDecision.current,
     adviceRecords: adviceBag,
   };
 }

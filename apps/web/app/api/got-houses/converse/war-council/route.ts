@@ -36,13 +36,17 @@ export async function POST(req: NextRequest) {
   try {
     const body = (await req.json()) as WarCouncilBody;
     const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json(
+        { error: "ANTHROPIC_API_KEY missing" },
+        { status: 500 }
+      );
+    }
 
     const replies: {
       characterId: CharacterId;
       name: string;
       text: string;
-      left: boolean;
-      leaveReason?: string;
     }[] = [];
     const patches: NpcRuntimePatch[] = [];
     const adviceRecords: AdviceRecord[] = [];
@@ -58,24 +62,12 @@ export async function POST(req: NextRequest) {
     for (const id of body.responderIds) {
       const npc = body.characters[id];
       if (!npc || npc.kind !== "npc" || !npc.alive) continue;
-      if (body.thread.leftParticipantIds.includes(id)) continue;
 
       const system = buildEmbodiedSystemPrompt(
         id,
-        "War council with your lord and fellow commanders. When you speak, only the words you say at the table."
+        "War council with your lord and fellow commanders. You remain at the table and speak counsel. When you speak, only the words you say at the table."
       );
       if (!system) continue;
-
-      if (!apiKey) {
-        replies.push({
-          characterId: id,
-          name: npc.name,
-          text: "I hear you, my lord.",
-          left: false,
-        });
-        rolling += `\n${npc.name}: I hear you, my lord.`;
-        continue;
-      }
 
       const ctx: CharacterToolContext = {
         actingCharacterId: id,
@@ -103,22 +95,27 @@ ${rolling || "(opening)"}
 ${body.playerName} says:
 ${body.playerMessage}
 
-If you give counsel, record_advice. Search faction events freely if needed.
-Then speak ONLY your words at the table — one short reply.`,
+Tools are optional. Answer with one short spoken line at the table in your voice.
+If you give counsel, record_advice.`,
         ctx,
-        maxRounds: 5,
-        maxTokens: 380,
+        maxRounds: 4,
+        maxTokens: 320,
       });
 
-      const text =
-        sanitizeInCharacterReply(result.text) ||
-        (result.leftConversation ? "I am done here." : "…");
+      const text = sanitizeInCharacterReply(result.text);
+      if (!text) {
+        console.warn(`[war-council] empty reply from ${id}, skipping message`);
+        patches.push(...result.patches);
+        if (result.adviceRecords?.length) {
+          adviceRecords.push(...result.adviceRecords);
+        }
+        continue;
+      }
+
       replies.push({
         characterId: id,
         name: npc.name,
         text,
-        left: result.leftConversation,
-        leaveReason: result.leaveReason,
       });
       patches.push(...result.patches);
       if (result.adviceRecords?.length) {

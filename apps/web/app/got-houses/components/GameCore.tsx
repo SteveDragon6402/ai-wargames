@@ -22,7 +22,6 @@ import type {
   BattleContext,
 } from "../types";
 import { INITIAL_GAME_STATE } from "../data/initial-state";
-import ConversationDock from "./ConversationDock";
 import { snapshotForApi } from "../lib/converse-client";
 import { buildInitialCharacters } from "../data/characters";
 
@@ -388,12 +387,7 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
 
       <div style={{ display: "flex", flex: 1, minHeight: 0, flexDirection: "column" }}>
         <div style={{ display: "flex", flex: 1, minHeight: 0, position: "relative" }}>
-          {/* Talk hub — full-height column when open */}
-          {state.phase === "planning" && (
-            <ConversationDock state={state} dispatch={dispatch} />
-          )}
-
-          {/* Map */}
+          {/* Map — full bleed; right rail only when army selected or Talk open */}
           <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
             <WesterosMap state={state} dispatch={dispatch} />
 

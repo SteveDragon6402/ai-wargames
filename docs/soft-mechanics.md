@@ -41,7 +41,7 @@ Hard rules still decide adjacency and that a march happened; soft ground/route/h
 
 ## Characters, conversation, and battle takes
 
-NPC agents (commanders, notables) have durable soft state: notepad, mood, invite memory. Player lords (Robb, Tywin) are thin records — background only, no system prompt, no mood, no battle takes.
+NPC agents (commanders, notables) have durable soft state: notepad, mood, invite memory. Player lords (Robb, Tywin) are thin records — background only, no system prompt, no mood, no battle takes. NPCs cannot leave or decline talks the player opens — conversations last as long as the player keeps them open.
 
 Before each battle, NPC commanders in the fight give short takes (take / outlook / approach). Those takes plus mood are soft mechanics fed into the battle adjudicator. Player lords never submit an AI take.
 

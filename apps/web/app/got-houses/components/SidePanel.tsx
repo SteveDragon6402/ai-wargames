@@ -4,6 +4,7 @@ import type { GameState, GameAction, Army, Faction } from "../types";
 import { HOLDS_MAP } from "../data/holds";
 import ArmyCard from "./ArmyCard";
 import SpeechComposer from "./SpeechComposer";
+import ConversationDock from "./ConversationDock";
 
 interface Props {
   state: GameState;
@@ -18,34 +19,14 @@ const FACTION_LABEL: Record<Faction, string> = {
 export default function SidePanel({ state, dispatch }: Props) {
   const { selectedHoldId, selectedArmyIds, moveMode, armies, activeFaction, adminMode } = state;
 
+  // Talk takes the right rail (map stays primary — no left dock)
+  if (state.talkPickerOpen && state.phase === "planning") {
+    return <ConversationDock state={state} dispatch={dispatch} />;
+  }
+
+  // No sidebar until a hold is selected
   if (!selectedHoldId) {
-    return (
-      <div
-        style={{
-          width: 320,
-          flexShrink: 0,
-          borderLeft: "1px solid #1e1e1e",
-          background: "#0a0a0a",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <p
-          style={{
-            fontFamily: "var(--font-mono), monospace",
-            fontSize: 9,
-            color: "#2a2a2a",
-            textTransform: "uppercase",
-            letterSpacing: "0.2em",
-            textAlign: "center",
-            padding: "0 24px",
-          }}
-        >
-          Select a hold on the map
-        </p>
-      </div>
-    );
+    return null;
   }
 
   const hold = HOLDS_MAP.get(selectedHoldId);

@@ -376,6 +376,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         selectedHoldId: action.holdId,
         selectedArmyIds: [],
         moveMode: { active: false, validTargets: [] },
+        // Map selection takes the right rail back from Talk
+        talkPickerOpen: action.holdId ? false : state.talkPickerOpen,
       };
     }
 
@@ -392,10 +394,13 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       } else {
         next = [action.armyId];
       }
+      const army = state.armies.find((a) => a.id === action.armyId);
       return {
         ...state,
         selectedArmyIds: next,
+        selectedHoldId: army?.holdId ?? state.selectedHoldId,
         moveMode: { active: false, validTargets: [] },
+        talkPickerOpen: false,
       };
     }
 
@@ -412,6 +417,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         ...state,
         selectedHoldId: action.holdId,
         selectedArmyIds: armiesHere,
+        talkPickerOpen: false,
         moveMode: { active: false, validTargets: [] },
       };
     }
@@ -1041,7 +1047,15 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case "TOGGLE_TALK_PICKER": {
-      return { ...state, talkPickerOpen: !state.talkPickerOpen };
+      const open = !state.talkPickerOpen;
+      return {
+        ...state,
+        talkPickerOpen: open,
+        // Talk and army panel share the right rail
+        ...(open
+          ? { moveMode: { active: false, validTargets: [] }, speechArmyId: null }
+          : {}),
+      };
     }
 
     case "OPEN_CONVERSATION": {
