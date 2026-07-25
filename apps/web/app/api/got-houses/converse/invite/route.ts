@@ -85,13 +85,13 @@ ${history || "(none)"}
 
 ${from?.name ?? body.fromCharacterId} has called you to speak.
 
-Speak ONLY your opening words aloud — in your voice. No refusal. No leaving.`,
+Speak ONLY your opening words aloud — first-person dialogue. No narration, no thoughts, no refusal.`,
       ctx,
       maxRounds: 4,
       maxTokens: 350,
     });
 
-    const speech = sanitizeInCharacterReply(result.text);
+    const speech = sanitizeInCharacterReply(result.text, target.name);
     if (!speech) {
       return NextResponse.json(
         { error: "No spoken reply from character" },

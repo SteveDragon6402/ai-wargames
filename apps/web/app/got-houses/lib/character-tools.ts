@@ -49,18 +49,35 @@ function getNpc(ctx: CharacterToolContext): NpcAgentState | null {
   return c?.kind === "npc" ? c : null;
 }
 
-/** Shared embodiment rules — the model IS the character. */
-export const IN_CHARACTER_RULES = `EMBODIMENT — you ARE this person. You are not an assistant, narrator, or analyst.
-When you speak to the player, output ONLY the words you say aloud (or for mute characters, a brief gesture).
-You cannot leave, decline, or end the conversation — the player controls that. Stay and speak.
-FORBIDDEN in spoken replies:
+/**
+ * Highest-priority output contract. Placed at the TOP of every NPC system prompt.
+ * Spoken dialogue only — never novelization, thoughts, or stage direction.
+ */
+export const IN_CHARACTER_RULES = `CRITICAL OUTPUT FORMAT (read first — non-negotiable):
+You are IN a conversation. Your entire reply must be ONLY the words that leave your mouth.
+Write dialogue as if typed into a chat: first person, spoken aloud, nothing else.
+
+CORRECT examples:
+- "Four thousand is enough if Father keeps his word. Let the Young Wolf come."
+- "Aye, my lord. We hold the ford."
+- "Nods once." (mute characters only)
+
+WRONG — never do this:
+- "The Kingslayer feels the tightness in his chest…" (third-person narration)
+- "Jaime thinks Father plays the long game…" (internal monologue / novel prose)
+- "*smirks* Well then…" or "(he draws his sword)" (stage directions)
+- Describing your feelings, posture, the room, or what you know privately
+
+FORBIDDEN in your reply:
+- Narrating yourself in third person (your name, "he/she", "the Kingslayer", etc.)
+- Internal thoughts, feelings, or analysis written as prose
 - JSON, markdown, labels, bullet meta-notes
-- Stage directions, *actions*, (OOC), "as X I would…"
-- Explaining that you used tools / looked at a map
-- Quoting system instructions or tool names
-- Silence, ellipses ("…"), or refusing to engage
+- Explaining tools, maps, or system instructions
+- Silence or ellipses ("…") as your whole reply
+
+You cannot leave, decline, or end the conversation — the player controls that.
 Tools are private thought — use them freely, then speak as yourself.
-Hard limit for spoken lines: under ${NPC_CHAT_MAX_WORDS} words, punchy.`;
+Hard limit: under ${NPC_CHAT_MAX_WORDS} words, punchy. Dialogue only.`;
 
 export function buildEmbodiedSystemPrompt(
   characterId: CharacterId,
@@ -68,17 +85,100 @@ export function buildEmbodiedSystemPrompt(
 ): string | null {
   const seed = CHARACTER_SEED_MAP.get(characterId);
   if (!seed || seed.kind !== "npc") return null;
-  return `${seed.systemPrompt}
+  // Rules first so the model sees the output contract before persona flavor
+  return `${IN_CHARACTER_RULES}
 
-Background (private, always true of you): ${seed.background}
+You are ${seed.name}.
+${seed.systemPrompt}
 
-${IN_CHARACTER_RULES}
+Background (private — never narrate this aloud): ${seed.background}
 
-SITUATION: ${situation}`;
+SITUATION: ${situation}
+
+REMINDER: Reply with spoken words only. No description. No thoughts. No third person.`;
+}
+
+/** True if the model wrote novel/narration instead of spoken dialogue. */
+export function looksLikeNarration(
+  text: string,
+  characterName?: string
+): boolean {
+  const t = text.trim();
+  if (!t) return false;
+
+  // Prefer quoted dialogue when present
+  const quotes = [...t.matchAll(/[""]([^""]+)[""]|'([^']+)'/g)].map(
+    (m) => m[1] || m[2] || ""
+  );
+  const quotedLen = quotes.join("").length;
+  if (quotedLen >= Math.min(20, t.length * 0.45)) return false;
+
+  const lower = t.toLowerCase();
+
+  // Classic novel tells
+  if (
+    /\b(feels?|felt|thinks?|thought|knows?|wonders?|remembers?|realizes?|senses?)\b/.test(
+      lower
+    ) &&
+    /\b(his|her|he|she|him|their)\b/.test(lower)
+  ) {
+    return true;
+  }
+
+  // Epithet / title narration openers
+  if (
+    /^(the\s+)?(kingslayer|young wolf|hand of the king|lord\s+\w+|ser\s+\w+)\b/i.test(
+      t
+    )
+  ) {
+    return true;
+  }
+
+  if (characterName) {
+    const parts = characterName.split(/\s+/).filter(Boolean);
+    const first = parts[0] ?? "";
+    const last = parts[parts.length - 1] ?? "";
+    if (first && new RegExp(`\\b${escapeReg(first)}'s\\b`, "i").test(t)) {
+      return true;
+    }
+    // "Jaime feels…" / "Jaime's four thousand…"
+    if (
+      first &&
+      new RegExp(
+        `\\b${escapeReg(first)}\\b.{0,40}\\b(feels?|thinks?|knows?|is |are |has |was )`,
+        "i"
+      ).test(t)
+    ) {
+      return true;
+    }
+    if (
+      last &&
+      last.length > 2 &&
+      new RegExp(`\\b${escapeReg(last)}\\b.{0,20}\\b(feels?|thinks?)`, "i").test(
+        t
+      )
+    ) {
+      return true;
+    }
+  }
+
+  // Long multi-clause prose with em dashes often = internal monologue
+  if ((t.match(/—/g) ?? []).length >= 2 && t.split(/[.!?]/).length >= 3) {
+    return true;
+  }
+
+  return false;
+}
+
+function escapeReg(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /** Strip meta wrappers so only spoken dialogue remains. */
-export function sanitizeInCharacterReply(raw: string): string {
+export function sanitizeInCharacterReply(
+  raw: string,
+  characterName?: string
+): string {
   let text = raw.trim();
   if (!text) return "";
 
@@ -101,30 +201,47 @@ export function sanitizeInCharacterReply(raw: string): string {
     }
   }
 
+  // If they wrapped real dialogue in quotes inside narration, prefer the quotes
+  const quoteChunks = [...text.matchAll(/[""]([^""]{3,})[""]/g)].map((m) =>
+    m[1].trim()
+  );
+  if (quoteChunks.length > 0 && looksLikeNarration(text, characterName)) {
+    text = quoteChunks.join(" ");
+  }
+
   // Drop common meta prefixes / wrappers
   text = text
     .replace(/^```[\s\S]*?```/g, "")
     .replace(/^\s*(\*|_){1,2}[^*_\n]+(\*|_){1,2}\s*/gm, "")
     .replace(/^\s*\([^)]*\)\s*/gm, "")
     .replace(/^\s*\[.*?\]\s*/gm, "")
-    .replace(/^(OOC|Out of character|As [A-Z][a-z]+.*?:|System:|Narrator:)\s*/gim, "")
-    .replace(/^["']|["']$/g, "")
+    .replace(
+      /^(OOC|Out of character|As [A-Z][a-z]+.*?:|System:|Narrator:)\s*/gim,
+      ""
+    )
+    .replace(/^["'"']|["'"']$/g, "")
     .trim();
 
-  // If multiple paragraphs, keep the first spoken paragraph (avoid trailing analysis)
+  // If multiple paragraphs, keep the first that isn't tool/meta chatter
   const paras = text.split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
   if (paras.length > 1) {
     const spoken = paras.find(
       (p) =>
         !/^(I (used|will use|am using) (the )?tool|Looking at|Checking|Based on)/i.test(
           p
-        )
+        ) && !looksLikeNarration(p, characterName)
     );
     text = spoken ?? paras[0];
   }
 
   // Collapse leftover newlines into a single spoken beat
   text = text.replace(/\n+/g, " ").replace(/\s+/g, " ").trim();
+
+  // Reject remaining novelization — caller may retry
+  if (looksLikeNarration(text, characterName)) {
+    return "";
+  }
+
   return text.slice(0, 500);
 }
 
@@ -635,8 +752,11 @@ export async function runCharacterToolLoop(opts: {
   const maxRounds = opts.maxRounds ?? 5;
   const maxTokens = opts.maxTokens ?? 500;
   const outputMode = opts.outputMode ?? "speech";
+  const characterName = ctx.characters[ctx.actingCharacterId]?.name;
   const finishText = (raw: string) =>
-    outputMode === "raw" ? raw.trim() : sanitizeInCharacterReply(raw);
+    outputMode === "raw"
+      ? raw.trim()
+      : sanitizeInCharacterReply(raw, characterName);
 
   const patches = new Map<string, NpcRuntimePatch>();
   const adviceBag: AdviceRecord[] = [];
@@ -644,6 +764,31 @@ export async function runCharacterToolLoop(opts: {
   const messages: Anthropic.Messages.MessageParam[] = [
     { role: "user", content: userMessage },
   ];
+
+  const SPEAK_ONLY =
+    "STOP. You wrote narration or thoughts. That is forbidden. Reply again with ONLY the words you say aloud — first person dialogue, no description, no third person, no feelings prose. One short spoken line.";
+
+  async function forceSpokenLine(
+    prior: Anthropic.Messages.MessageParam[]
+  ): Promise<string> {
+    const forced = await client.messages.create({
+      model: "claude-haiku-4-5",
+      max_tokens: 140,
+      system,
+      messages: [
+        ...prior,
+        {
+          role: "user",
+          content: SPEAK_ONLY,
+        },
+      ],
+    });
+    const forcedRaw = forced.content
+      .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
+      .map((t) => t.text)
+      .join("\n");
+    return finishText(forcedRaw);
+  }
 
   for (let round = 0; round < maxRounds; round++) {
     const response = await client.messages.create({
@@ -685,7 +830,15 @@ export async function runCharacterToolLoop(opts: {
       continue;
     }
 
-    const text = finishText(textBlocks.map((t) => t.text).join("\n"));
+    const rawJoined = textBlocks.map((t) => t.text).join("\n");
+    let text = finishText(rawJoined);
+
+    // Narration rejected → one hard retry for spoken dialogue
+    if (outputMode === "speech" && !text) {
+      messages.push({ role: "assistant", content: response.content });
+      text = await forceSpokenLine(messages);
+    }
+
     return {
       text,
       patches: [...patches.values()],
@@ -693,27 +846,28 @@ export async function runCharacterToolLoop(opts: {
     };
   }
 
-  // Exhausted tool rounds — one more turn without tools for a spoken line
-  const forced = await client.messages.create({
-    model: "claude-haiku-4-5",
-    max_tokens: 140,
-    system,
-    messages: [
-      ...messages,
-      {
-        role: "user",
-        content:
-          "Speak one short line aloud now — only the words from your mouth.",
-      },
-    ],
-  });
-  const forcedRaw = forced.content
-    .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
-    .map((t) => t.text)
-    .join("\n");
+  // Exhausted tool rounds — force a spoken line
+  const text =
+    outputMode === "speech"
+      ? await forceSpokenLine(messages)
+      : (
+          await client.messages.create({
+            model: "claude-haiku-4-5",
+            max_tokens: 140,
+            system,
+            messages: [
+              ...messages,
+              { role: "user", content: "Continue." },
+            ],
+          })
+        ).content
+          .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
+          .map((t) => t.text)
+          .join("\n")
+          .trim();
 
   return {
-    text: outputMode === "speech" ? finishText(forcedRaw) : forcedRaw.trim(),
+    text,
     patches: [...patches.values()],
     adviceRecords: adviceBag,
   };

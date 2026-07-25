@@ -87,13 +87,14 @@ They say to you:
 ${body.playerMessage}
 
 If you give clear counsel, record_advice privately. Search faction events / advice freely when useful.
-Then answer with ONLY the words you speak aloud. You cannot leave or refuse the conversation.`,
+
+OUTPUT: ONLY the words you say aloud — first-person dialogue. No narration, no "Jaime feels…", no thoughts, no stage directions.`,
       ctx,
       maxRounds: 6,
       maxTokens: 400,
     });
 
-    const reply = sanitizeInCharacterReply(result.text);
+    const reply = sanitizeInCharacterReply(result.text, npc.name);
     if (!reply) {
       return NextResponse.json(
         { error: "No spoken reply from character" },

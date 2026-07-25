@@ -95,14 +95,16 @@ ${rolling || "(opening)"}
 ${body.playerName} says:
 ${body.playerMessage}
 
-Tools are optional. Answer with one short spoken line at the table in your voice.
-If you give counsel, record_advice.`,
+Tools are optional. If you give counsel, record_advice.
+
+OUTPUT: one short spoken line at the table — first-person dialogue only.
+Never narrate ("The Kingslayer feels…"). Never describe thoughts. Words from your mouth only.`,
         ctx,
         maxRounds: 4,
         maxTokens: 320,
       });
 
-      const text = sanitizeInCharacterReply(result.text);
+      const text = sanitizeInCharacterReply(result.text, npc.name);
       if (!text) {
         console.warn(`[war-council] empty reply from ${id}, skipping message`);
         patches.push(...result.patches);
