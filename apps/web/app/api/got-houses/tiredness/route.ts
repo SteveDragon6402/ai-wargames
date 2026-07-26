@@ -30,6 +30,7 @@ STANCE — battle-readiness and tactical posture:
 - Just merged armies this turn (turnsSinceMerge = 0): disorganised, chain of command unsettled — describe the heterogeneous state if source conditions are provided (see below)
 - Just split this turn (turnsSinceSplit = 0): uncertain, divided, formations still forming
 - Long consecutive marches (3+): experienced and battle-hardened but weary
+- Investing a castle (besieging, no field battle): patient, dug-in siege lines; boredom and rot if long; post-siege scar leaves hosts wary and thin for a few turns
 
 MERGED ARMIES (when "Pre-merge source conditions" is present):
 This army was formed by combining two or more forces this turn. Each source army entered the merger with its own tiredness, morale, and stance — those do not vanish the moment they march together. Describe the merged state in terms of its constituent parts rather than flattening them into a single average.

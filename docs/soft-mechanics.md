@@ -63,6 +63,22 @@ Use hard mechanics when:
 
 Hard scaffolding + soft judgment is the intended pattern: the engine decides *that* a fight happens; soft state helps decide *how* it goes.
 
+## Fortify vs garrison vs siege
+
+| Concept | Layer | Meaning |
+|---|---|---|
+| **Fortify** | Soft (field) | Digging in as a *field* stance (`turnsFortiying`). Not men inside walls. |
+| **Garrison** | Hard | Units + commanders peeled from a field army into a castle/ruin. Same shape as a split — those men leave the field host. |
+| **defaultGarrison** | Hard (seeded) | Native / liberation refill watermark. Friendly ungarrison cannot go below this. |
+| **capacity** | Hard (seeded) | Max men the walls can hold. Filling default→capacity requires player peel. |
+| **siteKind** | Hard | `castle` (siegable), `ruin` (garrisonable, default 0 — e.g. Harrenhal, Moat Cailin), `open` (no walls — e.g. Clegane's Keep). |
+| **homeFaction / controller** | Hard | Home is region-seeded allegiance; controller is who holds it now. Marching alone does not flip control. |
+| **Siege investment** | Hard + soft | Unfriendly garrisonable hold with defending men and no opposing *field* army → auto-invest. Ticks turns, `foodDaysRemaining`, soft `supplies`. |
+| **Storm / Sally** | Hard orders → battle | Assault the walls, or sortie (alone or with a relieving field army — one two-front engagement). |
+| **Post-siege scar** | Soft + hard timer | 3 turns of recovery soft text after a siege ends; longer scar string may remain. |
+
+**Conquer** (unfriendly / hostile / enemy-controlled): peel *your* men into the seat to claim. **Liberate** (retake a seat whose `homeFaction` is you): control returns and the castle refills up to `defaultGarrison`; extras above default still need peel. **Abandon** (non-home occupier): full withdraw → home reclaim + refill to default. Friendly ungarrison floors at default.
+
 ## For future features
 
 Before adding a system, classify each piece:

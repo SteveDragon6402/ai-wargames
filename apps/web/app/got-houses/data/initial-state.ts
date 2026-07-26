@@ -1,5 +1,6 @@
 import type { Army, ArmyActivity, GameState } from "../types";
 import { buildInitialCharacters } from "./characters";
+import { buildInitialHoldStates } from "../lib/hold-runtime";
 
 const FRESH_ACTIVITY: ArmyActivity = {
   turnsResting: 0,
@@ -167,8 +168,8 @@ export const INITIAL_GAME_STATE: GameState = {
   selectedHoldId: null,
   selectedArmyIds: [],
   moveMode: { active: false, validTargets: [] },
-  north: { orders: [], stanceOrders: {}, submitted: false },
-  westerlands: { orders: [], stanceOrders: {}, submitted: false },
+  north: { orders: [], stanceOrders: {}, stormArmyIds: [], sallyHoldIds: [], submitted: false },
+  westerlands: { orders: [], stanceOrders: {}, stormArmyIds: [], sallyHoldIds: [], submitted: false },
   adminMode: true,
   activeFaction: "north",
   pendingBattles: [],
@@ -188,4 +189,6 @@ export const INITIAL_GAME_STATE: GameState = {
   focusedConversationId: null,
   factionEvents: [],
   adviceLog: [],
+  holdStates: buildInitialHoldStates(),
+  garrisonPanel: null,
 };

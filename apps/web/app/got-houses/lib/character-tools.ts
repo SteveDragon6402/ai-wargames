@@ -375,14 +375,15 @@ export const CHARACTER_TOOL_DEFS: Anthropic.Messages.Tool[] = [
   {
     name: "search_faction_events",
     description:
-      "Search your faction's action log (marches, rest, fortify, speeches, battles involving your side). Not the enemy's private orders. Use freely to gather facts.",
+      "Search your faction's action log (marches, rest, fortify, speeches, battles, invest, storm, sally, liberate, claim, abandon, garrison). Not the enemy's private orders. Use freely to gather facts.",
     input_schema: {
       type: "object",
       properties: {
         query: { type: "string", description: "Keyword filter (place, army, deed)" },
         kind: {
           type: "string",
-          description: "Optional: march | rest | fortify | speech | battle | other",
+          description:
+            "Optional: march | rest | fortify | speech | battle | invest | storm | sally | liberate | claim | abandon | garrison | other",
         },
         turn: { type: "number", description: "Optional turn number" },
         limit: { type: "number", description: "Max results (default 40, max 80)" },

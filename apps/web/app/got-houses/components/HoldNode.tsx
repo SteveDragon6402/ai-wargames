@@ -13,6 +13,10 @@ export interface HoldNodeData {
   isSelected: boolean;
   isMoveTarget: boolean;
   isInMoveMode: boolean;
+  /** Distinct from fortify — men inside the walls */
+  hasGarrison?: boolean;
+  /** Under investment */
+  underSiege?: boolean;
   [key: string]: unknown;
 }
 
@@ -57,7 +61,16 @@ function ArmyDot({
 }
 
 function HoldNode({ data }: { data: HoldNodeData }) {
-  const { label, region, armies, isSelected, isMoveTarget, isInMoveMode } = data;
+  const {
+    label,
+    region,
+    armies,
+    isSelected,
+    isMoveTarget,
+    isInMoveMode,
+    hasGarrison,
+    underSiege,
+  } = data;
 
   const northArmies = armies.filter((a) => a.faction === "north");
   const westArmies = armies.filter((a) => a.faction === "westerlands");
@@ -142,6 +155,44 @@ function HoldNode({ data }: { data: HoldNodeData }) {
                 resting={(a.activity?.turnsResting ?? 0) > 0}
               />
             ))}
+          </div>
+        )}
+
+        {(hasGarrison || underSiege) && (
+          <div
+            style={{
+              display: "flex",
+              gap: 4,
+              marginTop: hasArmies ? 2 : 3,
+              alignItems: "center",
+            }}
+          >
+            {hasGarrison && (
+              <span
+                title="Garrison"
+                style={{
+                  fontFamily: "var(--font-mono), monospace",
+                  fontSize: 7,
+                  color: "#8a8a6a",
+                  letterSpacing: "0.06em",
+                }}
+              >
+                ▦
+              </span>
+            )}
+            {underSiege && (
+              <span
+                title="Under siege"
+                style={{
+                  fontFamily: "var(--font-mono), monospace",
+                  fontSize: 7,
+                  color: "#c05050",
+                  letterSpacing: "0.06em",
+                }}
+              >
+                ⊘
+              </span>
+            )}
           </div>
         )}
 

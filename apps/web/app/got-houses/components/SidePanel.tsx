@@ -2,6 +2,13 @@
 
 import type { GameState, GameAction, Army, Faction } from "../types";
 import { HOLDS_MAP } from "../data/holds";
+import { getCastleSeed } from "../data/castles";
+import {
+  freeCapacity,
+  garrisonHeadcount,
+  isFriendlyTo,
+  isGarrisonable,
+} from "../lib/hold-runtime";
 import ArmyCard from "./ArmyCard";
 import SpeechComposer from "./SpeechComposer";
 import ConversationDock from "./ConversationDock";
@@ -94,6 +101,71 @@ export default function SidePanel({ state, dispatch }: Props) {
       : null;
 
   const canIssueStance = !!singleSelected && !isLocked;
+
+  const holdRuntime = state.holdStates?.[selectedHoldId];
+  const castleSeed = getCastleSeed(selectedHoldId);
+  const garrisonable = isGarrisonable(castleSeed);
+  const garrisonMen = holdRuntime
+    ? garrisonHeadcount(holdRuntime.garrison)
+    : 0;
+  const freeSlots = holdRuntime
+    ? freeCapacity(selectedHoldId, holdRuntime)
+    : 0;
+
+  const myFaction = adminMode ? activeFaction : activeFaction;
+  const friendlyHold =
+    !!holdRuntime && isFriendlyTo(holdRuntime, myFaction);
+  const nonHomeOccupier =
+    !!holdRuntime &&
+    holdRuntime.controller === myFaction &&
+    holdRuntime.homeFaction !== myFaction;
+  const underSiege = !!holdRuntime?.siege;
+  const amBesieger =
+    underSiege && holdRuntime!.siege!.besiegerFaction === myFaction;
+  const amDefenderUnderSiege =
+    underSiege &&
+    friendlyHold &&
+    holdRuntime!.siege!.besiegerFaction !== myFaction;
+
+  const factionFo =
+    myFaction === "north" ? state.north : state.westerlands;
+  const stormActive =
+    !!singleSelected && factionFo.stormArmyIds.includes(singleSelected.id);
+  const sallyActive = factionFo.sallyHoldIds.includes(selectedHoldId);
+
+  const canGarrison =
+    garrisonable &&
+    !!singleSelected &&
+    !isLocked &&
+    singleSelected.holdId === selectedHoldId &&
+    freeSlots > 0 &&
+    (friendlyHold ||
+      holdRuntime?.controller === null ||
+      garrisonMen === 0);
+  const canUngarrison =
+    garrisonable &&
+    !!singleSelected &&
+    !isLocked &&
+    friendlyHold &&
+    !nonHomeOccupier &&
+    garrisonMen > castleSeed.defaultGarrison;
+  const canAbandon =
+    garrisonable &&
+    !!singleSelected &&
+    !isLocked &&
+    nonHomeOccupier &&
+    garrisonMen > 0;
+  const canStorm =
+    garrisonable &&
+    !!singleSelected &&
+    !isLocked &&
+    amBesieger &&
+    singleSelected.holdId === selectedHoldId;
+  const canSally =
+    garrisonable &&
+    !factionFo.submitted &&
+    amDefenderUnderSiege &&
+    garrisonMen > 0;
 
   return (
     <div
@@ -189,6 +261,116 @@ export default function SidePanel({ state, dispatch }: Props) {
         </div>
       </div>
 
+      {/* Castle / garrison overview */}
+      {garrisonable && holdRuntime && (
+        <div
+          style={{
+            borderBottom: "1px solid #1e1e1e",
+            padding: "10px 14px",
+            flexShrink: 0,
+          }}
+        >
+          <div
+            style={{
+              fontFamily: "var(--font-mono), monospace",
+              fontSize: 8,
+              color: "#555",
+              textTransform: "uppercase",
+              letterSpacing: "0.12em",
+              marginBottom: 6,
+            }}
+          >
+            {castleSeed.siteKind} · controller{" "}
+            {holdRuntime.controller ?? "none"} · home{" "}
+            {holdRuntime.homeFaction}
+          </div>
+          <div
+            style={{
+              fontFamily: "var(--font-mono), monospace",
+              fontSize: 11,
+              color: "#ccc",
+              marginBottom: 4,
+            }}
+          >
+            Garrison {garrisonMen.toLocaleString()} /{" "}
+            {castleSeed.capacity.toLocaleString()}
+          </div>
+          <div
+            style={{
+              fontFamily: "var(--font-mono), monospace",
+              fontSize: 9,
+              color: "#666",
+              marginBottom: 6,
+            }}
+          >
+            default {castleSeed.defaultGarrison.toLocaleString()} · free{" "}
+            {freeSlots.toLocaleString()}
+          </div>
+          {holdRuntime.garrison.leaders.length > 0 && (
+            <div
+              style={{
+                fontFamily: "var(--font-mono), monospace",
+                fontSize: 9,
+                color: "#888",
+                marginBottom: 4,
+              }}
+            >
+              Cmd:{" "}
+              {holdRuntime.garrison.leaders.map((l) => l.name).join(", ")}
+            </div>
+          )}
+          <div
+            style={{
+              fontFamily: "var(--font-mono), monospace",
+              fontSize: 9,
+              color: "#777",
+              fontStyle: "italic",
+              marginBottom: 4,
+            }}
+          >
+            {holdRuntime.supplies}
+          </div>
+          {holdRuntime.foodDaysRemaining != null && (
+            <div
+              style={{
+                fontFamily: "var(--font-mono), monospace",
+                fontSize: 9,
+                color: "#666",
+              }}
+            >
+              Food ~{holdRuntime.foodDaysRemaining} days
+            </div>
+          )}
+          {holdRuntime.siege && (
+            <div
+              style={{
+                fontFamily: "var(--font-mono), monospace",
+                fontSize: 9,
+                color: "#c05050",
+                marginTop: 6,
+                textTransform: "uppercase",
+                letterSpacing: "0.08em",
+              }}
+            >
+              Under siege · turn {holdRuntime.siege.turns} ·{" "}
+              {holdRuntime.siege.besiegerFaction}
+            </div>
+          )}
+          {holdRuntime.postSiegeTurnsLeft > 0 && !holdRuntime.siege && (
+            <div
+              style={{
+                fontFamily: "var(--font-mono), monospace",
+                fontSize: 8,
+                color: "#555",
+                marginTop: 4,
+              }}
+            >
+              Post-siege recovery ({holdRuntime.postSiegeTurnsLeft})
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Action bar */}
       {selectedArmies.length > 0 && (
         <div
@@ -275,6 +457,62 @@ export default function SidePanel({ state, dispatch }: Props) {
                   }
                 />
               )}
+              {canGarrison && (
+                <ActionButton
+                  label="Garrison"
+                  disabled={false}
+                  onClick={() =>
+                    dispatch({
+                      type: "OPEN_GARRISON_PANEL",
+                      holdId: selectedHoldId,
+                      mode: "deposit",
+                      armyId: singleSelected!.id,
+                    })
+                  }
+                />
+              )}
+              {canUngarrison && (
+                <ActionButton
+                  label="Ungarrison"
+                  disabled={false}
+                  onClick={() =>
+                    dispatch({
+                      type: "OPEN_GARRISON_PANEL",
+                      holdId: selectedHoldId,
+                      mode: "withdraw",
+                      armyId: singleSelected!.id,
+                    })
+                  }
+                />
+              )}
+              {canAbandon && (
+                <ActionButton
+                  label="Abandon"
+                  disabled={false}
+                  onClick={() =>
+                    dispatch({
+                      type: "OPEN_GARRISON_PANEL",
+                      holdId: selectedHoldId,
+                      mode: "abandon",
+                      armyId: singleSelected!.id,
+                    })
+                  }
+                />
+              )}
+              {canStorm && (
+                <ActionButton
+                  label="Storm"
+                  disabled={false}
+                  active={stormActive}
+                  onClick={() =>
+                    dispatch({
+                      type: "SET_STORM_ORDER",
+                      armyId: singleSelected!.id,
+                      active: !stormActive,
+                    })
+                  }
+                />
+              )}
               <ActionButton
                 label="Deselect"
                 disabled={false}
@@ -303,6 +541,33 @@ export default function SidePanel({ state, dispatch }: Props) {
               />
             </>
           )}
+        </div>
+      )}
+
+      {canSally && (
+        <div
+          style={{
+            borderBottom: "1px solid #1e1e1e",
+            padding: "8px 14px",
+            flexShrink: 0,
+            display: "flex",
+            gap: 6,
+            flexWrap: "wrap",
+          }}
+        >
+          <ActionButton
+            label="Sally Out"
+            disabled={false}
+            active={sallyActive}
+            onClick={() =>
+              dispatch({
+                type: "SET_SALLY_ORDER",
+                holdId: selectedHoldId,
+                active: !sallyActive,
+              })
+            }
+            accent
+          />
         </div>
       )}
 

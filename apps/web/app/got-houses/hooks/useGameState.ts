@@ -21,9 +21,13 @@ import type {
   ChatMessage,
   Leader,
   Notable,
+  GarrisonTransfer,
+  HoldRuntime,
+  FactionEvent,
 } from "../types";
 import { INITIAL_GAME_STATE } from "../data/initial-state";
 import { HOLDS_MAP } from "../data/holds";
+import { getCastleSeed } from "../data/castles";
 import { getPathwayRoute } from "../data/pathways";
 import { findCharacterIdByName } from "../data/characters";
 import {
@@ -32,6 +36,22 @@ import {
   eventsFromResolvedOrders,
 } from "../lib/faction-events";
 import { armyNameForCommander } from "../lib/army-naming";
+import {
+  freeCapacity,
+  garrisonHeadcount,
+  isGarrisonable,
+  isFriendlyTo,
+  mergeUnits,
+  refillToDefault,
+  subtractUnits,
+} from "../lib/hold-runtime";
+import {
+  applyGarrisonCasualties,
+  detectSiegeBattles,
+  holdIdFromGarrisonArmyId,
+  isGarrisonArmyId,
+  tickSieges,
+} from "../lib/siege";
 
 /** Appoint lead commander (or clear). Promotes notables into leaders and syncs NPC roles. */
 function appointLeadCommander(
@@ -453,6 +473,7 @@ function buildRetreats(
   battles: BattleContext[]
 ): RetreatEntry[] {
   return retreatingArmyIds
+    .filter((id) => !isGarrisonArmyId(id))
     .map((armyId) => {
       const army = armies.find((a) => a.id === armyId);
       if (!army) return null;
@@ -612,12 +633,13 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         const existing = getFactionOrders(nextState, faction);
         if (existing.submitted) continue;
         const filtered = existing.orders.filter((o) => o.armyId !== order.armyId);
-        // Clear any stance order for this army since it's now moving
+        // Clear any stance / storm order for this army since it's now moving
         const newStanceOrders = { ...existing.stanceOrders };
         delete newStanceOrders[order.armyId];
         nextState = setFactionOrders(nextState, faction, {
           orders: [...filtered, order],
           stanceOrders: newStanceOrders,
+          stormArmyIds: existing.stormArmyIds.filter((id) => id !== order.armyId),
         });
       }
 
@@ -656,6 +678,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return setFactionOrders(state, faction, {
         orders: newOrders,
         stanceOrders: newStanceOrders,
+        stormArmyIds: factionOrders.stormArmyIds.filter(
+          (id) => id !== action.armyId
+        ),
       });
     }
 
@@ -722,7 +747,35 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         })),
       };
 
-      const pendingBattles = detectBattles(updatedArmies, allOrders, armyOrdersMap);
+      const pendingField = detectBattles(updatedArmies, allOrders, armyOrdersMap);
+      const fieldHoldIds = new Set(pendingField.map((b) => b.holdId));
+
+      const stormArmyIds = [
+        ...state.north.stormArmyIds,
+        ...state.westerlands.stormArmyIds,
+      ];
+      const sallyHoldIds = [
+        ...state.north.sallyHoldIds,
+        ...state.westerlands.sallyHoldIds,
+      ];
+
+      const siegeTick = tickSieges(
+        state.turn,
+        updatedArmies,
+        state.holdStates ?? {},
+        state.holdStates ?? {}
+      );
+
+      const siegeBattles = detectSiegeBattles(
+        updatedArmies,
+        siegeTick.holdStates,
+        fieldHoldIds,
+        stormArmyIds,
+        sallyHoldIds,
+        armyOrdersMap
+      );
+
+      const pendingBattles = [...pendingField, ...siegeBattles];
 
       const orderEvents = eventsFromResolvedOrders(
         state.turn,
@@ -733,19 +786,76 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         state.westerlands.stanceOrders
       );
 
+      // Storm / sally order events
+      const siegeOrderEvents: FactionEvent[] = [];
+      for (const armyId of stormArmyIds) {
+        const army = updatedArmies.find((a) => a.id === armyId);
+        if (!army) continue;
+        const hold = HOLDS_MAP.get(army.holdId)?.name ?? army.holdId;
+        siegeOrderEvents.push({
+          id: `ev-storm-${armyId}-${state.turn}`,
+          turn: state.turn,
+          faction: army.faction,
+          kind: "storm",
+          armyId,
+          holdIds: [army.holdId],
+          summary: `${army.name} storms the gates at ${hold}`,
+          detail: `Turn ${state.turn}: ${army.name} ordered to storm ${hold}.`,
+        });
+      }
+      for (const holdId of sallyHoldIds) {
+        const hs = siegeTick.holdStates[holdId];
+        const hold = HOLDS_MAP.get(holdId)?.name ?? holdId;
+        const faction =
+          hs?.garrison.faction === "north" || hs?.garrison.faction === "westerlands"
+            ? hs.garrison.faction
+            : hs?.controller === "north" || hs?.controller === "westerlands"
+              ? hs.controller
+              : null;
+        if (!faction) continue;
+        siegeOrderEvents.push({
+          id: `ev-sally-${holdId}-${state.turn}`,
+          turn: state.turn,
+          faction,
+          kind: "sally",
+          holdIds: [holdId],
+          summary: `Garrison of ${hold} sallies out`,
+          detail: `Turn ${state.turn}: defenders of ${hold} ordered a sally.`,
+        });
+      }
+
       return {
         ...state,
         phase: "resolving",
         armies: updatedArmies,
-        north: { orders: [], stanceOrders: {}, submitted: false },
-        westerlands: { orders: [], stanceOrders: {}, submitted: false },
+        holdStates: siegeTick.holdStates,
+        north: {
+          orders: [],
+          stanceOrders: {},
+          stormArmyIds: [],
+          sallyHoldIds: [],
+          submitted: false,
+        },
+        westerlands: {
+          orders: [],
+          stanceOrders: {},
+          stormArmyIds: [],
+          sallyHoldIds: [],
+          submitted: false,
+        },
         selectedHoldId: null,
         selectedArmyIds: [],
         moveMode: { active: false, validTargets: [] },
         speechArmyId: null,
+        garrisonPanel: null,
         pendingBattles,
         turnHistory: [...(state.turnHistory ?? []), newTurnHistory],
-        factionEvents: [...state.factionEvents, ...orderEvents].slice(-400),
+        factionEvents: [
+          ...state.factionEvents,
+          ...orderEvents,
+          ...siegeTick.events,
+          ...siegeOrderEvents,
+        ].slice(-400),
       };
     }
 
@@ -772,6 +882,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         } else {
           retreating = [...northIds, ...westIds];
         }
+        retreating = retreating.filter((id) => !isGarrisonArmyId(id));
         return { ...report, retreatingArmyIds: retreating };
       });
 
@@ -780,6 +891,152 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       // Apply casualties and fallen figures
       let updatedArmies = applyCasualties(state.armies, allCasualties);
       updatedArmies = applyFallen(updatedArmies, allFallen);
+
+      // Apply garrison casualties / control flips for siege engagements
+      let holdStates: Record<string, HoldRuntime> = {
+        ...(state.holdStates ?? {}),
+      };
+      const siegeOutcomeEvents: FactionEvent[] = [];
+
+      for (const report of correctedReports) {
+        const battle = state.pendingBattles.find((b) => b.holdId === report.holdId);
+        if (!battle?.garrisonHoldId) continue;
+        const holdId = battle.garrisonHoldId;
+        let hs = holdStates[holdId];
+        if (!hs) continue;
+
+        const gArmyId = `garrison:${holdId}`;
+        const gCas = report.casualties.filter(
+          (c) => c.armyId === gArmyId || holdIdFromGarrisonArmyId(c.armyId) === holdId
+        );
+        let garrison = applyGarrisonCasualties(hs.garrison, gCas);
+        const gFallenNames = new Set(
+          report.fallen
+            .filter(
+              (f) =>
+                f.armyId === gArmyId || holdIdFromGarrisonArmyId(f.armyId) === holdId
+            )
+            .map((f) => f.name)
+        );
+        if (gFallenNames.size > 0) {
+          garrison = {
+            ...garrison,
+            leaders: garrison.leaders.filter((l) => !gFallenNames.has(l.name)),
+            notables: (garrison.notables ?? []).filter(
+              (n) => !gFallenNames.has(n.name)
+            ),
+          };
+        }
+
+        const holdName = HOLDS_MAP.get(holdId)?.name ?? holdId;
+        const eng = battle.engagement ?? "field";
+        const menLeft = garrisonHeadcount(garrison);
+
+        if (eng === "storm") {
+          const besieger = hs.siege?.besiegerFaction;
+          if (besieger && report.holdResult === besieger) {
+            // Walls taken — garrison broken; seat empty until conqueror peels men in
+            garrison = {
+              faction: null,
+              units: [],
+              leaders: [],
+              notables: [],
+            };
+            hs = {
+              ...hs,
+              controller: null,
+              garrison,
+              siege: null,
+              postSiegeTurnsLeft: 3,
+              scar: "Stormed and broken.",
+              supplies: "Gates forced; the seat lies open.",
+              foodDaysRemaining: null,
+            };
+            siegeOutcomeEvents.push({
+              id: `ev-storm-win-${holdId}-${state.turn}`,
+              turn: state.turn,
+              faction: besieger,
+              kind: "storm",
+              holdIds: [holdId],
+              summary: `${holdName} stormed — walls taken`,
+              detail: `Turn ${state.turn}: ${besieger} stormed ${holdName}. Garrison broken; hold vacant until garrisoned.`,
+            });
+          } else {
+            // Storm failed — keep depleted garrison, siege continues
+            hs = { ...hs, garrison };
+            if (menLeft <= 0) {
+              hs = {
+                ...hs,
+                controller: null,
+                garrison: {
+                  faction: null,
+                  units: [],
+                  leaders: [],
+                  notables: [],
+                },
+                siege: null,
+                postSiegeTurnsLeft: 3,
+                scar: "Garrison destroyed in the assault.",
+                supplies: "Empty walls after the failed storm.",
+                foodDaysRemaining: null,
+              };
+            }
+          }
+        } else if (eng === "sally") {
+          const besieger = hs.siege?.besiegerFaction;
+          const defender =
+            garrison.faction === "north" || garrison.faction === "westerlands"
+              ? garrison.faction
+              : hs.controller === "north" || hs.controller === "westerlands"
+                ? hs.controller
+                : null;
+
+          if (defender && report.holdResult === defender) {
+            // Sally success — siege broken
+            hs = {
+              ...hs,
+              garrison,
+              siege: null,
+              postSiegeTurnsLeft: 3,
+              scar: "Scarred by recent siege.",
+              supplies: "Sally broke the investment; stores thin but free.",
+            };
+            siegeOutcomeEvents.push({
+              id: `ev-sally-win-${holdId}-${state.turn}`,
+              turn: state.turn,
+              faction: defender,
+              kind: "sally",
+              holdIds: [holdId],
+              summary: `Sally from ${holdName} broke the siege`,
+              detail: `Turn ${state.turn}: defenders of ${holdName} sallied and lifted the investment.`,
+            });
+          } else {
+            hs = { ...hs, garrison };
+            if (menLeft <= 0) {
+              hs = {
+                ...hs,
+                controller: null,
+                garrison: {
+                  faction: null,
+                  units: [],
+                  leaders: [],
+                  notables: [],
+                },
+                siege: null,
+                postSiegeTurnsLeft: 3,
+                scar: "Garrison destroyed in the sally.",
+                supplies: "Empty walls after a failed sortie.",
+                foodDaysRemaining: null,
+              };
+            }
+          }
+          void besieger;
+        } else {
+          hs = { ...hs, garrison };
+        }
+
+        holdStates[holdId] = hs;
+      }
 
       // Mark character agents dead when they fall
       let characters = state.characters;
@@ -870,7 +1127,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         correctedReports,
         { ...state, armies: updatedArmies, characters }
       );
-      const factionEvents = [...state.factionEvents, ...battleEvents].slice(-400);
+      const factionEvents = [
+        ...state.factionEvents,
+        ...battleEvents,
+        ...siegeOutcomeEvents,
+      ].slice(-400);
 
       // If there are last-stand battles, re-enter resolving with them as pendingBattles
       if (lastStandBattles.length > 0) {
@@ -879,6 +1140,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           phase: "resolving",
           armies: updatedArmies,
           characters,
+          holdStates,
           pendingBattles: lastStandBattles,
           battleReports: newBattleReports,
           retreats: nonTrappedRetreats,
@@ -893,6 +1155,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           phase: "rename_commanders",
           armies: updatedArmies,
           characters,
+          holdStates,
           pendingBattles: [],
           battleReports: newBattleReports,
           retreats: nonTrappedRetreats,
@@ -907,6 +1170,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           phase: "retreat",
           armies: updatedArmies,
           characters,
+          holdStates,
           pendingBattles: [],
           battleReports: newBattleReports,
           retreats: nonTrappedRetreats,
@@ -918,6 +1182,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return advanceToPlanning(state, {
         armies: updatedArmies,
         characters,
+        holdStates,
         pendingBattles: [],
         battleReports: newBattleReports,
         retreats: [],
@@ -1427,9 +1692,412 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return { ...state, characters };
     }
 
+    case "OPEN_GARRISON_PANEL": {
+      return {
+        ...state,
+        garrisonPanel: {
+          holdId: action.holdId,
+          mode: action.mode,
+          armyId: action.armyId,
+        },
+        splitPanelArmyId: null,
+        speechArmyId: null,
+      };
+    }
+
+    case "CLOSE_GARRISON_PANEL": {
+      return { ...state, garrisonPanel: null };
+    }
+
+    case "GARRISON_TRANSFER": {
+      return applyGarrisonTransfer(state, action.transfer);
+    }
+
+    case "ABANDON_HOLD": {
+      return applyAbandonHold(state, action.holdId, action.armyId);
+    }
+
+    case "SET_STORM_ORDER": {
+      const army = state.armies.find((a) => a.id === action.armyId);
+      if (!army) return state;
+      const key = army.faction === "north" ? "north" : "westerlands";
+      const fo = state[key];
+      const stormArmyIds = action.active
+        ? fo.stormArmyIds.includes(action.armyId)
+          ? fo.stormArmyIds
+          : [...fo.stormArmyIds, action.armyId]
+        : fo.stormArmyIds.filter((id) => id !== action.armyId);
+      // Clear conflicting stance / sally when storming
+      const sallyHoldIds = action.active
+        ? fo.sallyHoldIds.filter((h) => h !== army.holdId)
+        : fo.sallyHoldIds;
+      const stanceOrders = { ...fo.stanceOrders };
+      if (action.active) delete stanceOrders[action.armyId];
+      return {
+        ...state,
+        [key]: { ...fo, stormArmyIds, sallyHoldIds, stanceOrders },
+      };
+    }
+
+    case "SET_SALLY_ORDER": {
+      const hs = state.holdStates?.[action.holdId];
+      if (!hs) return state;
+      const faction =
+        hs.controller === "north" || hs.controller === "westerlands"
+          ? hs.controller
+          : hs.garrison.faction === "north" || hs.garrison.faction === "westerlands"
+            ? hs.garrison.faction
+            : null;
+      if (!faction) return state;
+      const key = faction === "north" ? "north" : "westerlands";
+      const fo = state[key];
+      const sallyHoldIds = action.active
+        ? fo.sallyHoldIds.includes(action.holdId)
+          ? fo.sallyHoldIds
+          : [...fo.sallyHoldIds, action.holdId]
+        : fo.sallyHoldIds.filter((id) => id !== action.holdId);
+      // Clear storm orders at this hold when sallying
+      const stormArmyIds = action.active
+        ? fo.stormArmyIds.filter((id) => {
+            const a = state.armies.find((x) => x.id === id);
+            return a?.holdId !== action.holdId;
+          })
+        : fo.stormArmyIds;
+      return {
+        ...state,
+        [key]: { ...fo, sallyHoldIds, stormArmyIds },
+      };
+    }
+
     default:
       return state;
   }
+}
+
+function applyGarrisonTransfer(
+  state: GameState,
+  transfer: GarrisonTransfer
+): GameState {
+  const seed = getCastleSeed(transfer.holdId);
+  if (!isGarrisonable(seed)) return state;
+  const army = state.armies.find((a) => a.id === transfer.armyId);
+  if (!army || army.holdId !== transfer.holdId) return state;
+  const hs = state.holdStates?.[transfer.holdId];
+  if (!hs) return state;
+
+  const takeMen = transfer.units.reduce((s, u) => s + u.count, 0);
+  if (takeMen <= 0 && transfer.leaderNames.length === 0 && transfer.notableNames.length === 0) {
+    return state;
+  }
+
+  let holdStates = { ...state.holdStates };
+  let characters = { ...state.characters };
+  let updatedArmy = { ...army };
+  let garrison = {
+    ...hs.garrison,
+    units: hs.garrison.units.map((u) => ({ ...u })),
+    leaders: [...hs.garrison.leaders],
+    notables: [...(hs.garrison.notables ?? [])],
+  };
+  const events: FactionEvent[] = [];
+  const holdName = HOLDS_MAP.get(transfer.holdId)?.name ?? transfer.holdId;
+
+  if (transfer.mode === "deposit") {
+    const free = freeCapacity(transfer.holdId, hs);
+    if (takeMen > free) return state;
+
+    // Peel from army
+    updatedArmy = {
+      ...updatedArmy,
+      units: subtractUnits(updatedArmy.units, transfer.units),
+      leaders: updatedArmy.leaders.filter(
+        (l) => !transfer.leaderNames.includes(l.name)
+      ),
+      notables: (updatedArmy.notables ?? []).filter(
+        (n) => !transfer.notableNames.includes(n.name)
+      ),
+    };
+    if (updatedArmy.units.reduce((s, u) => s + u.count, 0) <= 0) {
+      // Empty field army after full deposit — remove it
+    }
+
+    const peeledLeaders = army.leaders.filter((l) =>
+      transfer.leaderNames.includes(l.name)
+    );
+    const peeledNotables = (army.notables ?? []).filter((n) =>
+      transfer.notableNames.includes(n.name)
+    );
+
+    garrison = {
+      faction: army.faction,
+      units: mergeUnits(garrison.units, transfer.units),
+      leaders: [...garrison.leaders, ...peeledLeaders],
+      notables: [...(garrison.notables ?? []), ...peeledNotables],
+    };
+
+    // Claiming / liberating
+    let nextHs: HoldRuntime = { ...hs, garrison };
+    const liberating =
+      hs.homeFaction === army.faction &&
+      hs.controller !== army.faction;
+
+    if (liberating) {
+      // Drive out foreign garrison, refill native default, then keep peeled extras
+      nextHs = refillToDefault(transfer.holdId, {
+        ...hs,
+        controller: army.faction,
+        garrison: {
+          faction: army.faction,
+          units: [],
+          leaders: [],
+          notables: [],
+        },
+      });
+      nextHs = {
+        ...nextHs,
+        garrison: {
+          faction: army.faction,
+          units: mergeUnits(nextHs.garrison.units, transfer.units),
+          leaders: [...peeledLeaders],
+          notables: [...peeledNotables],
+        },
+      };
+      events.push({
+        id: `ev-lib-${transfer.holdId}-${Date.now()}`,
+        turn: state.turn,
+        faction: army.faction,
+        kind: "liberate",
+        holdIds: [transfer.holdId],
+        armyId: army.id,
+        summary: `Liberated ${holdName}`,
+        detail: `${army.name} liberated ${holdName}; default garrison refilled.`,
+      });
+    } else if (
+      hs.controller !== army.faction &&
+      (hs.controller === null ||
+        hs.controller === "hostile" ||
+        garrisonHeadcount(hs.garrison) === 0)
+    ) {
+      // Claim empty / hostile seat with peeled troops only
+      nextHs = {
+        ...hs,
+        controller: army.faction,
+        garrison: {
+          faction: army.faction,
+          units: transfer.units.map((u) => ({ ...u })),
+          leaders: peeledLeaders,
+          notables: peeledNotables,
+        },
+        siege: null,
+        supplies: "Claimed and manned.",
+        foodDaysRemaining:
+          hs.foodDaysRemaining ?? seed.defaultFoodDays,
+      };
+      events.push({
+        id: `ev-claim-${transfer.holdId}-${Date.now()}`,
+        turn: state.turn,
+        faction: army.faction,
+        kind: "claim",
+        holdIds: [transfer.holdId],
+        armyId: army.id,
+        summary: `Claimed ${holdName}`,
+        detail: `${army.name} garrisoned and claimed ${holdName}.`,
+      });
+    } else if (hs.controller === army.faction) {
+      events.push({
+        id: `ev-gar-${transfer.holdId}-${Date.now()}`,
+        turn: state.turn,
+        faction: army.faction,
+        kind: "garrison",
+        holdIds: [transfer.holdId],
+        armyId: army.id,
+        summary: `Reinforced garrison at ${holdName}`,
+        detail: `${army.name} deposited ${takeMen} men into ${holdName}.`,
+      });
+    } else {
+      return state; // cannot deposit into an enemy-held garrison
+    }
+
+    // Sync characters into garrison (armyId null while in castle)
+    for (const name of [...transfer.leaderNames, ...transfer.notableNames]) {
+      const cid = findCharacterIdByName(characters, name);
+      if (!cid) continue;
+      const c = characters[cid];
+      if (!c) continue;
+      characters[cid] = { ...c, armyId: null };
+    }
+
+    holdStates[transfer.holdId] = nextHs;
+
+    let armies = state.armies.map((a) =>
+      a.id === army.id ? updatedArmy : a
+    );
+    if (updatedArmy.units.reduce((s, u) => s + u.count, 0) <= 0) {
+      armies = armies.filter((a) => a.id !== army.id);
+    } else {
+      // Rename if lead commander left
+      const lead = updatedArmy.leaders[0]?.name ?? null;
+      armies = armies.map((a) =>
+        a.id === army.id
+          ? {
+              ...updatedArmy,
+              name: armyNameForCommander(
+                lead,
+                updatedArmy.units,
+                updatedArmy.faction,
+                updatedArmy.name
+              ),
+            }
+          : a
+      );
+    }
+
+    return {
+      ...state,
+      armies,
+      characters,
+      holdStates,
+      garrisonPanel: null,
+      selectedArmyIds: armies.some((a) => a.id === army.id)
+        ? [army.id]
+        : [],
+      factionEvents: [...state.factionEvents, ...events].slice(-400),
+    };
+  }
+
+  // withdraw
+  const currentMen = garrisonHeadcount(garrison);
+  const floor =
+    isFriendlyTo(hs, army.faction) && hs.homeFaction === army.faction
+      ? seed.defaultGarrison
+      : isFriendlyTo(hs, army.faction)
+        ? seed.defaultGarrison
+        : 0;
+  // Friendly holder: never below default. Non-home uses abandon instead.
+  if (!isFriendlyTo(hs, army.faction)) return state;
+  if (currentMen - takeMen < floor) return state;
+
+  garrison = {
+    ...garrison,
+    units: subtractUnits(garrison.units, transfer.units),
+    leaders: garrison.leaders.filter(
+      (l) => !transfer.leaderNames.includes(l.name)
+    ),
+    notables: (garrison.notables ?? []).filter(
+      (n) => !transfer.notableNames.includes(n.name)
+    ),
+  };
+
+  const addLeaders = hs.garrison.leaders.filter((l) =>
+    transfer.leaderNames.includes(l.name)
+  );
+  const addNotables = (hs.garrison.notables ?? []).filter((n) =>
+    transfer.notableNames.includes(n.name)
+  );
+
+  updatedArmy = {
+    ...updatedArmy,
+    units: mergeUnits(updatedArmy.units, transfer.units),
+    leaders: [...updatedArmy.leaders, ...addLeaders],
+    notables: [...(updatedArmy.notables ?? []), ...addNotables],
+  };
+
+  for (const name of [...transfer.leaderNames, ...transfer.notableNames]) {
+    const cid = findCharacterIdByName(characters, name);
+    if (!cid) continue;
+    const c = characters[cid];
+    if (!c) continue;
+    characters[cid] = { ...c, armyId: army.id };
+  }
+
+  holdStates[transfer.holdId] = { ...hs, garrison };
+  events.push({
+    id: `ev-ungar-${transfer.holdId}-${Date.now()}`,
+    turn: state.turn,
+    faction: army.faction,
+    kind: "garrison",
+    holdIds: [transfer.holdId],
+    armyId: army.id,
+    summary: `Withdrew men from ${holdName} garrison`,
+    detail: `${army.name} withdrew ${takeMen} men from ${holdName} (floor ${floor}).`,
+  });
+
+  return {
+    ...state,
+    armies: state.armies.map((a) => (a.id === army.id ? updatedArmy : a)),
+    characters,
+    holdStates,
+    garrisonPanel: null,
+    factionEvents: [...state.factionEvents, ...events].slice(-400),
+  };
+}
+
+function applyAbandonHold(
+  state: GameState,
+  holdId: string,
+  armyId: string
+): GameState {
+  const seed = getCastleSeed(holdId);
+  if (!isGarrisonable(seed)) return state;
+  const army = state.armies.find((a) => a.id === armyId);
+  if (!army || army.holdId !== holdId) return state;
+  const hs = state.holdStates?.[holdId];
+  if (!hs) return state;
+  // Only non-home occupier may fully abandon
+  if (hs.controller !== army.faction) return state;
+  if (hs.homeFaction === army.faction) return state;
+
+  const men = garrisonHeadcount(hs.garrison);
+  const updatedArmy: Army = {
+    ...army,
+    units: mergeUnits(army.units, hs.garrison.units),
+    leaders: [...army.leaders, ...hs.garrison.leaders],
+    notables: [...(army.notables ?? []), ...(hs.garrison.notables ?? [])],
+  };
+
+  let characters = { ...state.characters };
+  for (const fig of [...hs.garrison.leaders, ...(hs.garrison.notables ?? [])]) {
+    const cid = findCharacterIdByName(characters, fig.name);
+    if (!cid) continue;
+    const c = characters[cid];
+    if (!c) continue;
+    characters[cid] = { ...c, armyId: army.id };
+  }
+
+  let nextHs: HoldRuntime = {
+    ...hs,
+    controller: hs.homeFaction,
+    garrison: {
+      faction: hs.homeFaction === "hostile" ? null : hs.homeFaction,
+      units: [],
+      leaders: [],
+      notables: [],
+    },
+    siege: null,
+    supplies: "Abandoned by the conqueror; home forces reclaiming.",
+  };
+  nextHs = refillToDefault(holdId, nextHs);
+
+  const holdName = HOLDS_MAP.get(holdId)?.name ?? holdId;
+  const event: FactionEvent = {
+    id: `ev-abandon-${holdId}-${Date.now()}`,
+    turn: state.turn,
+    faction: army.faction,
+    kind: "abandon",
+    holdIds: [holdId],
+    armyId: army.id,
+    summary: `Abandoned ${holdName}`,
+    detail: `${army.name} abandoned ${holdName} (${men} men withdrawn); home refilled to default.`,
+  };
+
+  return {
+    ...state,
+    armies: state.armies.map((a) => (a.id === armyId ? updatedArmy : a)),
+    characters,
+    holdStates: { ...state.holdStates, [holdId]: nextHs },
+    garrisonPanel: null,
+    factionEvents: [...state.factionEvents, event].slice(-400),
+  };
 }
 
 export function useGameState(initialState: GameState = INITIAL_GAME_STATE) {

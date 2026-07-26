@@ -109,6 +109,10 @@ function MapInner({ state, dispatch }: Props) {
         state.moveMode.active && state.moveMode.validTargets.includes(hold.id);
       const isInMoveMode = state.moveMode.active;
 
+      const hs = state.holdStates?.[hold.id];
+      const garrisonMen =
+        hs?.garrison?.units?.reduce((s, u) => s + u.count, 0) ?? 0;
+
       const data: HoldNodeData = {
         id: hold.id,
         label: hold.name,
@@ -117,6 +121,8 @@ function MapInner({ state, dispatch }: Props) {
         isSelected,
         isMoveTarget,
         isInMoveMode,
+        hasGarrison: garrisonMen > 0,
+        underSiege: !!hs?.siege,
       };
 
       return {
@@ -132,6 +138,7 @@ function MapInner({ state, dispatch }: Props) {
     armiesByHold,
     state.selectedHoldId,
     state.moveMode,
+    state.holdStates,
     handleHoldClick,
   ]);
 

@@ -8,6 +8,7 @@ import SidePanel from "./SidePanel";
 import RetreatPanel from "./RetreatPanel";
 import BattleSummaries from "./BattleSummaries";
 import SplitPanel from "./SplitPanel";
+import GarrisonPanel from "./GarrisonPanel";
 import CommanderRenamePanel from "./CommanderRenamePanel";
 import { HOLDS, HOLDS_MAP } from "../data/holds";
 import { FACTION_HOMELAND } from "../data/homeland";
@@ -54,6 +55,22 @@ function normalizeState(raw: GameState): GameState {
     focusedConversationId: raw.focusedConversationId ?? null,
     factionEvents: raw.factionEvents ?? [],
     adviceLog: raw.adviceLog ?? [],
+    holdStates: raw.holdStates ?? INITIAL_GAME_STATE.holdStates,
+    garrisonPanel: raw.garrisonPanel ?? null,
+    north: {
+      orders: raw.north?.orders ?? [],
+      stanceOrders: raw.north?.stanceOrders ?? {},
+      stormArmyIds: raw.north?.stormArmyIds ?? [],
+      sallyHoldIds: raw.north?.sallyHoldIds ?? [],
+      submitted: raw.north?.submitted ?? false,
+    },
+    westerlands: {
+      orders: raw.westerlands?.orders ?? [],
+      stanceOrders: raw.westerlands?.stanceOrders ?? {},
+      stormArmyIds: raw.westerlands?.stormArmyIds ?? [],
+      sallyHoldIds: raw.westerlands?.sallyHoldIds ?? [],
+      submitted: raw.westerlands?.submitted ?? false,
+    },
   };
 }
 
@@ -465,6 +482,7 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
 
       {/* Split army overlay */}
       {state.splitPanelArmyId && <SplitPanel state={state} dispatch={dispatch} />}
+      {state.garrisonPanel && <GarrisonPanel state={state} dispatch={dispatch} />}
 
       <style>{`
         @keyframes pulse {

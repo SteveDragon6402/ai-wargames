@@ -118,6 +118,14 @@ ${armies.map(armyBlock).join("\n\n")}`;
     ? `\n\n⚠ LAST STAND: The retreating side has no valid retreat routes. They are surrounded or cut off — cornered men fighting for their lives. Apply LAST STAND defeat type (see casualty rules). Total destruction of the trapped force is adjudicated honestly.`
     : "";
 
+  const engagement = battle.engagement ?? "field";
+  const engagementNote =
+    engagement === "storm"
+      ? `\n\nENGAGEMENT TYPE: STORM THE GATES — field armies assault the walls against a defending GARRISON (army id starts with "garrison:"). The garrison fights from fortifications — treat walls, towers, and gates as decisive soft advantages for the defenders unless numbers or leadership overwhelm them. If the attackers win, the garrison is broken and the seat falls open.`
+      : engagement === "sally"
+        ? `\n\nENGAGEMENT TYPE: SALLY OUT — the defending GARRISON (and any relieving field armies on their side) sortie against the besiegers. This may be a two-front fight if relief has marched onto the invested hold. If the sally succeeds, the siege is broken and besiegers must retreat. If it fails, the garrison may be depleted or destroyed.`
+        : "";
+
   const briefs = battle.commanderBriefs ?? [];
   const briefsBlock =
     briefs.length > 0
@@ -133,6 +141,7 @@ ${armies.map(armyBlock).join("\n\n")}`;
 ${groundLine}
 ${briefsBlock}
 ${lastStandNote}
+${engagementNote}
 
 ═══════════════════════════════════════════════════════════════
 FORCES ENGAGED AT ${locationName.toUpperCase()}

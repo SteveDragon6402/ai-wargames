@@ -131,8 +131,67 @@ export interface FactionOrders {
   orders: MoveOrder[];
   /** REST or FORTIFY orders issued by the player this turn — cleared on resolve */
   stanceOrders: Record<string, "rest" | "fortify">;
+  /** Field armies ordered to storm the gates this turn — cleared on resolve */
+  stormArmyIds: string[];
+  /** Holds whose garrison is ordered to sally out — cleared on resolve */
+  sallyHoldIds: string[];
   submitted: boolean;
 }
+
+/* ── Hold / castle / siege ────────────────────────────────────── */
+
+export type SiteKind = "castle" | "ruin" | "open";
+
+export interface HoldGarrison {
+  /** Who the garrison fights for; null = unaffiliated / hostile-to-both */
+  faction: Faction | null;
+  units: ArmyUnit[];
+  leaders: Leader[];
+  notables: Notable[];
+}
+
+export interface HoldSiegeState {
+  besiegerFaction: Faction;
+  turns: number;
+  armyIds: string[];
+}
+
+export interface HoldRuntime {
+  homeFaction: Faction | "hostile";
+  /** Who currently holds the seat; null if empty / unheld */
+  controller: Faction | "hostile" | null;
+  garrison: HoldGarrison;
+  /** Soft supply one-liner */
+  supplies: string;
+  /** Hard food counter under siege; null if not tracked */
+  foodDaysRemaining: number | null;
+  siege: HoldSiegeState | null;
+  /** Soft recovery timer after a siege ends */
+  postSiegeTurnsLeft: number;
+  /** Soft longer scar; survives post-siege timer */
+  scar: string | null;
+}
+
+export type GarrisonPanelMode = "deposit" | "withdraw" | "abandon";
+
+export interface GarrisonPanelState {
+  holdId: string;
+  mode: GarrisonPanelMode;
+  /** Source/target field army for the peel */
+  armyId: string;
+}
+
+/** Peel units/leaders between a field army and a castle garrison. */
+export interface GarrisonTransfer {
+  holdId: string;
+  armyId: string;
+  mode: "deposit" | "withdraw";
+  units: ArmyUnit[];
+  leaderNames: string[];
+  notableNames: string[];
+}
+
+export type BattleEngagement = "field" | "storm" | "sally";
 
 /* ── Battle types ─────────────────────────────────────────────── */
 
@@ -201,6 +260,10 @@ export interface BattleContext {
   lastStand?: boolean;
   /** NPC commander takes — player lords never included */
   commanderBriefs?: CommanderBrief[];
+  /** Field clash vs storming the walls vs sallying out */
+  engagement?: BattleEngagement;
+  /** When set, a synthetic `garrison:{holdId}` army is in the fight */
+  garrisonHoldId?: string;
 }
 
 export interface RetreatEntry {
@@ -348,6 +411,13 @@ export type FactionEventKind =
   | "speech"
   | "battle"
   | "advice"
+  | "invest"
+  | "storm"
+  | "sally"
+  | "liberate"
+  | "claim"
+  | "abandon"
+  | "garrison"
   | "other";
 
 export interface FactionEvent {
@@ -465,6 +535,10 @@ export interface GameState {
   factionEvents: FactionEvent[];
   /** Advice NPCs have recorded toward lords / others */
   adviceLog: AdviceRecord[];
+  /** Per-hold castle/ruin runtime (controller, garrison, siege) */
+  holdStates: Record<string, HoldRuntime>;
+  /** Garrison peel panel (null = closed) */
+  garrisonPanel: GarrisonPanelState | null;
 }
 
 export type GameAction =
@@ -517,4 +591,15 @@ export type GameAction =
   | { type: "MARK_CHARACTERS_FALLEN"; names: string[] }
   | { type: "APPEND_FACTION_EVENTS"; events: FactionEvent[] }
   | { type: "APPEND_ADVICE"; records: AdviceRecord[] }
-  | { type: "APPEND_TURN_BREAKS"; turn: number };
+  | { type: "APPEND_TURN_BREAKS"; turn: number }
+  | {
+      type: "OPEN_GARRISON_PANEL";
+      holdId: string;
+      mode: GarrisonPanelMode;
+      armyId: string;
+    }
+  | { type: "CLOSE_GARRISON_PANEL" }
+  | { type: "GARRISON_TRANSFER"; transfer: GarrisonTransfer }
+  | { type: "ABANDON_HOLD"; holdId: string; armyId: string }
+  | { type: "SET_STORM_ORDER"; armyId: string; active: boolean }
+  | { type: "SET_SALLY_ORDER"; holdId: string; active: boolean };
