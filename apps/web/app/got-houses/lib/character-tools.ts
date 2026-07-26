@@ -8,6 +8,7 @@ import type {
   ConversationThread,
   FactionEvent,
   Hold,
+  HoldRuntime,
   NpcAgentState,
   NpcRuntimePatch,
 } from "../types";
@@ -19,7 +20,9 @@ import {
   NPC_CHAT_MAX_WORDS,
 } from "../data/characters";
 import { HOLDS, HOLDS_MAP } from "../data/holds";
+import { getCastleSeed } from "../data/castles";
 import { searchAdvice, searchFactionEvents } from "./faction-events";
+import { garrisonHeadcount } from "./hold-runtime";
 
 export interface CharacterToolContext {
   actingCharacterId: CharacterId;
@@ -35,6 +38,8 @@ export interface CharacterToolContext {
   /** Searchable log of this faction's deeds (generous retrieval) */
   factionEvents?: FactionEvent[];
   adviceLog?: AdviceRecord[];
+  /** Castle garrison / siege runtime */
+  holdStates?: Record<string, HoldRuntime>;
 }
 
 export interface ToolLoopResult {
@@ -47,6 +52,36 @@ export interface ToolLoopResult {
 function getNpc(ctx: CharacterToolContext): NpcAgentState | null {
   const c = ctx.characters[ctx.actingCharacterId];
   return c?.kind === "npc" ? c : null;
+}
+
+function formatCastleBlock(
+  holdId: string,
+  hs: HoldRuntime | undefined,
+  title?: string
+): string {
+  const hold = HOLDS_MAP.get(holdId);
+  const seed = getCastleSeed(holdId);
+  const label = title ?? hold?.name ?? holdId;
+  if (!hs) {
+    return `Castle state for ${label}: unknown.`;
+  }
+  const men = garrisonHeadcount(hs.garrison);
+  const leaders =
+    hs.garrison.leaders.map((l) => l.name).join(", ") || "(none named)";
+  const notables =
+    (hs.garrison.notables ?? []).map((n) => n.name).join(", ") || "(none)";
+  const siege = hs.siege
+    ? `UNDER SIEGE — turn ${hs.siege.turns}, besieger ${hs.siege.besiegerFaction}, investing armies: ${hs.siege.armyIds.join(", ")}`
+    : "Not under investment.";
+  return `Castle ${label} (${seed.siteKind}):
+Controller: ${hs.controller ?? "none"} · home: ${hs.homeFaction}
+Garrison: ${men.toLocaleString()} / capacity ${seed.capacity.toLocaleString()} (default ${seed.defaultGarrison.toLocaleString()})
+Commanders: ${leaders}
+Notables: ${notables}
+Supplies: ${hs.supplies}
+Food days remaining: ${hs.foodDaysRemaining ?? "not tracked"}
+${siege}
+Post-siege recovery turns: ${hs.postSiegeTurnsLeft}${hs.scar ? ` · Scar: ${hs.scar}` : ""}`;
 }
 
 /**
@@ -81,12 +116,12 @@ Hard limit: under ${NPC_CHAT_MAX_WORDS} words, punchy. Dialogue only.`;
 
 export function buildEmbodiedSystemPrompt(
   characterId: CharacterId,
-  situation: string
+  situation: string,
+  characters?: Record<CharacterId, CharacterState>
 ): string | null {
   const seed = CHARACTER_SEED_MAP.get(characterId);
-  if (!seed || seed.kind !== "npc") return null;
-  // Rules first so the model sees the output contract before persona flavor
-  return `${IN_CHARACTER_RULES}
+  if (seed && seed.kind === "npc") {
+    return `${IN_CHARACTER_RULES}
 
 You are ${seed.name}.
 ${seed.systemPrompt}
@@ -96,6 +131,28 @@ Background (private — never narrate this aloud): ${seed.background}
 SITUATION: ${situation}
 
 REMINDER: Reply with spoken words only. No description. No thoughts. No third person.`;
+  }
+
+  // Ephemeral castellans (and any runtime-persona NPCs)
+  const runtime = characters?.[characterId];
+  if (
+    runtime?.kind === "npc" &&
+    runtime.runtimeSystemPrompt &&
+    runtime.runtimeBackground
+  ) {
+    return `${IN_CHARACTER_RULES}
+
+You are ${runtime.name}.
+${runtime.runtimeSystemPrompt}
+
+Background (private — never narrate this aloud): ${runtime.runtimeBackground}
+
+SITUATION: ${situation}
+
+REMINDER: Reply with spoken words only. No description. No thoughts. No third person.`;
+  }
+
+  return null;
 }
 
 /** True if the model wrote novel/narration instead of spoken dialogue. */
@@ -331,7 +388,7 @@ export const CHARACTER_TOOL_DEFS: Anthropic.Messages.Tool[] = [
   {
     name: "inspect_hold",
     description:
-      "Look closely at one hold: seat, region, neighbours, who is camped there, and the feel of the ground.",
+      "Look closely at one hold: seat, region, neighbours, field hosts, garrison, stores, food days, and siege if any.",
     input_schema: {
       type: "object",
       properties: {
@@ -339,6 +396,12 @@ export const CHARACTER_TOOL_DEFS: Anthropic.Messages.Tool[] = [
       },
       required: ["holdName"],
     },
+  },
+  {
+    name: "inspect_my_castle",
+    description:
+      "If you are a castellan or posted in a garrison: read your own walls — men, food days, supplies, siege turns, and who invests you. Prefer this before negotiating.",
+    input_schema: { type: "object", properties: {}, required: [] },
   },
   {
     name: "find_forces",
@@ -526,12 +589,31 @@ export function executeCharacterTool(
         here.length === 0
           ? "No known hosts camped here."
           : here.map(armySummary).join("\n");
+      const hs = ctx.holdStates?.[hold.id];
+      const castle = formatCastleBlock(hold.id, hs);
       return {
         result: `${hold.name} — ${hold.region}, seat of House ${hold.house} (${hold.lord}).
 Neighbours: ${links}
 Ground: ${hold.ground}
 Forces present:
-${forces}`,
+${forces}
+${castle}`,
+      };
+    }
+
+    case "inspect_my_castle": {
+      const me = getNpc(ctx);
+      const holdId = me?.holdId;
+      if (!holdId) {
+        return {
+          result:
+            "You are not posted as castellan or garrison of a known seat.",
+        };
+      }
+      const hold = HOLDS_MAP.get(holdId);
+      const hs = ctx.holdStates?.[holdId];
+      return {
+        result: formatCastleBlock(holdId, hs, hold?.name ?? holdId),
       };
     }
 
@@ -562,17 +644,29 @@ ${forces}`,
       const bg =
         c.kind === "player"
           ? c.background
-          : getBackground(c.id) || c.name;
+          : c.runtimeBackground || getBackground(c.id) || c.name;
       const army = c.armyId
         ? ctx.armies.find((a) => a.id === c.armyId)
         : undefined;
+      const holdPost =
+        c.kind === "npc" && c.holdId
+          ? HOLDS_MAP.get(c.holdId)?.name
+          : undefined;
       const where = army
         ? `Rides with ${army.name} near ${HOLDS_MAP.get(army.holdId)?.name ?? "the host"}.`
-        : c.alive
-          ? "Whereabouts uncertain."
-          : "Believed dead or lost.";
+        : holdPost
+          ? c.kind === "npc" && c.role === "castellan"
+            ? `Castellan of ${holdPost}.`
+            : `Posted in the garrison at ${holdPost}.`
+          : c.alive
+            ? "Whereabouts uncertain."
+            : "Believed dead or lost.";
+      const speciesNote =
+        c.kind === "npc" && c.species === "beast"
+          ? " (beast — not a speaker of courts)"
+          : "";
       return {
-        result: `${c.name} — ${c.kind === "player" ? "lord" : c.role} of the ${c.faction}. ${bg} ${where}`,
+        result: `${c.name}${speciesNote} — ${c.kind === "player" ? "lord" : c.role} of the ${c.faction}. ${bg} ${where}`,
       };
     }
 

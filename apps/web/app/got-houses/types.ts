@@ -170,6 +170,8 @@ export interface HoldRuntime {
   postSiegeTurnsLeft: number;
   /** Soft longer scar; survives post-siege timer */
   scar: string | null;
+  /** Ephemeral castellan character id while under siege / for talk */
+  castellanId?: CharacterId | null;
 }
 
 export type GarrisonPanelMode = "deposit" | "withdraw" | "abandon";
@@ -368,8 +370,15 @@ export interface NpcAgentState {
   id: CharacterId;
   name: string;
   faction: Faction;
-  role: "commander" | "notable";
+  role: "commander" | "notable" | "castellan";
+  /**
+   * Beasts (direwolves, etc.) can be present but cannot negotiate or take
+   * castellan charge. Default / omitted = human.
+   */
+  species?: "human" | "beast";
   armyId: string | null;
+  /** Posted inside a castle garrison (or castellan of this hold) */
+  holdId?: string | null;
   alive: boolean;
   /** Soft memory — capped; adjudicator/agent only */
   notepad: string;
@@ -382,6 +391,14 @@ export interface NpcAgentState {
    * Kept small — full text lives in the shared advice log.
    */
   adviceGivenIds: string[];
+  /**
+   * Ephemeral castellans: spun up for negotiation / siege memory.
+   * Removed when the siege ends (or when a talk ends if never under siege).
+   */
+  ephemeral?: boolean;
+  /** Runtime-only persona for ephemeral agents (no character seed) */
+  runtimeBackground?: string;
+  runtimeSystemPrompt?: string;
 }
 
 export type CharacterState = PlayerLordState | NpcAgentState;
@@ -602,4 +619,10 @@ export type GameAction =
   | { type: "GARRISON_TRANSFER"; transfer: GarrisonTransfer }
   | { type: "ABANDON_HOLD"; holdId: string; armyId: string }
   | { type: "SET_STORM_ORDER"; armyId: string; active: boolean }
-  | { type: "SET_SALLY_ORDER"; holdId: string; active: boolean };
+  | { type: "SET_SALLY_ORDER"; holdId: string; active: boolean }
+  | {
+      type: "APPLY_NEGOTIATOR_ENSURE";
+      characters: Record<CharacterId, CharacterState>;
+      holdStates: Record<string, HoldRuntime>;
+    }
+  | { type: "REMOVE_EPHEMERAL_CASTELLAN"; holdId: string };

@@ -52,6 +52,7 @@ import {
   isGarrisonArmyId,
   tickSieges,
 } from "../lib/siege";
+import { syncCastellansWithSieges, removeEphemeralCastellan } from "../lib/castellan";
 
 /** Appoint lead commander (or clear). Promotes notables into leaders and syncs NPC roles. */
 function appointLeadCommander(
@@ -766,9 +767,15 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         state.holdStates ?? {}
       );
 
+      const castellanSync = syncCastellansWithSieges(
+        state.holdStates ?? {},
+        siegeTick.holdStates,
+        state.characters
+      );
+
       const siegeBattles = detectSiegeBattles(
         updatedArmies,
-        siegeTick.holdStates,
+        castellanSync.holdStates,
         fieldHoldIds,
         stormArmyIds,
         sallyHoldIds,
@@ -803,8 +810,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           detail: `Turn ${state.turn}: ${army.name} ordered to storm ${hold}.`,
         });
       }
-      for (const holdId of sallyHoldIds) {
-        const hs = siegeTick.holdStates[holdId];
+        for (const holdId of sallyHoldIds) {
+        const hs = castellanSync.holdStates[holdId];
         const hold = HOLDS_MAP.get(holdId)?.name ?? holdId;
         const faction =
           hs?.garrison.faction === "north" || hs?.garrison.faction === "westerlands"
@@ -828,7 +835,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         ...state,
         phase: "resolving",
         armies: updatedArmies,
-        holdStates: siegeTick.holdStates,
+        characters: castellanSync.characters,
+        holdStates: castellanSync.holdStates,
         north: {
           orders: [],
           stanceOrders: {},
@@ -1038,8 +1046,16 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         holdStates[holdId] = hs;
       }
 
+      // Tear down ephemeral castellans when sieges end mid-battle resolve
+      const castellanSync = syncCastellansWithSieges(
+        state.holdStates ?? {},
+        holdStates,
+        state.characters
+      );
+      holdStates = castellanSync.holdStates;
+
       // Mark character agents dead when they fall
-      let characters = state.characters;
+      let characters = castellanSync.characters;
       for (const f of allFallen) {
         const cid = findCharacterIdByName(characters, f.name);
         if (!cid) continue;
@@ -1769,6 +1785,41 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
+    case "APPLY_NEGOTIATOR_ENSURE": {
+      return {
+        ...state,
+        characters: action.characters,
+        holdStates: action.holdStates,
+      };
+    }
+
+    case "REMOVE_EPHEMERAL_CASTELLAN": {
+      const removed = removeEphemeralCastellan(
+        action.holdId,
+        state.holdStates ?? {},
+        state.characters
+      );
+      // Close open threads with the removed castellan
+      let conversations = state.conversations;
+      if (removed.removedId) {
+        conversations = conversations.map((t) =>
+          t.participantIds.includes(removed.removedId!)
+            ? {
+                ...t,
+                status: "closed" as const,
+                closedReason: "Castellan dismissed — the siege is over.",
+              }
+            : t
+        );
+      }
+      return {
+        ...state,
+        characters: removed.characters,
+        holdStates: removed.holdStates,
+        conversations,
+      };
+    }
+
     default:
       return state;
   }
@@ -1924,7 +1975,11 @@ function applyGarrisonTransfer(
       if (!cid) continue;
       const c = characters[cid];
       if (!c) continue;
-      characters[cid] = { ...c, armyId: null };
+      characters[cid] = {
+        ...c,
+        armyId: null,
+        ...(c.kind === "npc" ? { holdId: transfer.holdId } : {}),
+      };
     }
 
     holdStates[transfer.holdId] = nextHs;
@@ -2007,7 +2062,11 @@ function applyGarrisonTransfer(
     if (!cid) continue;
     const c = characters[cid];
     if (!c) continue;
-    characters[cid] = { ...c, armyId: army.id };
+    characters[cid] = {
+      ...c,
+      armyId: army.id,
+      ...(c.kind === "npc" ? { holdId: null } : {}),
+    };
   }
 
   holdStates[transfer.holdId] = { ...hs, garrison };
@@ -2061,7 +2120,11 @@ function applyAbandonHold(
     if (!cid) continue;
     const c = characters[cid];
     if (!c) continue;
-    characters[cid] = { ...c, armyId: army.id };
+    characters[cid] = {
+      ...c,
+      armyId: army.id,
+      ...(c.kind === "npc" ? { holdId: null } : {}),
+    };
   }
 
   let nextHs: HoldRuntime = {
@@ -2077,6 +2140,15 @@ function applyAbandonHold(
     supplies: "Abandoned by the conqueror; home forces reclaiming.",
   };
   nextHs = refillToDefault(holdId, nextHs);
+
+  // Drop ephemeral castellan if abandoning
+  const afterAbandon = removeEphemeralCastellan(
+    holdId,
+    { ...state.holdStates, [holdId]: nextHs },
+    characters
+  );
+  characters = afterAbandon.characters;
+  nextHs = afterAbandon.holdStates[holdId] ?? nextHs;
 
   const holdName = HOLDS_MAP.get(holdId)?.name ?? holdId;
   const event: FactionEvent = {

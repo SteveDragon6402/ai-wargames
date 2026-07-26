@@ -65,7 +65,8 @@ export async function POST(req: NextRequest) {
 
       const system = buildEmbodiedSystemPrompt(
         id,
-        "War council with your lord and fellow commanders. You remain at the table and speak counsel. When you speak, only the words you say at the table."
+        "War council with your lord and fellow commanders. You remain at the table and speak counsel. When you speak, only the words you say at the table.",
+        body.characters
       );
       if (!system) continue;
 

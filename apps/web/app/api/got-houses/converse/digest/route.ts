@@ -73,7 +73,10 @@ export async function POST(req: NextRequest) {
 
       const npcs = Object.values(body.characters).filter(
         (c): c is NpcAgentState =>
-          c.kind === "npc" && c.alive && c.faction === faction
+          c.kind === "npc" &&
+          c.alive &&
+          c.faction === faction &&
+          !c.ephemeral
       );
 
       for (const npc of npcs) {

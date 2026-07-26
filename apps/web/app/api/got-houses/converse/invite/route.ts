@@ -8,6 +8,7 @@ import type {
   CharacterState,
   ConversationThread,
   FactionEvent,
+  HoldRuntime,
   InviteMemory,
   NpcAgentState,
 } from "@/app/got-houses/types";
@@ -28,6 +29,7 @@ interface InviteBody {
   conversations: ConversationThread[];
   factionEvents?: FactionEvent[];
   adviceLog?: AdviceRecord[];
+  holdStates?: Record<string, HoldRuntime>;
 }
 
 /**
@@ -45,9 +47,14 @@ export async function POST(req: NextRequest) {
     }
 
     const from = body.characters[body.fromCharacterId];
+    const situation =
+      target.role === "castellan"
+        ? "Parley at the walls. You speak for the garrison. Greet them and engage — you may negotiate. You cannot decline or walk away."
+        : "Your lord (or peer) has called you to speak. The conversation is happening — greet them and engage. You cannot decline or walk away.";
     const system = buildEmbodiedSystemPrompt(
       target.id,
-      "Your lord (or peer) has called you to speak. The conversation is happening — greet them and engage. You cannot decline or walk away."
+      situation,
+      body.characters
     );
     if (!system) {
       return NextResponse.json({ error: "No system prompt" }, { status: 400 });
@@ -72,6 +79,7 @@ export async function POST(req: NextRequest) {
       inviteFromId: body.fromCharacterId,
       factionEvents: body.factionEvents,
       adviceLog: body.adviceLog,
+      holdStates: body.holdStates,
     };
 
     const client = new Anthropic({ apiKey });

@@ -1,13 +1,21 @@
 "use client";
 
-import type { CharacterState, GameAction, GameState, NpcRuntimePatch } from "../types";
+import type { CharacterState, GameAction, GameState } from "../types";
 import {
   buildDirectInviteThread,
   buildWarCouncilThread,
   enemyLordId,
   factionLordId,
-  snapshotForApi,
+  startDirectNpcTalk,
 } from "../lib/converse-client";
+import {
+  ensureGarrisonNegotiator,
+  findNamedGarrisonNegotiator,
+  negotiatorLabel,
+} from "../lib/castellan";
+import { HOLDS_MAP } from "../data/holds";
+import { garrisonHeadcount, isGarrisonable } from "../lib/hold-runtime";
+import { getCastleSeed } from "../data/castles";
 
 interface Props {
   state: GameState;
@@ -35,68 +43,70 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
     if (c.kind !== "npc" || !c.alive || c.faction !== faction || c.role !== "notable") {
       continue;
     }
-    const key = c.armyId ?? "unassigned";
+    const key = c.armyId ?? (c.holdId ? `garrison:${c.holdId}` : "unassigned");
     const list = notablesByArmy.get(key) ?? [];
     list.push(c);
     notablesByArmy.set(key, list);
   }
 
-  async function inviteNpc(toId: string) {
-    const thread = buildDirectInviteThread(
-      myLord,
-      toId,
-      state.turn,
+  // Castles you can parley with: friendly holds, or holds you're investing / camped at
+  const castleTalkTargets: { holdId: string; label: string; sub: string }[] = [];
+  for (const [holdId, hs] of Object.entries(state.holdStates ?? {})) {
+    const seed = getCastleSeed(holdId);
+    if (!isGarrisonable(seed)) continue;
+    const men = garrisonHeadcount(hs.garrison);
+    if (men <= 0 && !hs.siege) continue;
+
+    const myArmiesHere = state.armies.some(
+      (a) => a.holdId === holdId && a.faction === faction
+    );
+    const friendly = hs.controller === faction;
+    const besieging = hs.siege?.besiegerFaction === faction;
+    if (!friendly && !besieging && !myArmiesHere) continue;
+
+    const named = findNamedGarrisonNegotiator(
+      holdId,
+      state.holdStates,
       state.characters
     );
-    dispatch({ type: "UPSERT_CONVERSATION", thread });
-
-    const snap = snapshotForApi(state);
-    try {
-      const res = await fetch("/api/got-houses/converse/invite", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...snap,
-          fromCharacterId: myLord,
-          toCharacterId: toId,
-          turn: state.turn,
-        }),
+    const holdName = HOLDS_MAP.get(holdId)?.name ?? holdId;
+    if (named) {
+      const lab = negotiatorLabel(named, state.characters);
+      castleTalkTargets.push({
+        holdId,
+        label: `${lab.name} · ${holdName}`,
+        sub: hs.siege ? "Parley under siege" : lab.sub,
       });
-      const data = (await res.json()) as {
-        reason?: string;
-        patches?: NpcRuntimePatch[];
-        error?: string;
-      };
-
-      if (!res.ok || !data.reason?.trim()) {
-        console.error("Invite failed", data.error);
-        return;
-      }
-
-      if (data.patches?.length) {
-        dispatch({ type: "PATCH_CHARACTERS", patches: data.patches });
-      }
-
-      const active = {
-        ...thread,
-        status: "active" as const,
-        messages: [
-          ...thread.messages,
-          {
-            id: `msg-${Date.now()}`,
-            speakerId: toId,
-            speakerName: state.characters[toId]?.name ?? toId,
-            text: data.reason,
-            at: Date.now(),
-            kind: "chat" as const,
-          },
-        ],
-      };
-      dispatch({ type: "UPSERT_CONVERSATION", thread: active });
-      dispatch({ type: "OPEN_CONVERSATION", threadId: active.id });
-    } catch (err) {
-      console.error("Invite failed", err);
+    } else {
+      castleTalkTargets.push({
+        holdId,
+        label: `Castellan of ${holdName}`,
+        sub: hs.siege
+          ? "Ephemeral castellan — siege memory"
+          : "Spin up castellan for talk",
+      });
     }
+  }
+
+  async function inviteNpc(toId: string) {
+    await startDirectNpcTalk(state, dispatch, toId);
+  }
+
+  async function talkToCastle(holdId: string) {
+    const ensured = ensureGarrisonNegotiator(
+      holdId,
+      state.holdStates ?? {},
+      state.characters
+    );
+    if (!ensured) return;
+    dispatch({
+      type: "APPLY_NEGOTIATOR_ENSURE",
+      characters: ensured.characters,
+      holdStates: ensured.holdStates,
+    });
+    await startDirectNpcTalk(state, dispatch, ensured.negotiatorId, {
+      characters: ensured.characters,
+    });
   }
 
   function inviteEnemyLord() {
@@ -151,7 +161,7 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
         Who will you speak with?
       </div>
       <div style={{ color: "#555", fontSize: 11, marginBottom: 18, lineHeight: 1.4 }}>
-        Speak with a vassal, open your war council, or send word to the enemy lord.
+        Speak with a vassal, open your war council, parley with a castle, or send word to the enemy lord.
       </div>
 
       <Section title="War council">
@@ -162,6 +172,19 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
           onClick={openWarCouncil}
         />
       </Section>
+
+      {castleTalkTargets.length > 0 && (
+        <Section title="Castles & garrisons">
+          {castleTalkTargets.map((t) => (
+            <Row
+              key={t.holdId}
+              label={t.label}
+              sub={t.sub}
+              onClick={() => talkToCastle(t.holdId)}
+            />
+          ))}
+        </Section>
+      )}
 
       <Section title="Enemy lord">
         <Row
@@ -185,6 +208,9 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
       <Section title="Vassals & notables">
         {[...notablesByArmy.entries()].map(([armyId, list]) => {
           const army = state.armies.find((a) => a.id === armyId);
+          const garrisonHold = armyId.startsWith("garrison:")
+            ? HOLDS_MAP.get(armyId.slice("garrison:".length))?.name
+            : null;
           return (
             <div key={armyId} style={{ marginBottom: 12 }}>
               <div
@@ -196,13 +222,18 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
                   letterSpacing: "0.1em",
                 }}
               >
-                {army?.name ?? armyId}
+                {army?.name ??
+                  (garrisonHold ? `Garrison · ${garrisonHold}` : armyId)}
               </div>
               {list.map((c) => (
                 <Row
                   key={c.id}
                   label={c.name}
-                  sub="Private word"
+                  sub={
+                    c.kind === "npc" && c.species === "beast"
+                      ? "Beast — not a negotiator"
+                      : "Private word"
+                  }
                   onClick={() => inviteNpc(c.id)}
                 />
               ))}
@@ -258,20 +289,24 @@ function Row({
         display: "block",
         width: "100%",
         textAlign: "left",
-        background: accent ? "#14120c" : "#141414",
-        border: `1px solid ${accent ? "#3a2a00" : "#222"}`,
-        color: "#ddd",
-        padding: "12px 12px",
+        background: accent ? "#1a1200" : "#0a0a0a",
+        border: accent ? "1px solid #3a2a00" : "1px solid #1e1e1e",
+        padding: "8px 10px",
         marginBottom: 6,
         cursor: "pointer",
-        fontFamily: "inherit",
-        fontSize: 13,
+        color: "#ccc",
       }}
     >
-      <div style={{ color: accent ? "#c8941a" : "#ddd" }}>{label}</div>
-      {sub && (
-        <div style={{ color: "#666", fontSize: 11, marginTop: 3 }}>{sub}</div>
-      )}
+      <div
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: accent ? "#c8941a" : "#bbb",
+        }}
+      >
+        {label}
+      </div>
+      <div style={{ fontSize: 9, color: "#555", marginTop: 2 }}>{sub}</div>
     </button>
   );
 }

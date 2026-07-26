@@ -41,7 +41,79 @@ export function snapshotForApi(state: GameState) {
     turn: state.turn,
     factionEvents: state.factionEvents,
     adviceLog: state.adviceLog,
+    holdStates: state.holdStates,
   };
+}
+
+/** Open (or resume) a direct talk with an NPC — always accepts. */
+export async function startDirectNpcTalk(
+  state: GameState,
+  dispatch: (a: import("../types").GameAction) => void,
+  toId: CharacterId,
+  overrides?: {
+    characters?: Record<CharacterId, CharacterState>;
+  }
+): Promise<void> {
+  const characters = overrides?.characters ?? state.characters;
+  const myLord = factionLordId(state.activeFaction);
+  const thread = buildDirectInviteThread(
+    myLord,
+    toId,
+    state.turn,
+    characters
+  );
+  dispatch({ type: "UPSERT_CONVERSATION", thread });
+
+  const snap = {
+    ...snapshotForApi(state),
+    characters,
+  };
+  try {
+    const res = await fetch("/api/got-houses/converse/invite", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ...snap,
+        fromCharacterId: myLord,
+        toCharacterId: toId,
+        turn: state.turn,
+      }),
+    });
+    const data = (await res.json()) as {
+      reason?: string;
+      patches?: import("../types").NpcRuntimePatch[];
+      error?: string;
+    };
+
+    if (!res.ok || !data.reason?.trim()) {
+      console.error("Invite failed", data.error);
+      return;
+    }
+
+    if (data.patches?.length) {
+      dispatch({ type: "PATCH_CHARACTERS", patches: data.patches });
+    }
+
+    const active = {
+      ...thread,
+      status: "active" as const,
+      messages: [
+        ...thread.messages,
+        {
+          id: `msg-${Date.now()}`,
+          speakerId: toId,
+          speakerName: characters[toId]?.name ?? toId,
+          text: data.reason,
+          at: Date.now(),
+          kind: "chat" as const,
+        },
+      ],
+    };
+    dispatch({ type: "UPSERT_CONVERSATION", thread: active });
+    dispatch({ type: "OPEN_CONVERSATION", threadId: active.id });
+  } catch (err) {
+    console.error("Invite failed", err);
+  }
 }
 
 export function activeLordId(faction: Faction): CharacterId {

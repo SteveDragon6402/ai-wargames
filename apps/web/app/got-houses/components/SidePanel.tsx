@@ -9,6 +9,12 @@ import {
   isFriendlyTo,
   isGarrisonable,
 } from "../lib/hold-runtime";
+import {
+  ensureGarrisonNegotiator,
+  findNamedGarrisonNegotiator,
+  negotiatorLabel,
+} from "../lib/castellan";
+import { startDirectNpcTalk } from "../lib/converse-client";
 import ArmyCard from "./ArmyCard";
 import SpeechComposer from "./SpeechComposer";
 import ConversationDock from "./ConversationDock";
@@ -166,6 +172,44 @@ export default function SidePanel({ state, dispatch }: Props) {
     !factionFo.submitted &&
     amDefenderUnderSiege &&
     garrisonMen > 0;
+
+  const myArmiesAtHold = armiesHere.some((a) => a.faction === myFaction);
+  const canParley =
+    garrisonable &&
+    !!holdRuntime &&
+    state.phase === "planning" &&
+    (garrisonMen > 0 || underSiege) &&
+    (friendlyHold || amBesieger || myArmiesAtHold);
+
+  const namedNegotiatorId =
+    canParley && holdRuntime
+      ? findNamedGarrisonNegotiator(
+          selectedHoldId,
+          state.holdStates,
+          state.characters
+        )
+      : null;
+  const parleyLabel = namedNegotiatorId
+    ? negotiatorLabel(namedNegotiatorId, state.characters).name
+    : "Castellan";
+
+  async function openCastleParley() {
+    if (!selectedHoldId) return;
+    const ensured = ensureGarrisonNegotiator(
+      selectedHoldId,
+      state.holdStates ?? {},
+      state.characters
+    );
+    if (!ensured) return;
+    dispatch({
+      type: "APPLY_NEGOTIATOR_ENSURE",
+      characters: ensured.characters,
+      holdStates: ensured.holdStates,
+    });
+    await startDirectNpcTalk(state, dispatch, ensured.negotiatorId, {
+      characters: ensured.characters,
+    });
+  }
 
   return (
     <div
@@ -366,6 +410,16 @@ export default function SidePanel({ state, dispatch }: Props) {
               }}
             >
               Post-siege recovery ({holdRuntime.postSiegeTurnsLeft})
+            </div>
+          )}
+          {canParley && (
+            <div style={{ marginTop: 8 }}>
+              <ActionButton
+                label={`Talk · ${parleyLabel}`}
+                disabled={false}
+                onClick={() => void openCastleParley()}
+                accent
+              />
             </div>
           )}
         </div>

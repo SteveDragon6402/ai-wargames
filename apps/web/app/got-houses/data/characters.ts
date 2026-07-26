@@ -33,6 +33,8 @@ export interface NpcAgentSeed {
   armyId: string;
   /** Default mood one-liner */
   mood: string;
+  /** Beasts cannot negotiate / take castellan charge */
+  species?: "human" | "beast";
 }
 
 export type CharacterSeed = PlayerLordSeed | NpcAgentSeed;
@@ -164,6 +166,7 @@ export const CHARACTER_SEEDS: CharacterSeed[] = [
     name: "Grey Wind",
     faction: "north",
     role: "notable",
+    species: "beast",
     armyId: "army-robb",
     mood: "Alert, bonded to Robb, scenting blood",
     background: "Robb's direwolf — not a speaker of courts, but present and fierce.",
@@ -359,7 +362,9 @@ export function buildInitialCharacters(): Record<CharacterId, CharacterState> {
         name: seed.name,
         faction: seed.faction,
         role: seed.role,
+        species: seed.species ?? "human",
         armyId: seed.armyId,
+        holdId: null,
         alive: true,
         notepad: "",
         mood: seed.mood,

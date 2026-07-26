@@ -8,6 +8,7 @@ import type {
   CharacterState,
   ConversationThread,
   FactionEvent,
+  HoldRuntime,
   NpcAgentState,
 } from "@/app/got-houses/types";
 import {
@@ -28,6 +29,7 @@ interface MessageBody {
   turn?: number;
   factionEvents?: FactionEvent[];
   adviceLog?: AdviceRecord[];
+  holdStates?: Record<string, HoldRuntime>;
 }
 
 export async function POST(req: NextRequest) {
@@ -40,7 +42,10 @@ export async function POST(req: NextRequest) {
 
     const system = buildEmbodiedSystemPrompt(
       npc.id,
-      "Private conversation. Someone is speaking to you. Stay and answer only with the words you say aloud. You cannot leave or end the talk."
+      npc.role === "castellan"
+        ? "Parley. Stay at the walls and answer only with the words you say aloud. You may negotiate. You cannot leave or end the talk."
+        : "Private conversation. Someone is speaking to you. Stay and answer only with the words you say aloud. You cannot leave or end the talk.",
+      body.characters
     );
     if (!system) {
       return NextResponse.json({ error: "No system prompt" }, { status: 400 });
@@ -71,6 +76,7 @@ export async function POST(req: NextRequest) {
       inviteFromId: body.thread.inviteFrom,
       factionEvents: body.factionEvents,
       adviceLog: body.adviceLog,
+      holdStates: body.holdStates,
     };
 
     const client = new Anthropic({ apiKey });

@@ -69,6 +69,7 @@ Hard scaffolding + soft judgment is the intended pattern: the engine decides *th
 |---|---|---|
 | **Fortify** | Soft (field) | Digging in as a *field* stance (`turnsFortiying`). Not men inside walls. |
 | **Garrison** | Hard | Units + commanders peeled from a field army into a castle/ruin. Same shape as a split — those men leave the field host. |
+| **Castellan / parley** | Soft + ephemeral hard | Talk to a named human in the garrison, or an ephemeral castellan (random name) if none. Beasts (e.g. Grey Wind) cannot negotiate. Castellans keep notepad memory only while a siege lasts; when the siege ends they disappear. Tools: `inspect_my_castle`, history, food/supplies. |
 | **defaultGarrison** | Hard (seeded) | Native / liberation refill watermark. Friendly ungarrison cannot go below this. |
 | **capacity** | Hard (seeded) | Max men the walls can hold. Filling default→capacity requires player peel. |
 | **siteKind** | Hard | `castle` (siegable), `ruin` (garrisonable, default 0 — e.g. Harrenhal, Moat Cailin), `open` (no walls — e.g. Clegane's Keep). |
