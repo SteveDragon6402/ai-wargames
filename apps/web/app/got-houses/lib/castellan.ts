@@ -247,7 +247,9 @@ export function removeEphemeralCastellan(
 export function syncCastellansWithSieges(
   prevHoldStates: Record<string, HoldRuntime>,
   nextHoldStates: Record<string, HoldRuntime>,
-  characters: Record<CharacterId, CharacterState>
+  characters: Record<CharacterId, CharacterState>,
+  /** Keep ephemeral castellans that are still in an open / pending talk */
+  protectCharacterIds?: ReadonlySet<CharacterId>
 ): {
   holdStates: Record<string, HoldRuntime>;
   characters: Record<CharacterId, CharacterState>;
@@ -297,6 +299,11 @@ export function syncCastellansWithSieges(
         }
       }
     } else if (!isSieged && wasSieged) {
+      const cid = next.castellanId;
+      if (cid && protectCharacterIds?.has(cid)) {
+        // Open parley — keep castellan until the thread closes
+        continue;
+      }
       // Siege ended — ephemeral castellan disappears (memory gone with them)
       const removed = removeEphemeralCastellan(holdId, holdStates, chars);
       holdStates = removed.holdStates;
@@ -305,6 +312,49 @@ export function syncCastellansWithSieges(
   }
 
   return { holdStates, characters: chars };
+}
+
+/** Character ids in active / pending talk threads. */
+export function protectedTalkCharacterIds(
+  conversations: { status: string; participantIds: CharacterId[] }[]
+): Set<CharacterId> {
+  const ids = new Set<CharacterId>();
+  for (const t of conversations) {
+    if (t.status !== "active" && t.status !== "pending_invite") continue;
+    for (const id of t.participantIds) ids.add(id);
+  }
+  return ids;
+}
+
+/**
+ * Tear down ephemeral castellans that are not under siege and not in an open talk.
+ * Call after a conversation dock closes.
+ */
+export function pruneOrphanCastellans(
+  holdStates: Record<string, HoldRuntime>,
+  characters: Record<CharacterId, CharacterState>,
+  protectCharacterIds: ReadonlySet<CharacterId>
+): {
+  holdStates: Record<string, HoldRuntime>;
+  characters: Record<CharacterId, CharacterState>;
+  removedIds: CharacterId[];
+} {
+  let nextHs = holdStates;
+  let nextChars = characters;
+  const removedIds: CharacterId[] = [];
+  for (const holdId of Object.keys(nextHs)) {
+    const hs = nextHs[holdId];
+    if (!hs?.castellanId || hs.siege) continue;
+    const cid = hs.castellanId;
+    const c = nextChars[cid];
+    if (!c || c.kind !== "npc" || !c.ephemeral) continue;
+    if (protectCharacterIds.has(cid)) continue;
+    const removed = removeEphemeralCastellan(holdId, nextHs, nextChars);
+    nextHs = removed.holdStates;
+    nextChars = removed.characters;
+    if (removed.removedId) removedIds.push(removed.removedId);
+  }
+  return { holdStates: nextHs, characters: nextChars, removedIds };
 }
 
 /** Label for UI. */

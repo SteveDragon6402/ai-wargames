@@ -5,6 +5,7 @@ import type {
   ConversationThread,
   Faction,
   GameState,
+  HoldRuntime,
 } from "../types";
 import {
   enemyLordId,
@@ -45,16 +46,20 @@ export function snapshotForApi(state: GameState) {
   };
 }
 
-/** Open (or resume) a direct talk with an NPC — always accepts. */
+export type TalkOverrides = {
+  characters?: Record<CharacterId, CharacterState>;
+  holdStates?: Record<string, HoldRuntime>;
+};
+
+/** Open (or resume) a direct talk with an NPC — always accepts. Returns error text or null. */
 export async function startDirectNpcTalk(
   state: GameState,
   dispatch: (a: import("../types").GameAction) => void,
   toId: CharacterId,
-  overrides?: {
-    characters?: Record<CharacterId, CharacterState>;
-  }
-): Promise<void> {
+  overrides?: TalkOverrides
+): Promise<string | null> {
   const characters = overrides?.characters ?? state.characters;
+  const holdStates = overrides?.holdStates ?? state.holdStates;
   const myLord = factionLordId(state.activeFaction);
   const thread = buildDirectInviteThread(
     myLord,
@@ -67,6 +72,7 @@ export async function startDirectNpcTalk(
   const snap = {
     ...snapshotForApi(state),
     characters,
+    holdStates,
   };
   try {
     const res = await fetch("/api/got-houses/converse/invite", {
@@ -86,8 +92,8 @@ export async function startDirectNpcTalk(
     };
 
     if (!res.ok || !data.reason?.trim()) {
-      console.error("Invite failed", data.error);
-      return;
+      const err = data.error?.trim() || "Invite failed — no reply from the negotiator.";
+      return err;
     }
 
     if (data.patches?.length) {
@@ -111,8 +117,10 @@ export async function startDirectNpcTalk(
     };
     dispatch({ type: "UPSERT_CONVERSATION", thread: active });
     dispatch({ type: "OPEN_CONVERSATION", threadId: active.id });
+    return null;
   } catch (err) {
     console.error("Invite failed", err);
+    return "Invite failed — network or server error.";
   }
 }
 

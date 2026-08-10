@@ -148,6 +148,10 @@ export interface HoldGarrison {
   units: ArmyUnit[];
   leaders: Leader[];
   notables: Notable[];
+  /** Soft condition — like field armies; worn under siege / scar */
+  morale: string;
+  tiredness: string;
+  stance: string;
 }
 
 export interface HoldSiegeState {
@@ -170,6 +174,11 @@ export interface HoldRuntime {
   postSiegeTurnsLeft: number;
   /** Soft longer scar; survives post-siege timer */
   scar: string | null;
+  /**
+   * When true, skip soft-condition adjudication (default for seeded seats).
+   * Cleared on siege / storm wear; may be restored by decade recovery pass.
+   */
+  skipUpdates: boolean;
   /** Ephemeral castellan character id while under siege / for talk */
   castellanId?: CharacterId | null;
 }
@@ -179,18 +188,53 @@ export type GarrisonPanelMode = "deposit" | "withdraw" | "abandon";
 export interface GarrisonPanelState {
   holdId: string;
   mode: GarrisonPanelMode;
-  /** Source/target field army for the peel */
-  armyId: string;
+  /**
+   * Source/target field army for the peel.
+   * Null on withdraw = form a new impromptu host at the hold.
+   */
+  armyId: string | null;
 }
 
 /** Peel units/leaders between a field army and a castle garrison. */
 export interface GarrisonTransfer {
   holdId: string;
-  armyId: string;
+  /** Null on withdraw = create a new field army at the hold */
+  armyId: string | null;
   mode: "deposit" | "withdraw";
   units: ArmyUnit[];
   leaderNames: string[];
   notableNames: string[];
+}
+
+export type GarrisonConditionPhase = "siege" | "scar" | "decade";
+
+export interface GarrisonConditionContext {
+  holdId: string;
+  holdName: string;
+  phase: GarrisonConditionPhase;
+  morale: string;
+  tiredness: string;
+  stance: string;
+  supplies: string;
+  foodDaysRemaining: number | null;
+  siegeTurns: number | null;
+  postSiegeTurnsLeft: number;
+  scar: string | null;
+  men: number;
+  defaultGarrison: number;
+  capacity: number;
+  siteKind: string;
+}
+
+export interface GarrisonConditionUpdate {
+  holdId: string;
+  morale: string;
+  tiredness: string;
+  stance: string;
+  /** Adjudicator may restore skipUpdates on decade pass when fully recovered */
+  skipUpdates?: boolean;
+  /** Optional soft scar line to keep after recovery */
+  scar?: string | null;
 }
 
 export type BattleEngagement = "field" | "storm" | "sally";
@@ -575,6 +619,7 @@ export type GameAction =
   | { type: "SWITCH_FACTION"; faction: Faction }
   | { type: "TOGGLE_BATTLE_LOG" }
   | { type: "UPDATE_TIREDNESS"; updates: TirednessUpdate[] }
+  | { type: "UPDATE_GARRISON_CONDITION"; updates: GarrisonConditionUpdate[] }
   | { type: "SET_STANCE_ORDER"; armyId: string; order: "rest" | "fortify" | null }
   | { type: "OPEN_SPLIT"; armyId: string }
   | { type: "CLOSE_SPLIT" }
@@ -613,7 +658,8 @@ export type GameAction =
       type: "OPEN_GARRISON_PANEL";
       holdId: string;
       mode: GarrisonPanelMode;
-      armyId: string;
+      /** Null = withdraw into a new impromptu host */
+      armyId: string | null;
     }
   | { type: "CLOSE_GARRISON_PANEL" }
   | { type: "GARRISON_TRANSFER"; transfer: GarrisonTransfer }

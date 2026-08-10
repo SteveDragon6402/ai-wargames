@@ -24,6 +24,7 @@ import type {
   GarrisonTransfer,
   HoldRuntime,
   FactionEvent,
+  GarrisonConditionUpdate,
 } from "../types";
 import { INITIAL_GAME_STATE } from "../data/initial-state";
 import { HOLDS_MAP } from "../data/holds";
@@ -37,11 +38,13 @@ import {
 } from "../lib/faction-events";
 import { armyNameForCommander } from "../lib/army-naming";
 import {
+  applyFriendlyPresenceRefill,
   freeCapacity,
   garrisonHeadcount,
   isGarrisonable,
   isFriendlyTo,
   mergeUnits,
+  normalizeGarrison,
   refillToDefault,
   subtractUnits,
 } from "../lib/hold-runtime";
@@ -50,9 +53,15 @@ import {
   detectSiegeBattles,
   holdIdFromGarrisonArmyId,
   isGarrisonArmyId,
+  liftSiegeRecovery,
   tickSieges,
 } from "../lib/siege";
-import { syncCastellansWithSieges, removeEphemeralCastellan } from "../lib/castellan";
+import {
+  syncCastellansWithSieges,
+  removeEphemeralCastellan,
+  protectedTalkCharacterIds,
+  pruneOrphanCastellans,
+} from "../lib/castellan";
 
 /** Appoint lead commander (or clear). Promotes notables into leaders and syncs NPC roles. */
 function appointLeadCommander(
@@ -767,10 +776,17 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         state.holdStates ?? {}
       );
 
+      const refilledHolds = applyFriendlyPresenceRefill(
+        updatedArmies,
+        siegeTick.holdStates
+      );
+
+      const protectIds = protectedTalkCharacterIds(state.conversations);
       const castellanSync = syncCastellansWithSieges(
         state.holdStates ?? {},
-        siegeTick.holdStates,
-        state.characters
+        refilledHolds,
+        state.characters,
+        protectIds
       );
 
       const siegeBattles = detectSiegeBattles(
@@ -944,12 +960,15 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           const besieger = hs.siege?.besiegerFaction;
           if (besieger && report.holdResult === besieger) {
             // Walls taken — garrison broken; seat empty until conqueror peels men in
-            garrison = {
+            garrison = normalizeGarrison({
               faction: null,
               units: [],
               leaders: [],
               notables: [],
-            };
+              morale: "Broken — the walls are lost",
+              tiredness: "Scattered or dead",
+              stance: "None — hold vacant",
+            });
             hs = {
               ...hs,
               controller: null,
@@ -959,6 +978,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               scar: "Stormed and broken.",
               supplies: "Gates forced; the seat lies open.",
               foodDaysRemaining: null,
+              skipUpdates: false,
             };
             siegeOutcomeEvents.push({
               id: `ev-storm-win-${holdId}-${state.turn}`,
@@ -976,18 +996,24 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               hs = {
                 ...hs,
                 controller: null,
-                garrison: {
+                garrison: normalizeGarrison({
                   faction: null,
                   units: [],
                   leaders: [],
                   notables: [],
-                },
+                  morale: "Broken",
+                  tiredness: "Gone",
+                  stance: "None",
+                }),
                 siege: null,
                 postSiegeTurnsLeft: 3,
                 scar: "Garrison destroyed in the assault.",
                 supplies: "Empty walls after the failed storm.",
                 foodDaysRemaining: null,
+                skipUpdates: false,
               };
+            } else {
+              hs = { ...hs, skipUpdates: false };
             }
           }
         } else if (eng === "sally") {
@@ -1000,13 +1026,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
                 : null;
 
           if (defender && report.holdResult === defender) {
-            // Sally success — siege broken
+            // Sally success — siege broken; refill + scar, no soft snap
+            hs = liftSiegeRecovery({ ...hs, garrison }, holdId);
             hs = {
               ...hs,
-              garrison,
-              siege: null,
-              postSiegeTurnsLeft: 3,
-              scar: "Scarred by recent siege.",
               supplies: "Sally broke the investment; stores thin but free.",
             };
             siegeOutcomeEvents.push({
@@ -1019,22 +1042,26 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               detail: `Turn ${state.turn}: defenders of ${holdName} sallied and lifted the investment.`,
             });
           } else {
-            hs = { ...hs, garrison };
+            hs = { ...hs, garrison, skipUpdates: false };
             if (menLeft <= 0) {
               hs = {
                 ...hs,
                 controller: null,
-                garrison: {
+                garrison: normalizeGarrison({
                   faction: null,
                   units: [],
                   leaders: [],
                   notables: [],
-                },
+                  morale: "Broken",
+                  tiredness: "Gone",
+                  stance: "None",
+                }),
                 siege: null,
                 postSiegeTurnsLeft: 3,
                 scar: "Garrison destroyed in the sally.",
                 supplies: "Empty walls after a failed sortie.",
                 foodDaysRemaining: null,
+                skipUpdates: false,
               };
             }
           }
@@ -1047,10 +1074,13 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       }
 
       // Tear down ephemeral castellans when sieges end mid-battle resolve
+      // (keep if an open parley thread still references them)
+      const protectIds = protectedTalkCharacterIds(state.conversations);
       const castellanSync = syncCastellansWithSieges(
         state.holdStates ?? {},
         holdStates,
-        state.characters
+        state.characters,
+        protectIds
       );
       holdStates = castellanSync.holdStates;
 
@@ -1079,6 +1109,24 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             ...(upd.stance ? { stance: upd.stance } : {}),
           };
         });
+
+        // Garrison soft wear from storm/sally adjudication
+        for (const upd of allConditionUpdates) {
+          const gHoldId = holdIdFromGarrisonArmyId(upd.armyId);
+          if (!gHoldId) continue;
+          const hs = holdStates[gHoldId];
+          if (!hs || garrisonHeadcount(hs.garrison) <= 0) continue;
+          holdStates[gHoldId] = {
+            ...hs,
+            skipUpdates: false,
+            garrison: {
+              ...hs.garrison,
+              morale: upd.morale,
+              tiredness: upd.tiredness,
+              stance: upd.stance ?? hs.garrison.stance,
+            },
+          };
+        }
       }
 
       // Determine which armies need a commander rename:
@@ -1480,6 +1528,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
+    case "UPDATE_GARRISON_CONDITION": {
+      return applyGarrisonConditionUpdates(state, action.updates);
+    }
+
     case "TOGGLE_TALK_PICKER": {
       const open = !state.talkPickerOpen;
       return {
@@ -1520,8 +1572,36 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         state.focusedConversationId === action.threadId
           ? openConversationIds[openConversationIds.length - 1] ?? null
           : state.focusedConversationId;
+      // Mark closed thread so protect set drops it, then prune orphan castellans
+      const conversations = state.conversations.map((t) =>
+        t.id === action.threadId && t.status !== "closed"
+          ? {
+              ...t,
+              status: "closed" as const,
+              closedReason: t.closedReason ?? "Conversation closed.",
+            }
+          : t
+      );
+      const protectIds = protectedTalkCharacterIds(
+        conversations.filter((t) => openConversationIds.includes(t.id) || t.status === "pending_invite" || t.status === "active")
+      );
+      // Protect any participant still in an open dock or active/pending thread
+      const dockProtect = new Set(protectIds);
+      for (const tid of openConversationIds) {
+        const t = conversations.find((c) => c.id === tid);
+        if (!t) continue;
+        for (const pid of t.participantIds) dockProtect.add(pid);
+      }
+      const pruned = pruneOrphanCastellans(
+        state.holdStates ?? {},
+        state.characters,
+        dockProtect
+      );
       return {
         ...state,
+        conversations,
+        characters: pruned.characters,
+        holdStates: pruned.holdStates,
         openConversationIds,
         focusedConversationId,
         // Keep hub open so you can start another talk
@@ -1825,14 +1905,37 @@ function gameReducer(state: GameState, action: GameAction): GameState {
   }
 }
 
+function applyGarrisonConditionUpdates(
+  state: GameState,
+  updates: GarrisonConditionUpdate[]
+): GameState {
+  if (updates.length === 0) return state;
+  const holdStates = { ...(state.holdStates ?? {}) };
+  for (const upd of updates) {
+    const hs = holdStates[upd.holdId];
+    if (!hs) continue;
+    holdStates[upd.holdId] = {
+      ...hs,
+      skipUpdates:
+        upd.skipUpdates !== undefined ? upd.skipUpdates : hs.skipUpdates,
+      scar: upd.scar !== undefined ? upd.scar : hs.scar,
+      garrison: {
+        ...hs.garrison,
+        morale: upd.morale,
+        tiredness: upd.tiredness,
+        stance: upd.stance,
+      },
+    };
+  }
+  return { ...state, holdStates };
+}
+
 function applyGarrisonTransfer(
   state: GameState,
   transfer: GarrisonTransfer
 ): GameState {
   const seed = getCastleSeed(transfer.holdId);
   if (!isGarrisonable(seed)) return state;
-  const army = state.armies.find((a) => a.id === transfer.armyId);
-  if (!army || army.holdId !== transfer.holdId) return state;
   const hs = state.holdStates?.[transfer.holdId];
   if (!hs) return state;
 
@@ -1843,9 +1946,8 @@ function applyGarrisonTransfer(
 
   let holdStates = { ...state.holdStates };
   let characters = { ...state.characters };
-  let updatedArmy = { ...army };
   let garrison = {
-    ...hs.garrison,
+    ...normalizeGarrison(hs.garrison),
     units: hs.garrison.units.map((u) => ({ ...u })),
     leaders: [...hs.garrison.leaders],
     notables: [...(hs.garrison.notables ?? [])],
@@ -1854,6 +1956,11 @@ function applyGarrisonTransfer(
   const holdName = HOLDS_MAP.get(transfer.holdId)?.name ?? transfer.holdId;
 
   if (transfer.mode === "deposit") {
+    if (!transfer.armyId) return state;
+    const army = state.armies.find((a) => a.id === transfer.armyId);
+    if (!army || army.holdId !== transfer.holdId) return state;
+    let updatedArmy = { ...army };
+
     const free = freeCapacity(transfer.holdId, hs);
     if (takeMen > free) return state;
 
@@ -1868,9 +1975,6 @@ function applyGarrisonTransfer(
         (n) => !transfer.notableNames.includes(n.name)
       ),
     };
-    if (updatedArmy.units.reduce((s, u) => s + u.count, 0) <= 0) {
-      // Empty field army after full deposit — remove it
-    }
 
     const peeledLeaders = army.leaders.filter((l) =>
       transfer.leaderNames.includes(l.name)
@@ -1880,6 +1984,7 @@ function applyGarrisonTransfer(
     );
 
     garrison = {
+      ...garrison,
       faction: army.faction,
       units: mergeUnits(garrison.units, transfer.units),
       leaders: [...garrison.leaders, ...peeledLeaders],
@@ -1897,16 +2002,20 @@ function applyGarrisonTransfer(
       nextHs = refillToDefault(transfer.holdId, {
         ...hs,
         controller: army.faction,
-        garrison: {
+        garrison: normalizeGarrison({
           faction: army.faction,
           units: [],
           leaders: [],
           notables: [],
-        },
+          morale: garrison.morale,
+          tiredness: garrison.tiredness,
+          stance: garrison.stance,
+        }),
       });
       nextHs = {
         ...nextHs,
         garrison: {
+          ...normalizeGarrison(nextHs.garrison),
           faction: army.faction,
           units: mergeUnits(nextHs.garrison.units, transfer.units),
           leaders: [...peeledLeaders],
@@ -1933,12 +2042,15 @@ function applyGarrisonTransfer(
       nextHs = {
         ...hs,
         controller: army.faction,
-        garrison: {
+        garrison: normalizeGarrison({
           faction: army.faction,
           units: transfer.units.map((u) => ({ ...u })),
           leaders: peeledLeaders,
           notables: peeledNotables,
-        },
+          morale: army.morale,
+          tiredness: army.tiredness,
+          stance: "Holding the keep",
+        }),
         siege: null,
         supplies: "Claimed and manned.",
         foodDaysRemaining:
@@ -2020,16 +2132,27 @@ function applyGarrisonTransfer(
     };
   }
 
-  // withdraw
+  // withdraw — into selected army, or form a new impromptu host
+  const targetArmy = transfer.armyId
+    ? state.armies.find((a) => a.id === transfer.armyId)
+    : null;
+  if (transfer.armyId && (!targetArmy || targetArmy.holdId !== transfer.holdId)) {
+    return state;
+  }
+
+  const faction: Faction | null =
+    targetArmy?.faction ??
+    (hs.controller === "north" || hs.controller === "westerlands"
+      ? hs.controller
+      : hs.garrison.faction === "north" || hs.garrison.faction === "westerlands"
+        ? hs.garrison.faction
+        : null);
+  if (!faction) return state;
+
   const currentMen = garrisonHeadcount(garrison);
-  const floor =
-    isFriendlyTo(hs, army.faction) && hs.homeFaction === army.faction
-      ? seed.defaultGarrison
-      : isFriendlyTo(hs, army.faction)
-        ? seed.defaultGarrison
-        : 0;
+  const floor = isFriendlyTo(hs, faction) ? seed.defaultGarrison : 0;
   // Friendly holder: never below default. Non-home uses abandon instead.
-  if (!isFriendlyTo(hs, army.faction)) return state;
+  if (!isFriendlyTo(hs, faction)) return state;
   if (currentMen - takeMen < floor) return state;
 
   garrison = {
@@ -2050,12 +2173,43 @@ function applyGarrisonTransfer(
     transfer.notableNames.includes(n.name)
   );
 
-  updatedArmy = {
-    ...updatedArmy,
-    units: mergeUnits(updatedArmy.units, transfer.units),
-    leaders: [...updatedArmy.leaders, ...addLeaders],
-    notables: [...(updatedArmy.notables ?? []), ...addNotables],
-  };
+  const leadName = addLeaders[0]?.name ?? null;
+  let armies: Army[];
+  let hostArmyId: string;
+
+  if (targetArmy) {
+    const updatedArmy: Army = {
+      ...targetArmy,
+      units: mergeUnits(targetArmy.units, transfer.units),
+      leaders: [...targetArmy.leaders, ...addLeaders],
+      notables: [...(targetArmy.notables ?? []), ...addNotables],
+    };
+    hostArmyId = targetArmy.id;
+    armies = state.armies.map((a) => (a.id === targetArmy.id ? updatedArmy : a));
+  } else {
+    const newArmy: Army = {
+      id: crypto.randomUUID(),
+      name: armyNameForCommander(leadName, transfer.units, faction),
+      holdId: transfer.holdId,
+      faction,
+      units: transfer.units.map((u) => ({ ...u })),
+      leaders: addLeaders,
+      notables: addNotables,
+      morale: hs.garrison.morale,
+      tiredness: hs.garrison.tiredness,
+      stance: "Forming outside the gates",
+      activity: {
+        turnsResting: 0,
+        turnsFortiying: 0,
+        turnsMarching: 0,
+        turnsSinceMerge: null,
+        turnsSinceSplit: 0,
+      },
+      movesSinceRest: 0,
+    };
+    hostArmyId = newArmy.id;
+    armies = [...state.armies, newArmy];
+  }
 
   for (const name of [...transfer.leaderNames, ...transfer.notableNames]) {
     const cid = findCharacterIdByName(characters, name);
@@ -2064,29 +2218,32 @@ function applyGarrisonTransfer(
     if (!c) continue;
     characters[cid] = {
       ...c,
-      armyId: army.id,
+      armyId: hostArmyId,
       ...(c.kind === "npc" ? { holdId: null } : {}),
     };
   }
 
   holdStates[transfer.holdId] = { ...hs, garrison };
+  const hostName =
+    armies.find((a) => a.id === hostArmyId)?.name ?? "new host";
   events.push({
     id: `ev-ungar-${transfer.holdId}-${Date.now()}`,
     turn: state.turn,
-    faction: army.faction,
+    faction,
     kind: "garrison",
     holdIds: [transfer.holdId],
-    armyId: army.id,
+    armyId: hostArmyId,
     summary: `Withdrew men from ${holdName} garrison`,
-    detail: `${army.name} withdrew ${takeMen} men from ${holdName} (floor ${floor}).`,
+    detail: `${hostName} withdrew ${takeMen} men from ${holdName} (floor ${floor}).`,
   });
 
   return {
     ...state,
-    armies: state.armies.map((a) => (a.id === army.id ? updatedArmy : a)),
+    armies,
     characters,
     holdStates,
     garrisonPanel: null,
+    selectedArmyIds: [hostArmyId],
     factionEvents: [...state.factionEvents, ...events].slice(-400),
   };
 }
@@ -2130,12 +2287,15 @@ function applyAbandonHold(
   let nextHs: HoldRuntime = {
     ...hs,
     controller: hs.homeFaction,
-    garrison: {
+    garrison: normalizeGarrison({
       faction: hs.homeFaction === "hostile" ? null : hs.homeFaction,
       units: [],
       leaders: [],
       notables: [],
-    },
+      morale: hs.garrison.morale,
+      tiredness: hs.garrison.tiredness,
+      stance: hs.garrison.stance,
+    }),
     siege: null,
     supplies: "Abandoned by the conqueror; home forces reclaiming.",
   };

@@ -3,8 +3,6 @@ import type {
   Faction,
   HoldGarrison,
   HoldRuntime,
-  Leader,
-  Notable,
 } from "../types";
 import { HOLDS, HOLDS_MAP } from "../data/holds";
 import {
@@ -45,6 +43,10 @@ export function garrisonHeadcount(g: HoldGarrison): number {
   return g.units.reduce((s, u) => s + u.count, 0);
 }
 
+export const DEFAULT_GARRISON_MORALE = "Steady behind the walls";
+export const DEFAULT_GARRISON_TIREDNESS = "Rested on garrison duty";
+export const DEFAULT_GARRISON_STANCE = "Holding the keep";
+
 export function buildDefaultGarrison(
   holdId: string,
   faction: Faction | "hostile",
@@ -56,6 +58,20 @@ export function buildDefaultGarrison(
     units,
     leaders: [],
     notables: [],
+    morale: DEFAULT_GARRISON_MORALE,
+    tiredness: DEFAULT_GARRISON_TIREDNESS,
+    stance: DEFAULT_GARRISON_STANCE,
+  };
+}
+
+/** Ensure older saves / partial garrisons have soft fields. */
+export function normalizeGarrison(g: HoldGarrison): HoldGarrison {
+  return {
+    ...g,
+    notables: g.notables ?? [],
+    morale: g.morale ?? DEFAULT_GARRISON_MORALE,
+    tiredness: g.tiredness ?? DEFAULT_GARRISON_TIREDNESS,
+    stance: g.stance ?? DEFAULT_GARRISON_STANCE,
   };
 }
 
@@ -115,12 +131,16 @@ export function buildInitialHoldStates(): Record<string, HoldRuntime> {
           units: [],
           leaders: [],
           notables: [],
+          morale: DEFAULT_GARRISON_MORALE,
+          tiredness: DEFAULT_GARRISON_TIREDNESS,
+          stance: DEFAULT_GARRISON_STANCE,
         },
         supplies: "No walls to hold — open ground.",
         foodDaysRemaining: null,
         siege: null,
         postSiegeTurnsLeft: 0,
         scar: null,
+        skipUpdates: true,
       };
       continue;
     }
@@ -139,9 +159,76 @@ export function buildInitialHoldStates(): Record<string, HoldRuntime> {
       siege: null,
       postSiegeTurnsLeft: 0,
       scar: null,
+      skipUpdates: true,
     };
   }
   return out;
+}
+
+/** Normalize hold runtime from older saves. */
+export function normalizeHoldRuntime(hs: HoldRuntime): HoldRuntime {
+  return {
+    ...hs,
+    garrison: normalizeGarrison(hs.garrison),
+    skipUpdates: hs.skipUpdates ?? true,
+    castellanId: hs.castellanId ?? null,
+  };
+}
+
+/**
+ * After moves: top garrison toward default when a field army of the
+ * controlling (or home) faction is present.
+ */
+export function applyFriendlyPresenceRefill(
+  armies: { holdId: string; faction: Faction }[],
+  holdStates: Record<string, HoldRuntime>
+): Record<string, HoldRuntime> {
+  const next = { ...holdStates };
+  for (const holdId of Object.keys(next)) {
+    const seed = getCastleSeed(holdId);
+    if (!isGarrisonable(seed)) continue;
+    let hs = normalizeHoldRuntime(next[holdId]);
+    const here = armies.filter((a) => a.holdId === holdId);
+    if (here.length === 0) {
+      next[holdId] = hs;
+      continue;
+    }
+    const friendlyHere = here.some(
+      (a) =>
+        hs.controller === a.faction ||
+        (hs.controller === null && hs.homeFaction === a.faction)
+    );
+    if (!friendlyHere) {
+      next[holdId] = hs;
+      continue;
+    }
+    // Liberate empty home seat by presence
+    if (
+      (hs.controller === null || hs.controller === "hostile") &&
+      (hs.homeFaction === "north" || hs.homeFaction === "westerlands") &&
+      here.some((a) => a.faction === hs.homeFaction)
+    ) {
+      hs = {
+        ...hs,
+        controller: hs.homeFaction,
+        garrison: {
+          ...hs.garrison,
+          faction: hs.homeFaction,
+        },
+      };
+    }
+    if (
+      hs.controller === "north" ||
+      hs.controller === "westerlands"
+    ) {
+      const controller = hs.controller;
+      if (here.some((a) => a.faction === controller)) {
+        hs = refillToDefault(holdId, hs);
+      }
+    }
+    next[holdId] = hs;
+  }
+  return next;
 }
 
 export function freeCapacity(holdId: string, runtime: HoldRuntime): number {

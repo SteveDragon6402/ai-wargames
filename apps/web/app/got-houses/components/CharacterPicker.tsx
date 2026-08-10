@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { CharacterState, GameAction, GameState } from "../types";
 import {
   buildDirectInviteThread,
@@ -25,6 +26,7 @@ interface Props {
 }
 
 export default function CharacterPicker({ state, dispatch, embedded }: Props) {
+  const [inviteError, setInviteError] = useState<string | null>(null);
   if (!embedded && !state.talkPickerOpen) return null;
 
   const faction = state.activeFaction;
@@ -89,24 +91,37 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
   }
 
   async function inviteNpc(toId: string) {
-    await startDirectNpcTalk(state, dispatch, toId);
+    setInviteError(null);
+    const err = await startDirectNpcTalk(state, dispatch, toId);
+    if (err) setInviteError(err);
   }
 
   async function talkToCastle(holdId: string) {
+    setInviteError(null);
     const ensured = ensureGarrisonNegotiator(
       holdId,
       state.holdStates ?? {},
       state.characters
     );
-    if (!ensured) return;
+    if (!ensured) {
+      setInviteError("No negotiator available at this seat.");
+      return;
+    }
     dispatch({
       type: "APPLY_NEGOTIATOR_ENSURE",
       characters: ensured.characters,
       holdStates: ensured.holdStates,
     });
-    await startDirectNpcTalk(state, dispatch, ensured.negotiatorId, {
-      characters: ensured.characters,
-    });
+    const err = await startDirectNpcTalk(
+      state,
+      dispatch,
+      ensured.negotiatorId,
+      {
+        characters: ensured.characters,
+        holdStates: ensured.holdStates,
+      }
+    );
+    if (err) setInviteError(err);
   }
 
   function inviteEnemyLord() {
@@ -163,6 +178,18 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
       <div style={{ color: "#555", fontSize: 11, marginBottom: 18, lineHeight: 1.4 }}>
         Speak with a vassal, open your war council, parley with a castle, or send word to the enemy lord.
       </div>
+      {inviteError && (
+        <div
+          style={{
+            color: "#c05050",
+            fontSize: 10,
+            marginBottom: 14,
+            lineHeight: 1.4,
+          }}
+        >
+          {inviteError}
+        </div>
+      )}
 
       <Section title="War council">
         <Row

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { GameState, GameAction, Army, Faction } from "../types";
 import { HOLDS_MAP } from "../data/holds";
 import { getCastleSeed } from "../data/castles";
@@ -8,6 +9,7 @@ import {
   garrisonHeadcount,
   isFriendlyTo,
   isGarrisonable,
+  normalizeGarrison,
 } from "../lib/hold-runtime";
 import {
   ensureGarrisonNegotiator,
@@ -30,6 +32,7 @@ const FACTION_LABEL: Record<Faction, string> = {
 };
 
 export default function SidePanel({ state, dispatch }: Props) {
+  const [parleyError, setParleyError] = useState<string | null>(null);
   const { selectedHoldId, selectedArmyIds, moveMode, armies, activeFaction, adminMode } = state;
 
   // Talk takes the right rail (map stays primary — no left dock)
@@ -150,11 +153,12 @@ export default function SidePanel({ state, dispatch }: Props) {
       garrisonMen === 0);
   const canUngarrison =
     garrisonable &&
-    !!singleSelected &&
     !isLocked &&
+    !factionFo.submitted &&
     friendlyHold &&
     !nonHomeOccupier &&
-    garrisonMen > castleSeed.defaultGarrison;
+    garrisonMen > castleSeed.defaultGarrison &&
+    (!singleSelected || singleSelected.holdId === selectedHoldId);
   const canAbandon =
     garrisonable &&
     !!singleSelected &&
@@ -178,8 +182,17 @@ export default function SidePanel({ state, dispatch }: Props) {
     garrisonable &&
     !!holdRuntime &&
     state.phase === "planning" &&
-    (garrisonMen > 0 || underSiege) &&
+    garrisonMen > 0 &&
     (friendlyHold || amBesieger || myArmiesAtHold);
+
+  const wallsBrokenOpen =
+    garrisonable &&
+    !!holdRuntime &&
+    holdRuntime.controller === null &&
+    garrisonMen === 0 &&
+    (holdRuntime.scar?.toLowerCase().includes("storm") ||
+      holdRuntime.supplies.toLowerCase().includes("open") ||
+      holdRuntime.postSiegeTurnsLeft > 0);
 
   const namedNegotiatorId =
     canParley && holdRuntime
@@ -193,22 +206,37 @@ export default function SidePanel({ state, dispatch }: Props) {
     ? negotiatorLabel(namedNegotiatorId, state.characters).name
     : "Castellan";
 
+  const gSoft = holdRuntime
+    ? normalizeGarrison(holdRuntime.garrison)
+    : null;
+
   async function openCastleParley() {
     if (!selectedHoldId) return;
+    setParleyError(null);
     const ensured = ensureGarrisonNegotiator(
       selectedHoldId,
       state.holdStates ?? {},
       state.characters
     );
-    if (!ensured) return;
+    if (!ensured) {
+      setParleyError("No negotiator available at this seat.");
+      return;
+    }
     dispatch({
       type: "APPLY_NEGOTIATOR_ENSURE",
       characters: ensured.characters,
       holdStates: ensured.holdStates,
     });
-    await startDirectNpcTalk(state, dispatch, ensured.negotiatorId, {
-      characters: ensured.characters,
-    });
+    const err = await startDirectNpcTalk(
+      state,
+      dispatch,
+      ensured.negotiatorId,
+      {
+        characters: ensured.characters,
+        holdStates: ensured.holdStates,
+      }
+    );
+    if (err) setParleyError(err);
   }
 
   return (
@@ -374,6 +402,21 @@ export default function SidePanel({ state, dispatch }: Props) {
           >
             {holdRuntime.supplies}
           </div>
+          {gSoft && garrisonMen > 0 && (
+            <div
+              style={{
+                fontFamily: "var(--font-mono), monospace",
+                fontSize: 9,
+                color: "#666",
+                marginBottom: 6,
+                lineHeight: 1.45,
+              }}
+            >
+              <div>Morale: {gSoft.morale}</div>
+              <div>Condition: {gSoft.tiredness}</div>
+              <div>Stance: {gSoft.stance}</div>
+            </div>
+          )}
           {holdRuntime.foodDaysRemaining != null && (
             <div
               style={{
@@ -412,14 +455,61 @@ export default function SidePanel({ state, dispatch }: Props) {
               Post-siege recovery ({holdRuntime.postSiegeTurnsLeft})
             </div>
           )}
-          {canParley && (
-            <div style={{ marginTop: 8 }}>
-              <ActionButton
-                label={`Talk · ${parleyLabel}`}
-                disabled={false}
-                onClick={() => void openCastleParley()}
-                accent
-              />
+          {wallsBrokenOpen && (
+            <div
+              style={{
+                fontFamily: "var(--font-mono), monospace",
+                fontSize: 9,
+                color: "#c8941a",
+                marginTop: 6,
+              }}
+            >
+              Walls broken — garrison to claim
+            </div>
+          )}
+          {(canUngarrison || canParley) && (
+            <div
+              style={{
+                marginTop: 8,
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 6,
+              }}
+            >
+              {canUngarrison && (
+                <ActionButton
+                  label="Ungarrison"
+                  disabled={false}
+                  onClick={() =>
+                    dispatch({
+                      type: "OPEN_GARRISON_PANEL",
+                      holdId: selectedHoldId,
+                      mode: "withdraw",
+                      armyId: singleSelected?.id ?? null,
+                    })
+                  }
+                />
+              )}
+              {canParley && (
+                <ActionButton
+                  label={`Talk · ${parleyLabel}`}
+                  disabled={false}
+                  onClick={() => void openCastleParley()}
+                  accent
+                />
+              )}
+            </div>
+          )}
+          {parleyError && (
+            <div
+              style={{
+                fontFamily: "var(--font-mono), monospace",
+                fontSize: 9,
+                color: "#c05050",
+                marginTop: 6,
+              }}
+            >
+              {parleyError}
             </div>
           )}
         </div>
@@ -520,20 +610,6 @@ export default function SidePanel({ state, dispatch }: Props) {
                       type: "OPEN_GARRISON_PANEL",
                       holdId: selectedHoldId,
                       mode: "deposit",
-                      armyId: singleSelected!.id,
-                    })
-                  }
-                />
-              )}
-              {canUngarrison && (
-                <ActionButton
-                  label="Ungarrison"
-                  disabled={false}
-                  onClick={() =>
-                    dispatch({
-                      type: "OPEN_GARRISON_PANEL",
-                      holdId: selectedHoldId,
-                      mode: "withdraw",
                       armyId: singleSelected!.id,
                     })
                   }

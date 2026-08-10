@@ -17,6 +17,7 @@ import type {
   BattleReport,
   TirednessRequest,
   TirednessUpdate,
+  GarrisonConditionUpdate,
   GameState,
   CommanderBrief,
   NpcRuntimePatch,
@@ -25,6 +26,8 @@ import type {
 import { INITIAL_GAME_STATE } from "../data/initial-state";
 import { snapshotForApi } from "../lib/converse-client";
 import { buildInitialCharacters } from "../data/characters";
+import { normalizeHoldRuntime } from "../lib/hold-runtime";
+import { selectGarrisonsForConditionUpdate } from "../lib/siege";
 
 interface GameCoreProps {
   /** Override starting state (e.g. loaded from DB for room games). Defaults to INITIAL_GAME_STATE. */
@@ -55,7 +58,11 @@ function normalizeState(raw: GameState): GameState {
     focusedConversationId: raw.focusedConversationId ?? null,
     factionEvents: raw.factionEvents ?? [],
     adviceLog: raw.adviceLog ?? [],
-    holdStates: raw.holdStates ?? INITIAL_GAME_STATE.holdStates,
+    holdStates: Object.fromEntries(
+      Object.entries(raw.holdStates ?? INITIAL_GAME_STATE.holdStates).map(
+        ([id, hs]) => [id, normalizeHoldRuntime(hs)]
+      )
+    ),
     garrisonPanel: raw.garrisonPanel ?? null,
     north: {
       orders: raw.north?.orders ?? [],
@@ -149,8 +156,8 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
     if (tirednessUpdatedRef.current !== state.turn) {
       tirednessUpdatedRef.current = state.turn;
 
-      async function updateTiredness() {
-        console.group(`%c⚡ Tiredness Update — turn ${state.turn}`, "color:#4a9eff;font-weight:bold");
+      async function updateSoftConditions() {
+        console.group(`%c⚡ Soft conditions — turn ${state.turn}`, "color:#4a9eff;font-weight:bold");
 
         const turnHistory = state.turnHistory ?? [];
         const lastTurnHistory = turnHistory[turnHistory.length - 1];
@@ -207,32 +214,58 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
           }),
         };
 
-        console.log(`→ Updating tiredness for ${tirednessRequest.armies.length} armies`);
+        const garrisonBatch = selectGarrisonsForConditionUpdate(
+          state.turn,
+          state.holdStates ?? {}
+        );
+
+        console.log(`→ Tiredness for ${tirednessRequest.armies.length} armies`);
+        console.log(`→ Garrison condition for ${garrisonBatch.length} holds`);
 
         try {
-          const res = await fetch("/api/got-houses/tiredness", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(tirednessRequest),
-          });
+          const [tiredRes, garRes] = await Promise.all([
+            fetch("/api/got-houses/tiredness", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(tirednessRequest),
+            }),
+            garrisonBatch.length > 0
+              ? fetch("/api/got-houses/garrison-condition", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    turn: state.turn,
+                    garrisons: garrisonBatch,
+                  }),
+                })
+              : Promise.resolve(null),
+          ]);
 
-          if (!res.ok) {
+          if (tiredRes.ok) {
+            const updates = (await tiredRes.json()) as TirednessUpdate[];
+            console.log("✓ Received", updates.length, "tiredness updates");
+            dispatch({ type: "UPDATE_TIREDNESS", updates });
+          } else {
             console.warn("⚠ Tiredness API failed, continuing with current values");
-            console.groupEnd();
-            return;
           }
 
-          const updates = await res.json() as TirednessUpdate[];
-          console.log("✓ Received", updates.length, "tiredness updates");
-          dispatch({ type: "UPDATE_TIREDNESS", updates });
+          if (garRes?.ok) {
+            const gUpdates = (await garRes.json()) as GarrisonConditionUpdate[];
+            console.log("✓ Received", gUpdates.length, "garrison condition updates");
+            if (gUpdates.length > 0) {
+              dispatch({ type: "UPDATE_GARRISON_CONDITION", updates: gUpdates });
+            }
+          } else if (garRes && !garRes.ok) {
+            console.warn("⚠ Garrison condition API failed");
+          }
         } catch (err) {
-          console.error("✗ Tiredness update error:", err);
+          console.error("✗ Soft condition update error:", err);
         } finally {
           console.groupEnd();
         }
       }
 
-      updateTiredness();
+      void updateSoftConditions();
       return;
     }
 

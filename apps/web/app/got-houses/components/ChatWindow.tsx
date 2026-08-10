@@ -27,6 +27,7 @@ interface Props {
 export default function ChatWindow({ thread, state, dispatch, fill }: Props) {
   const [text, setText] = useState("");
   const [busy, setBusy] = useState(false);
+  const [sendError, setSendError] = useState<string | null>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const lordId = activeLordId(state.activeFaction);
   const lord = state.characters[lordId];
@@ -74,6 +75,7 @@ export default function ChatWindow({ thread, state, dispatch, fill }: Props) {
       return;
     }
 
+    setSendError(null);
     const playerMsg = makeMessage(lordId, lord?.name ?? "Lord", trimmed, "chat");
     dispatch({
       type: "APPEND_MESSAGES",
@@ -119,7 +121,7 @@ export default function ChatWindow({ thread, state, dispatch, fill }: Props) {
         };
 
         if (!res.ok) {
-          console.error("War council failed", data.error);
+          setSendError(data.error?.trim() || "War council failed.");
         } else {
           if (data.patches?.length) {
             dispatch({ type: "PATCH_CHARACTERS", patches: data.patches });
@@ -143,6 +145,9 @@ export default function ChatWindow({ thread, state, dispatch, fill }: Props) {
         const npcId =
           thread.inviteTo === lordId ? thread.inviteFrom : thread.inviteTo;
         if (!npcId || state.characters[npcId]?.kind !== "npc") {
+          setSendError(
+            "Negotiator is gone — the castellan may have been dismissed. Close and open Talk again."
+          );
           setBusy(false);
           return;
         }
@@ -166,7 +171,7 @@ export default function ChatWindow({ thread, state, dispatch, fill }: Props) {
         };
 
         if (!res.ok || !data.reply?.trim()) {
-          console.error("Chat send failed", data.error);
+          setSendError(data.error?.trim() || "Message failed — no reply.");
         } else {
           if (data.patches?.length) {
             dispatch({ type: "PATCH_CHARACTERS", patches: data.patches });
@@ -191,6 +196,7 @@ export default function ChatWindow({ thread, state, dispatch, fill }: Props) {
       }
     } catch (err) {
       console.error("Chat send failed", err);
+      setSendError("Message failed — network or server error.");
     } finally {
       setBusy(false);
     }
@@ -379,6 +385,11 @@ export default function ChatWindow({ thread, state, dispatch, fill }: Props) {
         {busy && (
           <div style={{ color: "#555", fontSize: 11, marginTop: 8 }}>
             They consider their words…
+          </div>
+        )}
+        {sendError && (
+          <div style={{ color: "#c05050", fontSize: 11, marginTop: 8 }}>
+            {sendError}
           </div>
         )}
       </div>

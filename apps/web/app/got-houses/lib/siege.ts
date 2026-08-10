@@ -4,15 +4,21 @@ import type {
   BattleContext,
   Faction,
   FactionEvent,
+  GarrisonConditionContext,
+  GarrisonConditionPhase,
   HoldGarrison,
   HoldRuntime,
-  MoveOrder,
 } from "../types";
 import { getCastleSeed } from "../data/castles";
 import { HOLDS_MAP } from "../data/holds";
 import {
+  DEFAULT_GARRISON_MORALE,
+  DEFAULT_GARRISON_STANCE,
+  DEFAULT_GARRISON_TIREDNESS,
   garrisonHeadcount,
   isGarrisonable,
+  normalizeGarrison,
+  normalizeHoldRuntime,
   refillToDefault,
   suppliesUnderSiege,
 } from "./hold-runtime";
@@ -45,7 +51,7 @@ export function garrisonAsArmy(
   sideFaction: Faction
 ): Army {
   const hold = HOLDS_MAP.get(holdId);
-  const g = runtime.garrison;
+  const g = normalizeGarrison(runtime.garrison);
   return {
     id: garrisonArmyId(holdId),
     name: `${hold?.name ?? holdId} Garrison`,
@@ -54,9 +60,9 @@ export function garrisonAsArmy(
     units: g.units.map((u) => ({ ...u })),
     leaders: g.leaders.map((l) => ({ ...l })),
     notables: (g.notables ?? []).map((n) => ({ ...n })),
-    morale: "Holding the walls",
-    tiredness: "Behind stone",
-    stance: "garrison",
+    morale: g.morale,
+    tiredness: g.tiredness,
+    stance: g.stance,
     activity: { ...EMPTY_ACTIVITY },
   };
 }
@@ -100,10 +106,28 @@ export function eventsFromSiegeTick(
   return events;
 }
 
+/** Lift by withdrawal / sally break: refill headcount + scar + clear skipUpdates. */
+export function liftSiegeRecovery(hs: HoldRuntime, holdId: string): HoldRuntime {
+  let next: HoldRuntime = {
+    ...normalizeHoldRuntime(hs),
+    siege: null,
+    postSiegeTurnsLeft: 3,
+    scar: hs.scar ?? "Scarred by recent siege.",
+    supplies: "Siege lifted; the seat is recovering.",
+    skipUpdates: false,
+  };
+  // Headcount refill toward default — do NOT snap soft condition
+  next = refillToDefault(holdId, next);
+  return next;
+}
+
 /**
  * After marches: start/continue/lift investments.
  * Investment = field army at unfriendly garrisonable hold with garrison.men > 0
  * and no opposing *field* army present.
+ *
+ * New invest: turns = 1, food NOT decremented until continued tick.
+ * Lift by withdrawal: refill headcount + scar + clear skipUpdates (no soft snap).
  */
 export function tickSieges(
   turn: number,
@@ -111,13 +135,16 @@ export function tickSieges(
   holdStates: Record<string, HoldRuntime>,
   prevHoldStates: Record<string, HoldRuntime>
 ): { holdStates: Record<string, HoldRuntime>; events: FactionEvent[] } {
-  const next: Record<string, HoldRuntime> = { ...holdStates };
+  const next: Record<string, HoldRuntime> = {};
+  for (const [id, hs] of Object.entries(holdStates)) {
+    next[id] = normalizeHoldRuntime(hs);
+  }
   const events: FactionEvent[] = [];
 
   // Tick post-siege scars everywhere first
   for (const holdId of Object.keys(next)) {
     const hs = next[holdId];
-    if (hs.postSiegeTurnsLeft > 0) {
+    if (hs.postSiegeTurnsLeft > 0 && !hs.siege) {
       const left = hs.postSiegeTurnsLeft - 1;
       next[holdId] = {
         ...hs,
@@ -128,10 +155,8 @@ export function tickSieges(
               ? "Ravaged but no longer starving; scars remain."
               : hs.supplies
             : hs.supplies,
-        scar:
-          left === 0
-            ? hs.scar ?? "Scarred by recent siege."
-            : hs.scar,
+        scar: left === 0 ? hs.scar ?? "Scarred by recent siege." : hs.scar,
+        skipUpdates: false,
       };
     }
   }
@@ -158,18 +183,21 @@ export function tickSieges(
         events.push(
           ...eventsFromSiegeTick(turn, holdId, hs.siege, "lifted")
         );
-        next[holdId] = {
-          ...hs,
-          siege: null,
-          postSiegeTurnsLeft: 3,
-          scar: "Scarred by recent siege.",
-          supplies: "Siege lifted; the seat is recovering.",
-        };
+        next[holdId] =
+          men <= 0
+            ? {
+                ...hs,
+                siege: null,
+                postSiegeTurnsLeft: 3,
+                scar: "Garrison broken or emptied.",
+                supplies: "Empty walls after the fighting.",
+                skipUpdates: false,
+              }
+            : liftSiegeRecovery(hs, holdId);
       }
       continue;
     }
 
-    // Who could invest? Armies whose faction is NOT the controller
     const controller = hs.controller;
     let investorFaction: Faction | null = null;
     let investorArmies: Army[] = [];
@@ -185,7 +213,6 @@ export function tickSieges(
       investorFaction = "north";
       investorArmies = northHere;
     } else if (controller === "hostile" || controller === null) {
-      // Hostile / empty: either faction alone can invest if garrison fights them
       if (northHere.length > 0 && westHere.length === 0) {
         investorFaction = "north";
         investorArmies = northHere;
@@ -204,13 +231,7 @@ export function tickSieges(
         events.push(
           ...eventsFromSiegeTick(turn, holdId, hs.siege, "lifted")
         );
-        next[holdId] = {
-          ...hs,
-          siege: null,
-          postSiegeTurnsLeft: 3,
-          scar: "Scarred by recent siege.",
-          supplies: "Siege lifted; the seat is recovering.",
-        };
+        next[holdId] = liftSiegeRecovery(hs, holdId);
       }
       continue;
     }
@@ -220,29 +241,25 @@ export function tickSieges(
         events.push(
           ...eventsFromSiegeTick(turn, holdId, hs.siege, "lifted")
         );
-        next[holdId] = {
-          ...hs,
-          siege: null,
-          postSiegeTurnsLeft: 3,
-          scar: "Scarred by recent siege.",
-          supplies: "Siege lifted; the seat is recovering.",
-        };
+        next[holdId] = liftSiegeRecovery(hs, holdId);
       }
       continue;
     }
 
     const prev = prevHoldStates[holdId]?.siege;
-    const turns = prev && prev.besiegerFaction === investorFaction ? prev.turns + 1 : 1;
+    const isNew = !prev || prev.besiegerFaction !== investorFaction;
+    const turns =
+      prev && prev.besiegerFaction === investorFaction ? prev.turns + 1 : 1;
+    // Food decrements only on continued invest, not the opening day
     const food =
-      hs.foodDaysRemaining == null
-        ? null
+      isNew || hs.foodDaysRemaining == null
+        ? hs.foodDaysRemaining
         : Math.max(0, hs.foodDaysRemaining - 1);
     const siege = {
       besiegerFaction: investorFaction,
       turns,
       armyIds: investorArmies.map((a) => a.id),
     };
-    const isNew = !prev || prev.besiegerFaction !== investorFaction;
     events.push(
       ...eventsFromSiegeTick(turn, holdId, siege, isNew ? "invest" : "continue")
     );
@@ -251,10 +268,54 @@ export function tickSieges(
       siege,
       foodDaysRemaining: food,
       supplies: suppliesUnderSiege(turns, food),
+      skipUpdates: false,
     };
   }
 
   return { holdStates: next, events };
+}
+
+/** Holds that need a soft-condition adjudication this turn. */
+export function selectGarrisonsForConditionUpdate(
+  turn: number,
+  holdStates: Record<string, HoldRuntime>
+): GarrisonConditionContext[] {
+  const out: GarrisonConditionContext[] = [];
+  const decade = turn > 0 && turn % 10 === 0;
+
+  for (const [holdId, raw] of Object.entries(holdStates)) {
+    const seed = getCastleSeed(holdId);
+    if (!isGarrisonable(seed)) continue;
+    const hs = normalizeHoldRuntime(raw);
+    if (garrisonHeadcount(hs.garrison) <= 0) continue;
+
+    let phase: GarrisonConditionPhase | null = null;
+    if (hs.siege) phase = "siege";
+    else if (hs.postSiegeTurnsLeft > 0) phase = "scar";
+    else if (!hs.skipUpdates && decade) phase = "decade";
+    else continue;
+
+    const hold = HOLDS_MAP.get(holdId);
+    const g = normalizeGarrison(hs.garrison);
+    out.push({
+      holdId,
+      holdName: hold?.name ?? holdId,
+      phase,
+      morale: g.morale,
+      tiredness: g.tiredness,
+      stance: g.stance,
+      supplies: hs.supplies,
+      foodDaysRemaining: hs.foodDaysRemaining,
+      siegeTurns: hs.siege?.turns ?? null,
+      postSiegeTurnsLeft: hs.postSiegeTurnsLeft,
+      scar: hs.scar,
+      men: garrisonHeadcount(g),
+      defaultGarrison: seed.defaultGarrison,
+      capacity: seed.capacity,
+      siteKind: seed.siteKind,
+    });
+  }
+  return out;
 }
 
 /** Build storm / sally battle contexts (skip holds that already have a field battle). */
@@ -294,12 +355,11 @@ export function detectSiegeBattles(
     );
     if (besiegerArmies.length === 0) return;
 
-    const relief =
-      includeRelief
-        ? armies.filter(
-            (a) => a.holdId === holdId && a.faction === defenderFaction
-          )
-        : [];
+    const relief = includeRelief
+      ? armies.filter(
+          (a) => a.holdId === holdId && a.faction === defenderFaction
+        )
+      : [];
 
     const garrisonArmy = garrisonAsArmy(holdId, hs, defenderFaction);
     const defenderArmies = [...relief, garrisonArmy];
@@ -342,7 +402,8 @@ export function applyGarrisonCasualties(
 ): HoldGarrison {
   const norm = (s: string) =>
     s.toLowerCase().replace(/^\s*house\s+/i, "").trim();
-  const units = garrison.units.map((u) => ({ ...u }));
+  const base = normalizeGarrison(garrison);
+  const units = base.units.map((u) => ({ ...u }));
   for (const c of casualties) {
     const match = units.find(
       (u) =>
@@ -352,7 +413,6 @@ export function applyGarrisonCasualties(
     if (match) {
       match.count = Math.max(0, match.count - c.count);
     } else {
-      // proportional by type
       const typeUnits = units.filter((u) => u.type === c.unitType);
       const total = typeUnits.reduce((s, u) => s + u.count, 0);
       if (total <= 0) continue;
@@ -366,7 +426,7 @@ export function applyGarrisonCasualties(
     }
   }
   return {
-    ...garrison,
+    ...base,
     units: units.filter((u) => u.count > 0),
   };
 }
@@ -375,4 +435,7 @@ export {
   garrisonHeadcount,
   isGarrisonable,
   refillToDefault,
+  DEFAULT_GARRISON_MORALE,
+  DEFAULT_GARRISON_TIREDNESS,
+  DEFAULT_GARRISON_STANCE,
 };

@@ -69,16 +69,17 @@ Hard scaffolding + soft judgment is the intended pattern: the engine decides *th
 |---|---|---|
 | **Fortify** | Soft (field) | Digging in as a *field* stance (`turnsFortiying`). Not men inside walls. |
 | **Garrison** | Hard | Units + commanders peeled from a field army into a castle/ruin. Same shape as a split — those men leave the field host. |
-| **Castellan / parley** | Soft + ephemeral hard | Talk to a named human in the garrison, or an ephemeral castellan (random name) if none. Beasts (e.g. Grey Wind) cannot negotiate. Castellans keep notepad memory only while a siege lasts; when the siege ends they disappear. Tools: `inspect_my_castle`, history, food/supplies. |
-| **defaultGarrison** | Hard (seeded) | Native / liberation refill watermark. Friendly ungarrison cannot go below this. |
+| **Castellan / parley** | Soft + ephemeral hard | Talk to a named human in the garrison, or an ephemeral castellan (random name) if none. Beasts (e.g. Grey Wind) cannot negotiate. Ephemeral castellans keep notepad memory for the siege; if a parley thread is still open when the siege ends they stay until the talk closes. Tools: `inspect_my_castle`, history, food/supplies. |
+| **defaultGarrison** | Hard (seeded) | Native / liberation refill watermark. Friendly ungarrison cannot go below this. Friendly field presence (or home reclaim) tops headcount toward default after moves. |
 | **capacity** | Hard (seeded) | Max men the walls can hold. Filling default→capacity requires player peel. |
 | **siteKind** | Hard | `castle` (siegable), `ruin` (garrisonable, default 0 — e.g. Harrenhal, Moat Cailin), `open` (no walls — e.g. Clegane's Keep). |
 | **homeFaction / controller** | Hard | Home is region-seeded allegiance; controller is who holds it now. Marching alone does not flip control. |
-| **Siege investment** | Hard + soft | Unfriendly garrisonable hold with defending men and no opposing *field* army → auto-invest. Ticks turns, `foodDaysRemaining`, soft `supplies`. |
-| **Storm / Sally** | Hard orders → battle | Assault the walls, or sortie (alone or with a relieving field army — one two-front engagement). |
-| **Post-siege scar** | Soft + hard timer | 3 turns of recovery soft text after a siege ends; longer scar string may remain. |
+| **Siege investment** | Hard + soft | Same resolve as the march: unfriendly garrisonable hold with defending men and no opposing *field* army → auto-invest. Opening day sets `turns = 1` but does **not** decrement food; continued ticks do. Soft `supplies` update every invest tick. |
+| **Garrison soft condition** | Soft + cadence | `morale` / `tiredness` / `stance` on the garrison (same spirit as field armies). `skipUpdates` (default true) skips adjudication for quiet seats. Cleared on invest / storm wear. Cadence: every turn under siege; every turn while `postSiegeTurnsLeft > 0`; otherwise only on turns where `turn % 10 === 0` until the adjudicator restores `skipUpdates`. Siege lift refills headcount and starts the scar — it does **not** snap soft condition to pristine. |
+| **Storm / Sally** | Hard orders → battle | Assault the walls, or sortie (alone or with a relieving field army — one two-front engagement). Storm cannot be ordered on the arrival turn (storm orders clear with march queue). After a successful storm, walls are open until the attacker peels men to claim. |
+| **Post-siege scar** | Soft + hard timer | 3 turns of recovery soft updates after a siege ends; longer scar string may remain past the timer. |
 
-**Conquer** (unfriendly / hostile / enemy-controlled): peel *your* men into the seat to claim. **Liberate** (retake a seat whose `homeFaction` is you): control returns and the castle refills up to `defaultGarrison`; extras above default still need peel. **Abandon** (non-home occupier): full withdraw → home reclaim + refill to default. Friendly ungarrison floors at default.
+**Conquer** (unfriendly / hostile / enemy-controlled): peel *your* men into the seat to claim. **Liberate** (retake a seat whose `homeFaction` is you): control returns and the castle refills up to `defaultGarrison`; extras above default still need peel. **Abandon** (non-home occupier): full withdraw → home reclaim + refill to default. Friendly ungarrison floors at default; with no field army selected, extras form a new host outside the gates.
 
 ## For future features
 

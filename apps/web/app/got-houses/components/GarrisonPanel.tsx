@@ -4,6 +4,7 @@ import { useState } from "react";
 import type {
   Army,
   ArmyUnit,
+  Faction,
   GameAction,
   GameState,
   GarrisonTransfer,
@@ -30,9 +31,15 @@ function unitKey(u: ArmyUnit): string {
 export default function GarrisonPanel({ state, dispatch }: Props) {
   const panel = state.garrisonPanel;
   if (!panel) return null;
-  const army = state.armies.find((a) => a.id === panel.armyId);
+  const army = panel.armyId
+    ? state.armies.find((a) => a.id === panel.armyId) ?? null
+    : null;
   const hs = state.holdStates?.[panel.holdId];
-  if (!army || !hs) return null;
+  if (!hs) return null;
+  // Deposit / abandon require a field army; withdraw may form a new host
+  if ((panel.mode === "deposit" || panel.mode === "abandon") && !army) {
+    return null;
+  }
 
   return (
     <GarrisonPanelInner
@@ -52,7 +59,7 @@ function GarrisonPanelInner({
   state,
   dispatch,
 }: {
-  army: Army;
+  army: Army | null;
   holdId: string;
   mode: "deposit" | "withdraw" | "abandon";
   state: GameState;
@@ -61,13 +68,19 @@ function GarrisonPanelInner({
   const hs = state.holdStates[holdId]!;
   const seed = getCastleSeed(holdId);
   const holdName = HOLDS_MAP.get(holdId)?.name ?? holdId;
+  const faction: Faction =
+    army?.faction ??
+    (hs.controller === "north" || hs.controller === "westerlands"
+      ? hs.controller
+      : state.activeFaction);
+
   const sourceUnits =
-    mode === "deposit" ? army.units : hs.garrison.units;
+    mode === "deposit" ? army!.units : hs.garrison.units;
   const sourceLeaders =
-    mode === "deposit" ? army.leaders : hs.garrison.leaders;
+    mode === "deposit" ? army!.leaders : hs.garrison.leaders;
   const sourceNotables =
     mode === "deposit"
-      ? army.notables ?? []
+      ? army!.notables ?? []
       : hs.garrison.notables ?? [];
 
   const [counts, setCounts] = useState<Record<string, number>>(() => {
@@ -92,7 +105,7 @@ function GarrisonPanelInner({
   const free = freeCapacity(holdId, hs);
   const currentMen = garrisonHeadcount(hs.garrison);
   const floor =
-    mode === "withdraw" && isFriendlyTo(hs, army.faction)
+    mode === "withdraw" && isFriendlyTo(hs, faction)
       ? seed.defaultGarrison
       : 0;
   const maxWithdraw = Math.max(0, currentMen - floor);
@@ -104,12 +117,13 @@ function GarrisonPanelInner({
   function handleConfirm() {
     if (!canConfirm) return;
     if (mode === "abandon") {
+      if (!army) return;
       dispatch({ type: "ABANDON_HOLD", holdId, armyId: army.id });
       return;
     }
     const transfer: GarrisonTransfer = {
       holdId,
-      armyId: army.id,
+      armyId: army?.id ?? null,
       mode,
       units: selectedUnits,
       leaderNames,
@@ -133,6 +147,7 @@ function GarrisonPanelInner({
           <Btn
             label="Confirm abandon"
             onClick={() =>
+              army &&
               dispatch({ type: "ABANDON_HOLD", holdId, armyId: army.id })
             }
             accent
@@ -146,61 +161,80 @@ function GarrisonPanelInner({
     );
   }
 
+  const title =
+    mode === "deposit"
+      ? `Garrison → ${holdName}`
+      : army
+        ? `Ungarrison → ${army.name}`
+        : `Ungarrison → new host at ${holdName}`;
+
   return (
     <Overlay>
       <Header
-        title={
-          mode === "deposit"
-            ? `Garrison → ${holdName}`
-            : `Ungarrison ← ${holdName}`
-        }
+        title={title}
         onClose={() => dispatch({ type: "CLOSE_GARRISON_PANEL" })}
       />
-      <p style={{ ...MONO, fontSize: 9, color: "#555", margin: "0 0 10px" }}>
+      {mode === "withdraw" && !army && (
+        <p style={{ ...MONO, fontSize: 10, color: "#888", margin: "8px 0 0" }}>
+          No field army selected — extras will form a new host outside the
+          gates (floor {floor.toLocaleString()}).
+        </p>
+      )}
+      <p style={{ ...MONO, fontSize: 10, color: "#666", margin: "8px 0 12px" }}>
         {mode === "deposit"
-          ? `Free capacity ${free.toLocaleString()} · default ${seed.defaultGarrison.toLocaleString()} · capacity ${seed.capacity.toLocaleString()}`
-          : `May withdraw down to default ${floor.toLocaleString()} (${maxWithdraw.toLocaleString()} free to pull)`}
+          ? `Capacity free: ${free.toLocaleString()}`
+          : `Can withdraw up to ${maxWithdraw.toLocaleString()} (floor ${floor.toLocaleString()})`}
       </p>
 
-      <div style={{ ...MONO, fontSize: 9, color: "#888", marginBottom: 6 }}>
-        Units
-      </div>
-      {sourceUnits.map((u) => {
-        const key = unitKey(u);
-        const max =
-          mode === "deposit"
-            ? u.count
-            : Math.min(u.count, maxWithdraw);
-        return (
-          <Row key={key} label={`${u.count.toLocaleString()} ${u.house} ${u.type}`}>
-            <input
-              type="range"
-              min={0}
-              max={max}
-              value={counts[key] ?? 0}
-              onChange={(e) =>
-                setCounts((c) => ({ ...c, [key]: Number(e.target.value) }))
-              }
-              style={{ flex: 1 }}
-            />
-            <span style={{ ...MONO, fontSize: 9, color: "#c8941a", width: 36 }}>
-              {counts[key] ?? 0}
-            </span>
-          </Row>
-        );
-      })}
+      <Section label="Troops">
+        {sourceUnits.map((u) => {
+          const key = unitKey(u);
+          const max =
+            mode === "withdraw"
+              ? Math.min(u.count, maxWithdraw)
+              : u.count;
+          return (
+            <Row key={key}>
+              <span style={{ flex: 1 }}>
+                {u.house} {u.type} ({u.count.toLocaleString()})
+              </span>
+              <input
+                type="number"
+                min={0}
+                max={max}
+                value={counts[key] ?? 0}
+                onChange={(e) =>
+                  setCounts((c) => ({
+                    ...c,
+                    [key]: Math.max(
+                      0,
+                      Math.min(max, Number(e.target.value) || 0)
+                    ),
+                  }))
+                }
+                style={{
+                  width: 64,
+                  background: "#111",
+                  border: "1px solid #333",
+                  color: "#ccc",
+                  fontSize: 11,
+                  padding: "2px 4px",
+                  ...MONO,
+                }}
+              />
+            </Row>
+          );
+        })}
+      </Section>
 
       {sourceLeaders.length > 0 && (
-        <>
-          <div style={{ ...MONO, fontSize: 9, color: "#888", margin: "10px 0 6px" }}>
-            Commanders
-          </div>
+        <Section label="Leaders">
           {sourceLeaders.map((l) => (
             <label
               key={l.name}
               style={{
                 ...MONO,
-                fontSize: 10,
+                fontSize: 11,
                 color: "#aaa",
                 display: "flex",
                 gap: 8,
@@ -218,20 +252,17 @@ function GarrisonPanelInner({
               {l.name}
             </label>
           ))}
-        </>
+        </Section>
       )}
 
       {sourceNotables.length > 0 && (
-        <>
-          <div style={{ ...MONO, fontSize: 9, color: "#888", margin: "10px 0 6px" }}>
-            Notables
-          </div>
+        <Section label="Notables">
           {sourceNotables.map((n) => (
             <label
               key={n.name}
               style={{
                 ...MONO,
-                fontSize: 10,
+                fontSize: 11,
                 color: "#aaa",
                 display: "flex",
                 gap: 8,
@@ -249,16 +280,11 @@ function GarrisonPanelInner({
               {n.name}
             </label>
           ))}
-        </>
+        </Section>
       )}
 
-      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-        <Btn
-          label={mode === "deposit" ? "Deposit" : "Withdraw"}
-          onClick={handleConfirm}
-          disabled={!canConfirm}
-          accent
-        />
+      <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
+        <Btn label="Confirm" onClick={handleConfirm} accent disabled={!canConfirm} />
         <Btn
           label="Cancel"
           onClick={() => dispatch({ type: "CLOSE_GARRISON_PANEL" })}
@@ -279,18 +305,18 @@ function Overlay({ children }: { children: React.ReactNode }) {
         alignItems: "center",
         justifyContent: "center",
         zIndex: 40,
-        padding: 20,
+        padding: 16,
       }}
     >
       <div
         style={{
-          background: "#0c0c0c",
-          border: "1px solid #2a2a2a",
-          padding: 18,
           width: "100%",
           maxWidth: 420,
           maxHeight: "90vh",
           overflow: "auto",
+          background: "#0c0c0c",
+          border: "1px solid #2a2a2a",
+          padding: 16,
         }}
       >
         {children}
@@ -306,40 +332,39 @@ function Header({ title, onClose }: { title: string; onClose: () => void }) {
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
-        marginBottom: 8,
+        marginBottom: 4,
       }}
     >
-      <span
+      <div
         style={{
           ...MONO,
-          fontSize: 11,
-          fontWeight: 700,
+          fontSize: 12,
           color: "#c8941a",
           textTransform: "uppercase",
-          letterSpacing: "0.1em",
+          letterSpacing: "0.08em",
         }}
       >
         {title}
-      </span>
+      </div>
       <button
         type="button"
         onClick={onClose}
         style={{
           ...MONO,
           fontSize: 10,
-          color: "#444",
+          color: "#666",
           background: "none",
           border: "none",
           cursor: "pointer",
         }}
       >
-        ✕
+        Close
       </button>
     </div>
   );
 }
 
-function Row({
+function Section({
   label,
   children,
 }: {
@@ -347,17 +372,37 @@ function Row({
   children: React.ReactNode;
 }) {
   return (
+    <div style={{ marginBottom: 12 }}>
+      <div
+        style={{
+          ...MONO,
+          fontSize: 8,
+          color: "#555",
+          textTransform: "uppercase",
+          letterSpacing: "0.12em",
+          marginBottom: 6,
+        }}
+      >
+        {label}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function Row({ children }: { children: React.ReactNode }) {
+  return (
     <div
       style={{
+        ...MONO,
+        fontSize: 11,
+        color: "#aaa",
         display: "flex",
         alignItems: "center",
         gap: 8,
-        marginBottom: 6,
+        marginBottom: 4,
       }}
     >
-      <span style={{ ...MONO, fontSize: 9, color: "#777", width: 140 }}>
-        {label}
-      </span>
       {children}
     </div>
   );
@@ -366,30 +411,29 @@ function Row({
 function Btn({
   label,
   onClick,
-  disabled,
   accent,
+  disabled,
 }: {
   label: string;
   onClick: () => void;
-  disabled?: boolean;
   accent?: boolean;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
-      disabled={disabled}
       onClick={onClick}
+      disabled={disabled}
       style={{
         ...MONO,
-        fontSize: 9,
-        fontWeight: 700,
-        textTransform: "uppercase",
-        letterSpacing: "0.1em",
+        fontSize: 10,
         padding: "6px 12px",
+        border: accent ? "1px solid #c8941a" : "1px solid #333",
+        background: accent ? "#1a1408" : "#111",
+        color: disabled ? "#444" : accent ? "#c8941a" : "#aaa",
         cursor: disabled ? "default" : "pointer",
-        border: accent ? "1px solid #3a2a00" : "1px solid #2a2a2a",
-        background: accent ? "#1a1200" : "#0a0a0a",
-        color: disabled ? "#333" : accent ? "#c8941a" : "#888",
+        textTransform: "uppercase",
+        letterSpacing: "0.08em",
       }}
     >
       {label}
