@@ -92,18 +92,21 @@ ${recent || "(just begun)"}
 They say to you:
 ${body.playerMessage}
 
-If you give clear counsel, record_advice privately. Search faction events / advice freely when useful.
+If you give clear counsel, record_advice privately. Before answering questions about relief, stores, the war, or the map, use tools (inspect_my_castle, survey_map, find_forces, search_faction_events, get_battle_logs). Form your own judgment from tool results — do not invent board state.
 
-OUTPUT: ONLY the words you say aloud — first-person dialogue. No narration, no "Jaime feels…", no thoughts, no stage directions.`,
+End with:
+SPEAK: <only the words you say aloud>`,
       ctx,
       maxRounds: 6,
-      maxTokens: 400,
+      maxTokens: 160,
     });
 
     const reply = sanitizeInCharacterReply(result.text, npc.name);
     if (!reply) {
       return NextResponse.json(
-        { error: "No spoken reply from character" },
+        {
+          error: `No spoken reply from ${npc.name} — SPEAK line missing or invalid after retries`,
+        },
         { status: 500 }
       );
     }

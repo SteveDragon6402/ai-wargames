@@ -177,13 +177,12 @@ export default function SidePanel({ state, dispatch }: Props) {
     amDefenderUnderSiege &&
     garrisonMen > 0;
 
-  const myArmiesAtHold = armiesHere.some((a) => a.faction === myFaction);
   const canParley =
     garrisonable &&
     !!holdRuntime &&
     state.phase === "planning" &&
     garrisonMen > 0 &&
-    (friendlyHold || amBesieger || myArmiesAtHold);
+    amBesieger;
 
   const wallsBrokenOpen =
     garrisonable &&

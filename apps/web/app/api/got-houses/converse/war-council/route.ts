@@ -96,23 +96,23 @@ ${rolling || "(opening)"}
 ${body.playerName} says:
 ${body.playerMessage}
 
-Tools are optional. If you give counsel, record_advice.
+Use tools when you need map/army/event facts. If you give counsel, record_advice.
 
-OUTPUT: one short spoken line at the table — first-person dialogue only.
-Never narrate ("The Kingslayer feels…"). Never describe thoughts. Words from your mouth only.`,
+End with:
+SPEAK: <one short spoken line at the table>`,
         ctx,
         maxRounds: 4,
-        maxTokens: 320,
+        maxTokens: 160,
       });
 
       const text = sanitizeInCharacterReply(result.text, npc.name);
       if (!text) {
-        console.warn(`[war-council] empty reply from ${id}, skipping message`);
-        patches.push(...result.patches);
-        if (result.adviceRecords?.length) {
-          adviceRecords.push(...result.adviceRecords);
-        }
-        continue;
+        return NextResponse.json(
+          {
+            error: `No spoken reply from ${npc.name} in war council — SPEAK line missing or invalid after retries`,
+          },
+          { status: 500 }
+        );
       }
 
       replies.push({

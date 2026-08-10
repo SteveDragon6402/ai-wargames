@@ -306,6 +306,52 @@ function BattleModal({
             gap: 16,
           }}
         >
+          {/* Three-line summary */}
+          <div>
+            <div
+              style={{
+                fontFamily: "var(--font-mono), monospace",
+                fontSize: 8,
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: "0.15em",
+                color: "#333",
+                marginBottom: 8,
+              }}
+            >
+              Summary
+            </div>
+            {report.shortSummary?.trim() ? (
+              report.shortSummary.split(/\n+/).map((line, i) => (
+                <p
+                  key={i}
+                  style={{
+                    fontFamily: "var(--font-mono), monospace",
+                    fontSize: 13,
+                    color: "#ddd",
+                    lineHeight: 1.6,
+                    marginBottom: 4,
+                  }}
+                >
+                  {line}
+                </p>
+              ))
+            ) : (
+              <p
+                style={{
+                  fontFamily: "var(--font-mono), monospace",
+                  fontSize: 12,
+                  color: "#a44",
+                  lineHeight: 1.6,
+                }}
+              >
+                Battle summary failed.
+              </p>
+            )}
+          </div>
+
+          <div style={{ borderTop: "1px solid #1a1a1a" }} />
+
           {/* Narrative */}
           <div>
             <div

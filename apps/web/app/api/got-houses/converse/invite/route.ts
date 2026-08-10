@@ -93,16 +93,19 @@ ${history || "(none)"}
 
 ${from?.name ?? body.fromCharacterId} has called you to speak.
 
-Speak ONLY your opening words aloud — first-person dialogue. No narration, no thoughts, no refusal.`,
+Use tools first if you need hold/map/army/event facts (inspect_my_castle, survey_map, find_forces, search_faction_events, get_battle_logs). Then end with:
+SPEAK: <your opening words only>`,
       ctx,
       maxRounds: 4,
-      maxTokens: 350,
+      maxTokens: 160,
     });
 
     const speech = sanitizeInCharacterReply(result.text, target.name);
     if (!speech) {
       return NextResponse.json(
-        { error: "No spoken reply from character" },
+        {
+          error: `No spoken reply from ${target.name} — SPEAK line missing or invalid after retries`,
+        },
         { status: 500 }
       );
     }

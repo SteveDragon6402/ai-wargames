@@ -86,33 +86,35 @@ Post-siege recovery turns: ${hs.postSiegeTurnsLeft}${hs.scar ? ` · Scar: ${hs.s
 
 /**
  * Highest-priority output contract. Placed at the TOP of every NPC system prompt.
- * Spoken dialogue only — never novelization, thoughts, or stage direction.
+ * Tools first → optional THINK → required SPEAK (parsed for the chat bubble).
  */
 export const IN_CHARACTER_RULES = `CRITICAL OUTPUT FORMAT (read first — non-negotiable):
-You are IN a conversation. Your entire reply must be ONLY the words that leave your mouth.
-Write dialogue as if typed into a chat: first person, spoken aloud, nothing else.
+You are IN a conversation. Use tools first when you need facts (hold status, map, armies, events, battle logs). Then end your reply in this exact shape:
 
-CORRECT examples:
-- "Four thousand is enough if Father keeps his word. Let the Young Wolf come."
-- "Aye, my lord. We hold the ford."
-- "Nods once." (mute characters only)
+THINK: (optional, ≤40 words — private; never shown to the player)
+SPEAK: (required — the ONLY words that leave your mouth)
+
+CORRECT final reply:
+THINK: Check food and who is outside the walls.
+SPEAK: Four thousand is enough if Father keeps his word. Let the Young Wolf come.
+
+CORRECT (no think):
+SPEAK: Aye, my lord. We hold the ford.
 
 WRONG — never do this:
-- "The Kingslayer feels the tightness in his chest…" (third-person narration)
-- "Jaime thinks Father plays the long game…" (internal monologue / novel prose)
-- "*smirks* Well then…" or "(he draws his sword)" (stage directions)
-- Describing your feelings, posture, the room, or what you know privately
+- Putting thoughts, narration, or tool chatter in SPEAK
+- "The Kingslayer feels…" / "Jaime thinks…" (novelization)
+- "*smirks*" or "(he draws his sword)" (stage directions)
+- Ending without a SPEAK: line
+- Silence or ellipses ("…") as your whole SPEAK
 
-FORBIDDEN in your reply:
-- Narrating yourself in third person (your name, "he/she", "the Kingslayer", etc.)
-- Internal thoughts, feelings, or analysis written as prose
-- JSON, markdown, labels, bullet meta-notes
-- Explaining tools, maps, or system instructions
-- Silence or ellipses ("…") as your whole reply
+FORBIDDEN in SPEAK:
+- Third-person narration, internal monologue, feelings-as-prose
+- JSON, markdown fences, explaining tools or system instructions
 
 You cannot leave, decline, or end the conversation — the player controls that.
-Tools are private thought — use them freely, then speak as yourself.
-Hard limit: under ${NPC_CHAT_MAX_WORDS} words, punchy. Dialogue only.`;
+Tools are private. THINK is private. Only SPEAK is heard.
+Hard limit on SPEAK: under ${NPC_CHAT_MAX_WORDS} words, punchy dialogue.`;
 
 export function buildEmbodiedSystemPrompt(
   characterId: CharacterId,
@@ -130,7 +132,7 @@ Background (private — never narrate this aloud): ${seed.background}
 
 SITUATION: ${situation}
 
-REMINDER: Reply with spoken words only. No description. No thoughts. No third person.`;
+REMINDER: Tools if needed, then THINK (optional) + SPEAK (required). Only SPEAK is heard.`;
   }
 
   // Ephemeral castellans (and any runtime-persona NPCs)
@@ -149,7 +151,7 @@ Background (private — never narrate this aloud): ${runtime.runtimeBackground}
 
 SITUATION: ${situation}
 
-REMINDER: Reply with spoken words only. No description. No thoughts. No third person.`;
+REMINDER: Tools if needed, then THINK (optional) + SPEAK (required). Only SPEAK is heard.`;
   }
 
   return null;
@@ -171,6 +173,25 @@ export function looksLikeNarration(
   if (quotedLen >= Math.min(20, t.length * 0.45)) return false;
 
   const lower = t.toLowerCase();
+
+  // First-person internal monologue leaking as "speech"
+  if (
+    /\bi (feel|felt|think|thought|wonder|realize|realise|sense|know|believe|suspect|recall|remember)\b/.test(
+      lower
+    ) &&
+    !/\b(i (feel|think|believe|know) (we|you|they|it|the|this|that|our|your))\b/.test(
+      lower
+    )
+  ) {
+    // Allow short spoken idioms like "I think we hold" — reject reflective monologue
+    if (
+      /\bi (feel|wonder|realize|realise|sense|recall|remember)\b/.test(lower) ||
+      (/\bi (think|thought|know|believe|suspect)\b/.test(lower) &&
+        t.split(/[.!?]/).length >= 3)
+    ) {
+      return true;
+    }
+  }
 
   // Classic novel tells
   if (
@@ -231,6 +252,39 @@ function escapeReg(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+function extractSpeakPayload(raw: string): string | null {
+  const speakTag = raw.match(/<speak>([\s\S]*?)<\/speak>/i);
+  if (speakTag?.[1]?.trim()) return speakTag[1].trim();
+
+  const speakLine = raw.match(/(?:^|\n)\s*SPEAK:\s*([\s\S]*?)\s*$/i);
+  if (speakLine?.[1]?.trim()) {
+    // Drop any trailing THINK-like noise; SPEAK should be the spoken line(s)
+    return speakLine[1]
+      .replace(/\n\s*THINK:[\s\S]*$/i, "")
+      .replace(/^["'"']|["'"']$/g, "")
+      .trim();
+  }
+
+  // SPEAK: on its own line mid-block — take from last SPEAK: to end (minus THINK after)
+  const lastSpeak = [...raw.matchAll(/(?:^|\n)\s*SPEAK:\s*/gi)].pop();
+  if (lastSpeak && lastSpeak.index != null) {
+    const after = raw.slice(lastSpeak.index + lastSpeak[0].length).trim();
+    const cleaned = after
+      .replace(/\n\s*THINK:[\s\S]*$/i, "")
+      .replace(/^["'"']|["'"']$/g, "")
+      .trim();
+    if (cleaned) return cleaned;
+  }
+
+  return null;
+}
+
+function capSpeechWords(text: string): string {
+  const words = text.trim().split(/\s+/).filter(Boolean);
+  if (words.length <= NPC_CHAT_MAX_WORDS) return words.join(" ");
+  return words.slice(0, NPC_CHAT_MAX_WORDS).join(" ");
+}
+
 /** Strip meta wrappers so only spoken dialogue remains. */
 export function sanitizeInCharacterReply(
   raw: string,
@@ -239,23 +293,28 @@ export function sanitizeInCharacterReply(
   let text = raw.trim();
   if (!text) return "";
 
-  // Prefer a spoken field if the model ignored instructions and returned JSON
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
-      const spoken =
-        parsed.speech ??
-        parsed.reply ??
-        parsed.line ??
-        parsed.reason ??
-        parsed.text;
-      if (typeof spoken === "string" && spoken.trim()) {
-        text = spoken.trim();
+  // Prefer explicit SPEAK channel
+  const spokenMarked = extractSpeakPayload(text);
+  if (spokenMarked) {
+    text = spokenMarked;
+  } else {
+    // Prefer a spoken field if the model ignored instructions and returned JSON
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      try {
+        const parsed = JSON.parse(jsonMatch[0]) as Record<string, unknown>;
+        const spoken =
+          parsed.speech ?? parsed.reply ?? parsed.line ?? parsed.text;
+        if (typeof spoken === "string" && spoken.trim()) {
+          text = spoken.trim();
+        }
+      } catch {
+        /* keep raw */
       }
-    } catch {
-      /* keep raw */
     }
+
+    // Strip THINK: blocks if present without SPEAK
+    text = text.replace(/(?:^|\n)\s*THINK:\s*[\s\S]*?(?=(?:\n\s*SPEAK:)|$)/gi, "").trim();
   }
 
   // If they wrapped real dialogue in quotes inside narration, prefer the quotes
@@ -273,7 +332,7 @@ export function sanitizeInCharacterReply(
     .replace(/^\s*\([^)]*\)\s*/gm, "")
     .replace(/^\s*\[.*?\]\s*/gm, "")
     .replace(
-      /^(OOC|Out of character|As [A-Z][a-z]+.*?:|System:|Narrator:)\s*/gim,
+      /^(OOC|Out of character|As [A-Z][a-z]+.*?:|System:|Narrator:|THINK:|SPEAK:)\s*/gim,
       ""
     )
     .replace(/^["'"']|["'"']$/g, "")
@@ -284,7 +343,7 @@ export function sanitizeInCharacterReply(
   if (paras.length > 1) {
     const spoken = paras.find(
       (p) =>
-        !/^(I (used|will use|am using) (the )?tool|Looking at|Checking|Based on)/i.test(
+        !/^(I (used|will use|am using) (the )?tool|Looking at|Checking|Based on|THINK:)/i.test(
           p
         ) && !looksLikeNarration(p, characterName)
     );
@@ -299,7 +358,10 @@ export function sanitizeInCharacterReply(
     return "";
   }
 
-  return text.slice(0, 500);
+  // Ellipsis-only is not a reply
+  if (/^[.…\s]+$/.test(text)) return "";
+
+  return capSpeechWords(text).slice(0, 500);
 }
 
 function findCharacterByName(
@@ -773,7 +835,7 @@ ${castle}`,
         result: reports
           .map((r) => {
             const holdName = HOLDS_MAP.get(r.holdId)?.name ?? r.holdId;
-            return `Turn ${r.turn} at ${holdName}: ${r.holdResult} (${r.defeatType ?? "unclear"})\n${r.narrative.slice(0, 400)}`;
+            return `Turn ${r.turn} at ${holdName}: ${r.holdResult} (${r.defeatType ?? "unclear"})\n${r.narrative.slice(0, 900)}`;
           })
           .join("\n\n"),
       };
@@ -861,7 +923,7 @@ export async function runCharacterToolLoop(opts: {
   ];
 
   const SPEAK_ONLY =
-    "STOP. You wrote narration or thoughts. That is forbidden. Reply again with ONLY the words you say aloud — first person dialogue, no description, no third person, no feelings prose. One short spoken line.";
+    "STOP. Your last reply was invalid. Reply again with ONLY this format — nothing else:\nSPEAK: <your spoken words, under 60 words, first person dialogue>\nNo THINK. No narration. No tools. One SPEAK line.";
 
   async function forceSpokenLine(
     prior: Anthropic.Messages.MessageParam[]
@@ -928,10 +990,39 @@ export async function runCharacterToolLoop(opts: {
     const rawJoined = textBlocks.map((t) => t.text).join("\n");
     let text = finishText(rawJoined);
 
-    // Narration rejected → one hard retry for spoken dialogue
+    // Missing/invalid SPEAK → up to two hard retries
     if (outputMode === "speech" && !text) {
       messages.push({ role: "assistant", content: response.content });
       text = await forceSpokenLine(messages);
+      if (!text) {
+        messages.push({
+          role: "user",
+          content: SPEAK_ONLY,
+        });
+        // Record the failed force turn so the second retry has context
+        const second = await client.messages.create({
+          model: "claude-haiku-4-5",
+          max_tokens: 120,
+          system,
+          messages: [
+            ...messages,
+            {
+              role: "assistant",
+              content: rawJoined || "(invalid)",
+            },
+            {
+              role: "user",
+              content:
+                "AGAIN. Output exactly one line starting with SPEAK: then your spoken words.",
+            },
+          ],
+        });
+        const secondRaw = second.content
+          .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
+          .map((t) => t.text)
+          .join("\n");
+        text = finishText(secondRaw);
+      }
     }
 
     return {
@@ -941,8 +1032,8 @@ export async function runCharacterToolLoop(opts: {
     };
   }
 
-  // Exhausted tool rounds — force a spoken line
-  const text =
+  // Exhausted tool rounds — force a spoken line (two attempts)
+  let text =
     outputMode === "speech"
       ? await forceSpokenLine(messages)
       : (
@@ -960,6 +1051,17 @@ export async function runCharacterToolLoop(opts: {
           .map((t) => t.text)
           .join("\n")
           .trim();
+
+  if (outputMode === "speech" && !text) {
+    text = await forceSpokenLine([
+      ...messages,
+      {
+        role: "user",
+        content:
+          "AGAIN. Output exactly one line starting with SPEAK: then your spoken words.",
+      },
+    ]);
+  }
 
   return {
     text,

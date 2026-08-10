@@ -140,7 +140,7 @@ export function createCastellanNpc(
     holdId,
     alive: true,
     notepad: underSiege
-      ? `Invested at ${holdName}. Siege day ${hs.siege!.turns}. Food ~${hs.foodDaysRemaining ?? "unknown"} days. Stores: ${hs.supplies}`
+      ? `Invested at ${holdName}. Siege day ${hs.siege!.turns}. Besieger: ${hs.siege!.besiegerFaction}. Garrison ~${men}. Food ~${hs.foodDaysRemaining ?? "unknown"} days. Stores: ${hs.supplies}`
       : "",
     mood: underSiege
       ? "Watchful on the walls, weighing every word from outside"
@@ -150,7 +150,7 @@ export function createCastellanNpc(
     adviceGivenIds: [],
     ephemeral: true,
     runtimeBackground: `Castellan of ${holdName}. Not a great lord — a practical man left in charge of the walls and stores. Commands about ${men.toLocaleString()} defenders. Speaks for the garrison in parley.`,
-    runtimeSystemPrompt: `You are ${name}, castellan of ${holdName}. You speak for the garrison — not as a king or great lord, but as the man who holds the keys and counts the grain. You may negotiate: terms, threats, bluffs, surrender, defiance. You know your food days, stores, and how the siege (if any) wears on. Use tools to check history, the hold, and recent deeds before you commit. Keep replies punchy (under 60 words). Never break character.`,
+    runtimeSystemPrompt: `You are ${name}, castellan of ${holdName}. You speak for the garrison — not as a king or great lord, but as the man who holds the keys and counts the grain. You may negotiate: terms, threats, bluffs, surrender, defiance. Before you commit on relief, stores, or the war, use tools — inspect_my_castle, survey_map, find_forces, search_faction_events, get_battle_logs — and judge from what you find. End replies with SPEAK: under 60 words. Never break character.`,
   };
 }
 
@@ -275,9 +275,10 @@ export function syncCastellansWithSieges(
         const c = chars[ensured.negotiatorId];
         if (c?.kind === "npc" && c.ephemeral) {
           const holdName = HOLDS_MAP.get(holdId)?.name ?? holdId;
+          const men = garrisonHeadcount(next.garrison);
           chars[ensured.negotiatorId] = {
             ...c,
-            notepad: `Siege opened at ${holdName}. Day 1. Food ~${next.foodDaysRemaining ?? "unknown"}. ${next.supplies}`,
+            notepad: `Siege opened at ${holdName}. Day 1. Besieger: ${next.siege!.besiegerFaction}. Garrison ~${men}. Food ~${next.foodDaysRemaining ?? "unknown"}. ${next.supplies}`,
             mood: "Watchful on the walls, weighing every word from outside",
           };
         }
@@ -289,7 +290,7 @@ export function syncCastellansWithSieges(
         const c = chars[cid];
         if (c?.kind === "npc" && c.ephemeral) {
           const holdName = HOLDS_MAP.get(holdId)?.name ?? holdId;
-          const line = `Siege day ${next.siege!.turns} at ${holdName}. Food ~${next.foodDaysRemaining ?? "unknown"}. ${next.supplies}`;
+          const line = `Siege day ${next.siege!.turns} at ${holdName}. Besieger: ${next.siege!.besiegerFaction}. Food ~${next.foodDaysRemaining ?? "unknown"}. ${next.supplies}`;
           chars[cid] = {
             ...c,
             notepad: c.notepad.includes(line)

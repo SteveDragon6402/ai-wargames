@@ -51,7 +51,7 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
     notablesByArmy.set(key, list);
   }
 
-  // Castles you can parley with: friendly holds, or holds you're investing / camped at
+  // Castles you can parley with: only seats you are investing
   const castleTalkTargets: { holdId: string; label: string; sub: string }[] = [];
   for (const [holdId, hs] of Object.entries(state.holdStates ?? {})) {
     const seed = getCastleSeed(holdId);
@@ -59,12 +59,8 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
     const men = garrisonHeadcount(hs.garrison);
     if (men <= 0 && !hs.siege) continue;
 
-    const myArmiesHere = state.armies.some(
-      (a) => a.holdId === holdId && a.faction === faction
-    );
-    const friendly = hs.controller === faction;
     const besieging = hs.siege?.besiegerFaction === faction;
-    if (!friendly && !besieging && !myArmiesHere) continue;
+    if (!besieging) continue;
 
     const named = findNamedGarrisonNegotiator(
       holdId,
@@ -77,15 +73,13 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
       castleTalkTargets.push({
         holdId,
         label: `${lab.name} · ${holdName}`,
-        sub: hs.siege ? "Parley under siege" : lab.sub,
+        sub: "Parley under siege",
       });
     } else {
       castleTalkTargets.push({
         holdId,
         label: `Castellan of ${holdName}`,
-        sub: hs.siege
-          ? "Ephemeral castellan — siege memory"
-          : "Spin up castellan for talk",
+        sub: "Ephemeral castellan — siege memory",
       });
     }
   }

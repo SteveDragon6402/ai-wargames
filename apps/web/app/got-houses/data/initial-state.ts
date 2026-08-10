@@ -1,6 +1,8 @@
 import type { Army, ArmyActivity, GameState } from "../types";
 import { buildInitialCharacters } from "./characters";
 import { buildInitialHoldStates } from "../lib/hold-runtime";
+import { reconcileSieges } from "../lib/siege";
+import { syncCastellansWithSieges } from "../lib/castellan";
 
 const FRESH_ACTIVITY: ArmyActivity = {
   turnsResting: 0,
@@ -161,6 +163,28 @@ export const INITIAL_ARMIES: Army[] = [
   },
 ];
 
+/** Opening board: Jaime already investing North-held Riverrun. */
+function buildOpeningBoard(): Pick<
+  GameState,
+  "holdStates" | "characters" | "factionEvents"
+> {
+  const baseHolds = buildInitialHoldStates();
+  const baseChars = buildInitialCharacters();
+  const siege = reconcileSieges(1, INITIAL_ARMIES, baseHolds);
+  const synced = syncCastellansWithSieges(
+    baseHolds,
+    siege.holdStates,
+    baseChars
+  );
+  return {
+    holdStates: synced.holdStates,
+    characters: synced.characters,
+    factionEvents: siege.events,
+  };
+}
+
+const OPENING = buildOpeningBoard();
+
 export const INITIAL_GAME_STATE: GameState = {
   turn: 1,
   phase: "planning",
@@ -180,15 +204,15 @@ export const INITIAL_GAME_STATE: GameState = {
   pendingRenames: [],
   voluntaryCommanderChange: null,
   splitPanelArmyId: null,
-  characters: buildInitialCharacters(),
+  characters: OPENING.characters,
   conversations: [],
   speechesThisTurn: [],
   speechArmyId: null,
   openConversationIds: [],
   talkPickerOpen: false,
   focusedConversationId: null,
-  factionEvents: [],
+  factionEvents: OPENING.factionEvents,
   adviceLog: [],
-  holdStates: buildInitialHoldStates(),
+  holdStates: OPENING.holdStates,
   garrisonPanel: null,
 };

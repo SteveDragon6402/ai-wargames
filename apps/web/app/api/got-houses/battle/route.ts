@@ -272,6 +272,7 @@ function fallbackReport(
       `INITIAL DEPLOYMENT: The hosts met at ${hold?.name ?? "the contested hold"}.${groundNote}\n\n` +
       "PHASE 1 — CLASH: The Northmen pressed their advantage and the Western host gave ground before the day was out.\n\n" +
       "RESOLUTION: The Westerlands withdrew in order. Few reliable witnesses remain of the details.",
+    shortSummary: "",
     holdResult: "north",
     casualties: [
       ...battle.northArmies.flatMap((a) =>
@@ -296,6 +297,52 @@ function fallbackReport(
     fallen: [],
     retreatingArmyIds: westRetreating,
   };
+}
+
+async function summarizeBattleWithHaiku(
+  client: Anthropic,
+  opts: {
+    narrative: string;
+    holdResult: BattleReport["holdResult"];
+    defeatType?: DefeatType;
+    holdName: string;
+  }
+): Promise<string> {
+  const response = await client.messages.create({
+    model: "claude-haiku-4-5",
+    max_tokens: 200,
+    system:
+      "You write vivid three-line battle summaries for a medieval wargame. Output exactly three lines of prose. No title, no bullets, no numbering, no blank lines.",
+    messages: [
+      {
+        role: "user",
+        content: `Write an interesting 3-line summary of this battle at ${opts.holdName}.
+
+holdResult: ${opts.holdResult}
+defeatType: ${opts.defeatType ?? "unclear"}
+
+Full chronicle:
+${opts.narrative}
+
+Reply with exactly three lines.`,
+      },
+    ],
+  });
+  const raw = response.content
+    .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
+    .map((t) => t.text)
+    .join("\n")
+    .trim();
+  const lines = raw
+    .split(/\n+/)
+    .map((l) => l.replace(/^\s*[-*•\d.]+\s*/, "").trim())
+    .filter(Boolean);
+  if (lines.length < 3) {
+    throw new Error(
+      `Haiku summary returned ${lines.length} line(s); expected 3`
+    );
+  }
+  return lines.slice(0, 3).join("\n");
 }
 
 // ─── Route handler ────────────────────────────────────────────────────────────
@@ -453,12 +500,38 @@ export async function POST(req: NextRequest) {
 
     console.log("[got-houses/battle] Success — holdResult:", parsed.holdResult, "defeatType:", defeatType, "retreating:", retreatingArmyIds);
 
+    const holdResult = (["north", "westerlands", "abandoned"].includes(parsed.holdResult)
+      ? parsed.holdResult
+      : "abandoned") as BattleReport["holdResult"];
+    const narrative = parsed.narrative ?? "";
+    const holdName = holdsMap.get(battle.holdId)?.name ?? battle.holdId;
+
+    let shortSummary: string;
+    try {
+      shortSummary = await summarizeBattleWithHaiku(client, {
+        narrative,
+        holdResult,
+        defeatType,
+        holdName,
+      });
+    } catch (sumErr) {
+      const msg = sumErr instanceof Error ? sumErr.message : String(sumErr);
+      console.error("[got-houses/battle] Haiku summary failed:", msg);
+      return NextResponse.json(
+        {
+          error: `Battle summary failed: ${msg}`,
+          _error: msg,
+          _debug: "haiku_summary_failed",
+        },
+        { status: 500 }
+      );
+    }
+
     return NextResponse.json({
       defeatType,
-      narrative: parsed.narrative ?? "",
-      holdResult: (["north", "westerlands", "abandoned"].includes(parsed.holdResult)
-        ? parsed.holdResult
-        : "abandoned") as BattleReport["holdResult"],
+      narrative,
+      shortSummary,
+      holdResult,
       casualties: Array.isArray(parsed.casualties) ? parsed.casualties : [],
       fallen: Array.isArray(parsed.fallen) ? parsed.fallen : [],
       retreatingArmyIds,

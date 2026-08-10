@@ -282,6 +282,8 @@ export interface BattleReport {
   defeatType?: DefeatType;
   /** Claude's ASOIAF-style narrative (2–3 paragraphs) */
   narrative: string;
+  /** Freeform three-line Haiku summary for the battle screen header */
+  shortSummary: string;
   holdResult: Faction | "abandoned";
   casualties: Casualty[];
   fallen: FallenFigure[];

@@ -63,6 +63,10 @@ function normalizeState(raw: GameState): GameState {
         ([id, hs]) => [id, normalizeHoldRuntime(hs)]
       )
     ),
+    battleReports: (raw.battleReports ?? []).map((r) => ({
+      ...r,
+      shortSummary: r.shortSummary ?? "",
+    })),
     garrisonPanel: raw.garrisonPanel ?? null,
     north: {
       orders: raw.north?.orders ?? [],
@@ -367,6 +371,7 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
           const data = JSON.parse(rawBody) as Omit<BattleReport, "id" | "turn" | "holdId"> & {
             _debug?: string;
             _error?: string;
+            error?: string;
             _raw?: string;
             _rawFull?: string;
           };
@@ -381,22 +386,33 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
             console.log("  Retreating:", data.retreatingArmyIds);
           }
 
-          if (!res.ok) throw new Error(`Battle API ${res.status}: ${data._error ?? res.statusText}`);
+          if (!res.ok) throw new Error(`Battle API ${res.status}: ${data._error ?? data.error ?? res.statusText}`);
+          if (data._debug === "haiku_summary_failed") {
+            throw new Error(data._error ?? data.error ?? "Battle summary failed");
+          }
+          if (!data._debug && !(data.shortSummary ?? "").trim()) {
+            throw new Error("Battle summary missing from adjudication response");
+          }
 
           reports.push({
             ...data,
+            shortSummary: data.shortSummary ?? "",
             id: crypto.randomUUID(),
             turn: state.turn,
             holdId: battle.holdId,
           });
         } catch (err) {
           console.error("✗ Fetch/parse error:", err);
+          const msg = err instanceof Error ? err.message : String(err);
+          const summaryFailed = /summary/i.test(msg);
           reports.push({
             id: crypto.randomUUID(),
             turn: state.turn,
             holdId: battle.holdId,
-            narrative:
-              "The two forces clashed in a bloody but inconclusive engagement. Both sides withdrew to regroup, neither willing to press the advantage.",
+            narrative: summaryFailed
+              ? `BATTLE SUMMARY FAILED: ${msg}`
+              : "The two forces clashed in a bloody but inconclusive engagement. Both sides withdrew to regroup, neither willing to press the advantage.",
+            shortSummary: "",
             holdResult: "abandoned",
             casualties: [],
             fallen: [],
