@@ -310,16 +310,37 @@ function BattleModal({
           <div>
             <div
               style={{
-                fontFamily: "var(--font-mono), monospace",
-                fontSize: 8,
-                fontWeight: 700,
-                textTransform: "uppercase",
-                letterSpacing: "0.15em",
-                color: "#333",
+                display: "flex",
+                alignItems: "baseline",
+                gap: 10,
                 marginBottom: 8,
+                flexWrap: "wrap",
               }}
             >
-              Summary
+              <div
+                style={{
+                  fontFamily: "var(--font-mono), monospace",
+                  fontSize: 8,
+                  fontWeight: 700,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.15em",
+                  color: "#333",
+                }}
+              >
+                Summary
+              </div>
+              {report.summaryError && (
+                <div
+                  style={{
+                    fontFamily: "var(--font-mono), monospace",
+                    fontSize: 9,
+                    color: "#a44",
+                    letterSpacing: "0.02em",
+                  }}
+                >
+                  {report.summaryError}
+                </div>
+              )}
             </div>
             {report.shortSummary?.trim() ? (
               report.shortSummary.split(/\n+/).map((line, i) => (
@@ -341,11 +362,11 @@ function BattleModal({
                 style={{
                   fontFamily: "var(--font-mono), monospace",
                   fontSize: 12,
-                  color: "#a44",
+                  color: report.summaryError ? "#666" : "#a44",
                   lineHeight: 1.6,
                 }}
               >
-                Battle summary failed.
+                {report.summaryError ? "(no summary lines)" : "Battle summary failed."}
               </p>
             )}
           </div>

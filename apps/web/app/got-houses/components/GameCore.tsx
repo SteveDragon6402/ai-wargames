@@ -66,6 +66,7 @@ function normalizeState(raw: GameState): GameState {
     battleReports: (raw.battleReports ?? []).map((r) => ({
       ...r,
       shortSummary: r.shortSummary ?? "",
+      summaryError: r.summaryError,
     })),
     garrisonPanel: raw.garrisonPanel ?? null,
     north: {
@@ -387,31 +388,23 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
           }
 
           if (!res.ok) throw new Error(`Battle API ${res.status}: ${data._error ?? data.error ?? res.statusText}`);
-          if (data._debug === "haiku_summary_failed") {
-            throw new Error(data._error ?? data.error ?? "Battle summary failed");
-          }
-          if (!data._debug && !(data.shortSummary ?? "").trim()) {
-            throw new Error("Battle summary missing from adjudication response");
-          }
 
           reports.push({
             ...data,
             shortSummary: data.shortSummary ?? "",
+            summaryError: data.summaryError,
             id: crypto.randomUUID(),
             turn: state.turn,
             holdId: battle.holdId,
           });
         } catch (err) {
           console.error("✗ Fetch/parse error:", err);
-          const msg = err instanceof Error ? err.message : String(err);
-          const summaryFailed = /summary/i.test(msg);
           reports.push({
             id: crypto.randomUUID(),
             turn: state.turn,
             holdId: battle.holdId,
-            narrative: summaryFailed
-              ? `BATTLE SUMMARY FAILED: ${msg}`
-              : "The two forces clashed in a bloody but inconclusive engagement. Both sides withdrew to regroup, neither willing to press the advantage.",
+            narrative:
+              "The two forces clashed in a bloody but inconclusive engagement. Both sides withdrew to regroup, neither willing to press the advantage.",
             shortSummary: "",
             holdResult: "abandoned",
             casualties: [],

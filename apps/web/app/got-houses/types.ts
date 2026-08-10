@@ -284,6 +284,8 @@ export interface BattleReport {
   narrative: string;
   /** Freeform three-line Haiku summary for the battle screen header */
   shortSummary: string;
+  /** Set when the Haiku summary pass was incomplete or failed — battle still resolved */
+  summaryError?: string;
   holdResult: Faction | "abandoned";
   casualties: Casualty[];
   fallen: FallenFigure[];

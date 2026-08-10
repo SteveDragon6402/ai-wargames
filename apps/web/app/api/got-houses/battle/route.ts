@@ -307,7 +307,7 @@ async function summarizeBattleWithHaiku(
     defeatType?: DefeatType;
     holdName: string;
   }
-): Promise<string> {
+): Promise<{ shortSummary: string; summaryError?: string }> {
   const response = await client.messages.create({
     model: "claude-haiku-4-5",
     max_tokens: 200,
@@ -337,12 +337,14 @@ Reply with exactly three lines.`,
     .split(/\n+/)
     .map((l) => l.replace(/^\s*[-*•\d.]+\s*/, "").trim())
     .filter(Boolean);
+  const shortSummary = lines.slice(0, 3).join("\n");
   if (lines.length < 3) {
-    throw new Error(
-      `Haiku summary returned ${lines.length} line(s); expected 3`
-    );
+    return {
+      shortSummary,
+      summaryError: `Haiku summary returned ${lines.length} line(s); expected 3`,
+    };
   }
-  return lines.slice(0, 3).join("\n");
+  return { shortSummary };
 }
 
 // ─── Route handler ────────────────────────────────────────────────────────────
@@ -506,31 +508,32 @@ export async function POST(req: NextRequest) {
     const narrative = parsed.narrative ?? "";
     const holdName = holdsMap.get(battle.holdId)?.name ?? battle.holdId;
 
-    let shortSummary: string;
+    let shortSummary = "";
+    let summaryError: string | undefined;
     try {
-      shortSummary = await summarizeBattleWithHaiku(client, {
+      const summarized = await summarizeBattleWithHaiku(client, {
         narrative,
         holdResult,
         defeatType,
         holdName,
       });
+      shortSummary = summarized.shortSummary;
+      summaryError = summarized.summaryError;
+      if (summaryError) {
+        console.warn("[got-houses/battle] Incomplete Haiku summary:", summaryError);
+      }
     } catch (sumErr) {
       const msg = sumErr instanceof Error ? sumErr.message : String(sumErr);
       console.error("[got-houses/battle] Haiku summary failed:", msg);
-      return NextResponse.json(
-        {
-          error: `Battle summary failed: ${msg}`,
-          _error: msg,
-          _debug: "haiku_summary_failed",
-        },
-        { status: 500 }
-      );
+      shortSummary = "";
+      summaryError = `Battle summary failed: ${msg}`;
     }
 
     return NextResponse.json({
       defeatType,
       narrative,
       shortSummary,
+      summaryError,
       holdResult,
       casualties: Array.isArray(parsed.casualties) ? parsed.casualties : [],
       fallen: Array.isArray(parsed.fallen) ? parsed.fallen : [],

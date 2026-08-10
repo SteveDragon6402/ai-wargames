@@ -1346,6 +1346,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
     case "COMMIT_RETREATS": {
       let updatedArmies = [...state.armies];
+      const retreatOrders: MoveOrder[] = [];
+      const armyOrdersMap: Record<string, "march" | "rest" | "fortify"> = {};
 
       for (const retreat of state.retreats) {
         const dest =
@@ -1354,9 +1356,21 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           null;
         if (!dest) continue;
 
+        const army = updatedArmies.find((a) => a.id === retreat.armyId);
+        if (!army) continue;
+        const fromHoldId = army.holdId;
+
         updatedArmies = updatedArmies.map((a) =>
-          a.id === retreat.armyId ? { ...a, holdId: dest } : a
+          a.id === retreat.armyId
+            ? { ...a, holdId: dest, lastHoldId: fromHoldId }
+            : a
         );
+        retreatOrders.push({
+          armyId: retreat.armyId,
+          fromHoldId,
+          toHoldId: dest,
+        });
+        armyOrdersMap[retreat.armyId] = "march";
       }
 
       // Retreat destinations / vacated holds may open or lift investments
@@ -1373,15 +1387,36 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         protectIds
       );
 
+      const factionEvents = [
+        ...state.factionEvents,
+        ...siegeSync.events,
+      ].slice(-400);
+
+      // Opposing armies that retreated into the same hold fight immediately
+      const clashBattles = detectBattles(
+        updatedArmies,
+        retreatOrders,
+        armyOrdersMap
+      );
+      if (clashBattles.length > 0) {
+        return {
+          ...state,
+          phase: "resolving",
+          armies: updatedArmies,
+          characters: castellanSync.characters,
+          holdStates: castellanSync.holdStates,
+          pendingBattles: clashBattles,
+          retreats: [],
+          factionEvents,
+        };
+      }
+
       return advanceToPlanning(state, {
         armies: updatedArmies,
         characters: castellanSync.characters,
         holdStates: castellanSync.holdStates,
         retreats: [],
-        factionEvents: [
-          ...state.factionEvents,
-          ...siegeSync.events,
-        ].slice(-400),
+        factionEvents,
       });
     }
 
