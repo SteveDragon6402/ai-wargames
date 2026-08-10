@@ -122,18 +122,59 @@ export function liftSiegeRecovery(hs: HoldRuntime, holdId: string): HoldRuntime 
 }
 
 /**
- * After marches: start/continue/lift investments.
- * Investment = field army at unfriendly garrisonable hold with garrison.men > 0
- * and no opposing *field* army present.
- *
- * New invest: turns = 1, food NOT decremented until continued tick.
- * Lift by withdrawal: refill headcount + scar + clear skipUpdates (no soft snap).
+ * Sole field faction at a hold, if exactly one faction is present.
+ * Contested (both) or empty → null.
  */
-export function tickSieges(
+export function soleFieldFaction(
+  armies: Army[],
+  holdId: string
+): { faction: Faction; armies: Army[] } | null {
+  const here = armies.filter((a) => a.holdId === holdId);
+  const northHere = here.filter((a) => a.faction === "north");
+  const westHere = here.filter((a) => a.faction === "westerlands");
+  if (northHere.length > 0 && westHere.length === 0) {
+    return { faction: "north", armies: northHere };
+  }
+  if (westHere.length > 0 && northHere.length === 0) {
+    return { faction: "westerlands", armies: westHere };
+  }
+  return null;
+}
+
+/**
+ * Investor = sole present field faction that does not already control the seat.
+ * Home faction does not matter — a Westerlands-held Riverrun (home North) is
+ * invested the moment a North host is alone there; same for hostile/null seats.
+ */
+export function investorAtHold(
+  hs: HoldRuntime,
+  armies: Army[],
+  holdId: string
+): { faction: Faction; armies: Army[] } | null {
+  if (garrisonHeadcount(hs.garrison) <= 0) return null;
+  const sole = soleFieldFaction(armies, holdId);
+  if (!sole) return null;
+  if (hs.controller === sole.faction) return null;
+  return sole;
+}
+
+type SiegePresenceMode = "advance" | "reconcile";
+
+/**
+ * Apply investment start / continue / lift from current field presence.
+ *
+ * - `advance` (after marches): tick scar timers; continued sieges +1 turn and food--
+ * - `reconcile` (after battles / retreats): start or lift immediately; do not
+ *   re-advance turns/food/scars for sieges that already match
+ *
+ * New invest always: turns = 1, food NOT decremented on opening day.
+ */
+function applySiegePresence(
   turn: number,
   armies: Army[],
   holdStates: Record<string, HoldRuntime>,
-  prevHoldStates: Record<string, HoldRuntime>
+  prevHoldStates: Record<string, HoldRuntime>,
+  mode: SiegePresenceMode
 ): { holdStates: Record<string, HoldRuntime>; events: FactionEvent[] } {
   const next: Record<string, HoldRuntime> = {};
   for (const [id, hs] of Object.entries(holdStates)) {
@@ -141,23 +182,24 @@ export function tickSieges(
   }
   const events: FactionEvent[] = [];
 
-  // Tick post-siege scars everywhere first
-  for (const holdId of Object.keys(next)) {
-    const hs = next[holdId];
-    if (hs.postSiegeTurnsLeft > 0 && !hs.siege) {
-      const left = hs.postSiegeTurnsLeft - 1;
-      next[holdId] = {
-        ...hs,
-        postSiegeTurnsLeft: left,
-        supplies:
-          left === 0
-            ? hs.scar
-              ? "Ravaged but no longer starving; scars remain."
-              : hs.supplies
-            : hs.supplies,
-        scar: left === 0 ? hs.scar ?? "Scarred by recent siege." : hs.scar,
-        skipUpdates: false,
-      };
+  if (mode === "advance") {
+    for (const holdId of Object.keys(next)) {
+      const hs = next[holdId];
+      if (hs.postSiegeTurnsLeft > 0 && !hs.siege) {
+        const left = hs.postSiegeTurnsLeft - 1;
+        next[holdId] = {
+          ...hs,
+          postSiegeTurnsLeft: left,
+          supplies:
+            left === 0
+              ? hs.scar
+                ? "Ravaged but no longer starving; scars remain."
+                : hs.supplies
+              : hs.supplies,
+          scar: left === 0 ? hs.scar ?? "Scarred by recent siege." : hs.scar,
+          skipUpdates: false,
+        };
+      }
     }
   }
 
@@ -172,13 +214,14 @@ export function tickSieges(
 
     const hs = next[holdId];
     const men = garrisonHeadcount(hs.garrison);
-    const here = armies.filter((a) => a.holdId === holdId);
-    const northHere = here.filter((a) => a.faction === "north");
-    const westHere = here.filter((a) => a.faction === "westerlands");
-    const bothField = northHere.length > 0 && westHere.length > 0;
+    const investor = investorAtHold(hs, armies, holdId);
+    const sole = soleFieldFaction(armies, holdId);
+    const contested =
+      armies.some((a) => a.holdId === holdId && a.faction === "north") &&
+      armies.some((a) => a.holdId === holdId && a.faction === "westerlands");
 
-    // Opposing field armies → lift investment (field battle handles it)
-    if (bothField || men <= 0) {
+    // No invest: empty garrison, contested field, or friendly sole presence
+    if (men <= 0 || contested || !investor) {
       if (hs.siege) {
         events.push(
           ...eventsFromSiegeTick(turn, holdId, hs.siege, "lifted")
@@ -195,74 +238,55 @@ export function tickSieges(
               }
             : liftSiegeRecovery(hs, holdId);
       }
-      continue;
-    }
-
-    const controller = hs.controller;
-    let investorFaction: Faction | null = null;
-    let investorArmies: Army[] = [];
-
-    if (controller === "north" && westHere.length > 0 && northHere.length === 0) {
-      investorFaction = "westerlands";
-      investorArmies = westHere;
-    } else if (
-      controller === "westerlands" &&
-      northHere.length > 0 &&
-      westHere.length === 0
-    ) {
-      investorFaction = "north";
-      investorArmies = northHere;
-    } else if (controller === "hostile" || controller === null) {
-      if (northHere.length > 0 && westHere.length === 0) {
-        investorFaction = "north";
-        investorArmies = northHere;
-      } else if (westHere.length > 0 && northHere.length === 0) {
-        investorFaction = "westerlands";
-        investorArmies = westHere;
-      }
-    }
-
-    // Friendly controller with only own troops → no siege
-    if (
-      (controller === "north" && northHere.length > 0 && westHere.length === 0) ||
-      (controller === "westerlands" && westHere.length > 0 && northHere.length === 0)
-    ) {
-      if (hs.siege) {
-        events.push(
-          ...eventsFromSiegeTick(turn, holdId, hs.siege, "lifted")
-        );
-        next[holdId] = liftSiegeRecovery(hs, holdId);
-      }
-      continue;
-    }
-
-    if (!investorFaction || investorArmies.length === 0 || men <= 0) {
-      if (hs.siege) {
-        events.push(
-          ...eventsFromSiegeTick(turn, holdId, hs.siege, "lifted")
-        );
-        next[holdId] = liftSiegeRecovery(hs, holdId);
-      }
+      // Friendly sole presence: keep non-siege state (refill handled elsewhere)
+      void sole;
       continue;
     }
 
     const prev = prevHoldStates[holdId]?.siege;
-    const isNew = !prev || prev.besiegerFaction !== investorFaction;
+    const sameBesieger =
+      !!hs.siege && hs.siege.besiegerFaction === investor.faction;
+    const isNew = !sameBesieger && (!prev || prev.besiegerFaction !== investor.faction);
+
+    if (mode === "reconcile" && sameBesieger) {
+      // Already investing — only refresh investing army ids
+      next[holdId] = {
+        ...hs,
+        siege: {
+          ...hs.siege!,
+          armyIds: investor.armies.map((a) => a.id),
+        },
+        skipUpdates: false,
+      };
+      continue;
+    }
+
     const turns =
-      prev && prev.besiegerFaction === investorFaction ? prev.turns + 1 : 1;
-    // Food decrements only on continued invest, not the opening day
+      mode === "advance" &&
+      prev &&
+      prev.besiegerFaction === investor.faction
+        ? prev.turns + 1
+        : sameBesieger && hs.siege
+          ? hs.siege.turns
+          : 1;
     const food =
-      isNew || hs.foodDaysRemaining == null
-        ? hs.foodDaysRemaining
-        : Math.max(0, hs.foodDaysRemaining - 1);
+      mode === "advance" &&
+      prev &&
+      prev.besiegerFaction === investor.faction &&
+      hs.foodDaysRemaining != null
+        ? Math.max(0, hs.foodDaysRemaining - 1)
+        : hs.foodDaysRemaining;
+
     const siege = {
-      besiegerFaction: investorFaction,
+      besiegerFaction: investor.faction,
       turns,
-      armyIds: investorArmies.map((a) => a.id),
+      armyIds: investor.armies.map((a) => a.id),
     };
-    events.push(
-      ...eventsFromSiegeTick(turn, holdId, siege, isNew ? "invest" : "continue")
-    );
+    const kind =
+      isNew || !sameBesieger
+        ? "invest"
+        : "continue";
+    events.push(...eventsFromSiegeTick(turn, holdId, siege, kind));
     next[holdId] = {
       ...hs,
       siege,
@@ -273,6 +297,30 @@ export function tickSieges(
   }
 
   return { holdStates: next, events };
+}
+
+/**
+ * After marches: start/continue/lift investments (advances siege day + food).
+ */
+export function tickSieges(
+  turn: number,
+  armies: Army[],
+  holdStates: Record<string, HoldRuntime>,
+  prevHoldStates: Record<string, HoldRuntime>
+): { holdStates: Record<string, HoldRuntime>; events: FactionEvent[] } {
+  return applySiegePresence(turn, armies, holdStates, prevHoldStates, "advance");
+}
+
+/**
+ * After battles / retreats: if a sole hostile host remains against a living
+ * garrison, open investment immediately (no timer advance).
+ */
+export function reconcileSieges(
+  turn: number,
+  armies: Army[],
+  holdStates: Record<string, HoldRuntime>
+): { holdStates: Record<string, HoldRuntime>; events: FactionEvent[] } {
+  return applySiegePresence(turn, armies, holdStates, holdStates, "reconcile");
 }
 
 /** Holds that need a soft-condition adjudication this turn. */

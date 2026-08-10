@@ -54,6 +54,7 @@ import {
   holdIdFromGarrisonArmyId,
   isGarrisonArmyId,
   liftSiegeRecovery,
+  reconcileSieges,
   tickSieges,
 } from "../lib/siege";
 import {
@@ -1191,10 +1192,29 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         correctedReports,
         { ...state, armies: updatedArmies, characters }
       );
+
+      // After casualties: sole hostile host vs living garrison → invest now
+      // (covers "field fight cleared the other army" without waiting a turn)
+      const afterBattleSiege = reconcileSieges(
+        state.turn,
+        updatedArmies,
+        holdStates
+      );
+      holdStates = afterBattleSiege.holdStates;
+      const postBattleCastellan = syncCastellansWithSieges(
+        state.holdStates ?? {},
+        holdStates,
+        characters,
+        protectIds
+      );
+      holdStates = postBattleCastellan.holdStates;
+      characters = postBattleCastellan.characters;
+
       const factionEvents = [
         ...state.factionEvents,
         ...battleEvents,
         ...siegeOutcomeEvents,
+        ...afterBattleSiege.events,
       ].slice(-400);
 
       // If there are last-stand battles, re-enter resolving with them as pendingBattles
@@ -1339,9 +1359,29 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         );
       }
 
+      // Retreat destinations / vacated holds may open or lift investments
+      const siegeSync = reconcileSieges(
+        state.turn,
+        updatedArmies,
+        state.holdStates ?? {}
+      );
+      const protectIds = protectedTalkCharacterIds(state.conversations);
+      const castellanSync = syncCastellansWithSieges(
+        state.holdStates ?? {},
+        siegeSync.holdStates,
+        state.characters,
+        protectIds
+      );
+
       return advanceToPlanning(state, {
         armies: updatedArmies,
+        characters: castellanSync.characters,
+        holdStates: castellanSync.holdStates,
         retreats: [],
+        factionEvents: [
+          ...state.factionEvents,
+          ...siegeSync.events,
+        ].slice(-400),
       });
     }
 
