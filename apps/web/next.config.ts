@@ -5,7 +5,7 @@ import { resolve } from "node:path";
 config({ path: resolve(__dirname, "../../.env") });
 
 const nextConfig: NextConfig = {
-  serverExternalPackages: ["postgres", "@wargame/db", "bullmq", "@wargame/server"],
+  serverExternalPackages: ["postgres", "@wargame/db"],
 };
 
 export default nextConfig;

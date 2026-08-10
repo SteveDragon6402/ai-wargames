@@ -17,5 +17,21 @@
     "paths": { "@/*": ["./*"] }
   },
   "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "hooks/**",
+    "lib/actions.ts",
+    "lib/admin-auth.ts",
+    "lib/after-resolve.ts",
+    "lib/env.ts",
+    "lib/format-event.ts",
+    "lib/map-display.ts",
+    "lib/map-layout.ts",
+    "lib/order-draft.ts",
+    "lib/player.ts",
+    "lib/room-response.ts",
+    "lib/solo-mode.ts",
+    "lib/turn-queue.ts",
+    "lib/unit-labels.ts"
+  ]
 }

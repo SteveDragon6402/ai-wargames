@@ -1,4 +1,3 @@
-import type { Command, GameState, TurnEvent } from "@wargame/shared";
 import {
   boolean,
   integer,
@@ -9,6 +8,10 @@ import {
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
+
+/** Opaque JSON blobs — GOT state lives in got_games; legacy LoTR columns keep loose typing. */
+type JsonObject = Record<string, unknown>;
+type JsonValue = unknown;
 
 export const rooms = pgTable("rooms", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -41,9 +44,9 @@ export const games = pgTable("games", {
   turnEndsAt: timestamp("turn_ends_at", { withTimezone: true }),
   turnJobId: text("turn_job_id"),
   readyPlayerIds: jsonb("ready_player_ids").$type<string[]>().default([]).notNull(),
-  state: jsonb("state").$type<GameState>().notNull(),
+  state: jsonb("state").$type<JsonObject>().notNull(),
   winnerFactionId: text("winner_faction_id"),
-  lastTurnEvents: jsonb("last_turn_events").$type<TurnEvent[]>().default([]).notNull(),
+  lastTurnEvents: jsonb("last_turn_events").$type<JsonValue[]>().default([]).notNull(),
 });
 
 export const gameHistory = pgTable(
@@ -54,8 +57,8 @@ export const gameHistory = pgTable(
       .notNull()
       .references(() => rooms.id, { onDelete: "cascade" }),
     turn: integer("turn").notNull(),
-    events: jsonb("events").$type<TurnEvent[]>().notNull(),
-    stateAfter: jsonb("state_after").$type<GameState>().notNull(),
+    events: jsonb("events").$type<JsonValue[]>().notNull(),
+    stateAfter: jsonb("state_after").$type<JsonObject>().notNull(),
   },
   (t) => [uniqueIndex("game_history_room_turn_idx").on(t.roomId, t.turn)]
 );
@@ -82,7 +85,7 @@ export const orders = pgTable(
       .notNull()
       .references(() => players.id, { onDelete: "cascade" }),
     unitId: text("unit_id"),
-    command: jsonb("command").$type<Command>().notNull(),
+    command: jsonb("command").$type<JsonObject>().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [

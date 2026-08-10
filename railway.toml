@@ -3,10 +3,5 @@ builder = "nixpacks"
 
 [[services]]
 name = "web"
-buildCommand = "NODE_ENV=production pnpm install && NODE_ENV=production pnpm build"
+buildCommand = "NODE_ENV=production pnpm install --frozen-lockfile && NODE_ENV=production pnpm build"
 startCommand = "pnpm --filter @wargame/web start"
-
-[[services]]
-name = "worker"
-buildCommand = "NODE_ENV=production pnpm install && NODE_ENV=production pnpm build"
-startCommand = "pnpm --filter @wargame/worker start"

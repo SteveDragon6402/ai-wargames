@@ -19,7 +19,6 @@
     "migrate": "drizzle-kit migrate"
   },
   "dependencies": {
-    "@wargame/shared": "workspace:*",
     "drizzle-orm": "^0.38.3",
     "postgres": "^3.4.5"
   },

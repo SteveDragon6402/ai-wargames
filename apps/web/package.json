@@ -3,9 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "pnpm --filter @wargame/server build",
     "dev": "next dev",
-    "prebuild": "pnpm --filter @wargame/shared build && pnpm --filter @wargame/engine build && pnpm --filter @wargame/db build && pnpm --filter @wargame/server build",
+    "prebuild": "pnpm --filter @wargame/db build",
     "build": "NODE_ENV=production next build",
     "start": "next start -p ${PORT:-3000}",
     "lint": "next lint"
@@ -14,18 +13,12 @@
     "@anthropic-ai/sdk": "^0.39.0",
     "@phosphor-icons/react": "^2.1.10",
     "@wargame/db": "workspace:*",
-    "@wargame/engine": "workspace:*",
-    "@wargame/server": "workspace:*",
-    "@wargame/shared": "workspace:*",
     "@xyflow/react": "^12.4.4",
-    "bullmq": "^5.34.2",
     "dotenv": "^16.4.7",
     "drizzle-orm": "^0.38.3",
     "next": "15.1.11",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "socket.io-client": "^4.8.1",
-    "zod": "^3.23.8"
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
