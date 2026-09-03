@@ -87,6 +87,7 @@ export const HOUSE_SHORT: Record<FactionId, string> = {
 
 export const MAX_ACTION_WORDS = 500;
 export const MAX_ACTION_CHARS = 4000;
-export const SCRATCHPAD_MAX_CHARS = 12_000;
+export const SCRATCHPAD_MAX_CHARS = 16_000;
+export const MAX_BRIEFING_WORDS = 180;
 export const GM_MAX_TOKENS = 8192;
 export const GM_LOCK_MS = 180_000;

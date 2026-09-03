@@ -1,34 +1,52 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { FactionId, SecretTestState } from "../types";
-import { GM_MAX_TOKENS, SCRATCHPAD_MAX_CHARS } from "../types";
+import { GM_MAX_TOKENS, MAX_BRIEFING_WORDS, SCRATCHPAD_MAX_CHARS } from "../types";
 import { archiveCurrentTurn, isOpeningResolve } from "./state";
+import { wordCount } from "./words";
 
-const SYSTEM_PROMPT = `You are the hidden chronicler and game-master of a secret correspondence wargame set in the Wars of the Roses, beginning in England, 1455.
+const SYSTEM_PROMPT = `You are the hidden game-master of a Wars of the Roses correspondence game, England, 1455. You simulate the whole realm. There is no board.
 
-Two human players command the houses. You are the entire world: weather, harvests, treasuries, affinities, spies, bishops, captains, the court of Henry VI, Margaret of Anjou, Warwick, the City of London, Calais, the north, Wales, Ireland. There is no board. What you write in the scratchpad is true. What you write in a briefing is only what that house would hear.
+TRUTH vs DISPATCH
+- Scratchpad = the true world. Players never see it. Be unafraid of it: rewrite the entire ledger every turn. Dense. Named. Numbered.
+- Briefings = what that house actually knows this turn. Short, factual, direct. Asymmetric: rumours, delays, gaps. Never dump the true map into both letters. Never quote the other house's orders.
 
-HARD RULES
-- Never reveal the scratchpad, the other house's briefing, or the other house's orders to a player. Briefings are asymmetric: rumours, riders, incomplete scouting, flattering lies from retainers, genuine intelligence mixed with fog.
-- Do not dump the true map into both letters. A victory for one side may reach the other as a rumour, a delayed courier, or not at all this turn.
-- Prefer qualitative state over fake numbers. Treasury is "the wool customs are thin" not "gold: 47". Armies are hosts, retinues, affinities — condition, loyalty, hunger — not hit points.
-- Use period proper nouns (places, houses, offices). Write briefings as dispatches a 15th-century councillor might receive: concrete, political, occasionally bloody. No modern slang, no game-UI talk, no "as an AI".
-- Each briefing should be a proper letter (roughly 200–500 words): situation as that house knows it, pressures, opportunities, and what their people are asking of them. Address the house, not "Player 1".
-- You must use tools. First update_scratchpad to keep the true ledger current, then either issue_briefings (war continues) or declare_winner (war decided).
-- Do not declare a winner on the opening turn. Do not end after a single exchange unless a player has done something catastrophically decisive (the rival house extinguished, the usurper crowned and unopposed, the realm clearly settled). Prefer a campaign of several seasons.
-- When you issue_briefings after player orders, those letters are the NEXT turn's dispatches — they must reflect what actually followed from both houses' orders, as each house would learn it.
-- Personality breakdowns (on declare_winner only) are deep: how they used secrecy, mercy, terror, patience, rashness, money, marriage, and the church. Write as a later Tudor historian who has read both councils' papers. Several substantial paragraphs each.
+SCRATCHPAD — use it fully, every turn
+Rewrite the whole thing. Do not append a one-liner. Include at least:
+- Crown: who holds power at court, king's health, queen, protector
+- Money: treasuries in £, debts, customs, who is unpaid and by how many weeks
+- Forces: named hosts, headcount, location, condition, commander
+- Ground: who holds which castle/town; garrisons (numbers)
+- Diplomacy: marriages, indentures, the Church, Calais, Burgundy, Scotland
+- Secrets: plots the other side does not know
+- Last season: what actually happened when both orders resolved (casualties, money spent, who moved)
+Invent consistent figures and keep them. If York spends 800 marks, subtract it. If 400 men fall at St Albans, the next scratchpad shows 400 fewer.
 
-THE HOUSES
-- Lancaster (red rose): the royal house of Henry VI. Weak king, fierce queen, Beaufort and Tudor affinities, the north and the west often lean this way — unless you decide otherwise in the scratchpad.
-- York (white rose): Richard, Duke of York, and his sons. Claim, protectorate, Calais, the marcher lords, Warwick's kingmaking — unless you decide otherwise.
+BRIEFINGS — short, then stop
+- Hard cap: under 180 words each. Prefer 80–140.
+- Facts and figures the recipient would have: "2,000 under Salisbury at Middleham"; "Calais owed 14 weeks' pay"; "Somerset holds the Tower".
+- Direct. No atmosphere, no biblical cadence, no "the realm groans", no wax-and-roses prose.
+- Structure: (1) what happened that you would know (2) your present strength/purse/friends as you know them (3) one or two live choices. Then stop.
+- Address the house, not "Player 1". Period names. No game-UI talk.
 
-Players are the directing minds of each house, not locked to one historical body. You may place them as the duke, the queen's council, a captain of Calais, etc., so long as it is consistent in the scratchpad.`;
+TOOLS
+Always update_scratchpad first (full rewrite). Then issue_briefings, or declare_winner if the war is actually decided.
+Do not declare a winner on the opening turn, or after one exchange, unless a house is extinguished or the crown is unopposed.
+After player orders, briefings are the NEXT turn: only what followed, as each house would learn it.
+
+WINNER (declare_winner only)
+- reason: a short factual verdict (what settled it — field, purse, parliament, murder). Under 120 words.
+- breakdowns: how each player actually played (secrecy, money, force, delay). Tight, specific, a few short paragraphs. No panegyric.
+
+HOUSES (unless the scratchpad has already moved them)
+- Lancaster: Henry VI, Margaret of Anjou, Beaufort/Tudor affinities.
+- York: Richard, Duke of York, his sons, Warwick, Calais, the marcher lords.
+Players direct the house; keep identities consistent in the scratchpad.`;
 
 export const GM_TOOLS: Anthropic.Messages.Tool[] = [
   {
     name: "update_scratchpad",
     description:
-      "Replace your private ledger of the true world. Players never see this. Track treasury, influence, diplomacy, who holds which castle, hosts in the field, secret deals, casualties, the king's health, and anything else you need. Keep it current and dense.",
+      "Replace the entire private ledger of the true world. Players never see this. Be dense and specific: £, headcounts, castle holders, unpaid weeks, secrets. Full rewrite every turn — do not write a timid summary.",
     input_schema: {
       type: "object",
       properties: { text: { type: "string" } },
@@ -38,7 +56,7 @@ export const GM_TOOLS: Anthropic.Messages.Tool[] = [
   {
     name: "issue_briefings",
     description:
-      "Send this turn's private dispatch to each house. Asymmetric intelligence only. Call when the war continues. After player orders, these letters are the NEXT turn.",
+      "Private dispatch to each house. Under 180 words each, prefer 80–140. Facts, names, figures only. No atmosphere. After player orders these are the NEXT turn.",
     input_schema: {
       type: "object",
       properties: {
@@ -51,7 +69,7 @@ export const GM_TOOLS: Anthropic.Messages.Tool[] = [
   {
     name: "declare_winner",
     description:
-      "End the war when the throne, the rival house, or the political reality is clearly decided. Historian's verdict plus a deep personality breakdown of each player.",
+      "End the war when it is actually decided. Short factual reason. Tight personality notes on how each player conducted the war.",
     input_schema: {
       type: "object",
       properties: {
@@ -98,25 +116,26 @@ export function buildGmUserMessage(
   const opening = isOpeningResolve(state);
 
   if (opening) {
-    return `OPENING OF THE WAR — England, 1455. Henry VI sits weakly on the throne. The roses have not yet fully drawn.
+    return `OPENING OF THE WAR — England, 1455.
 
-Lancaster is commanded by: ${lanc}
-York is commanded by: ${york}
+Lancaster commander: ${lanc}
+York commander: ${york}
 
-There are no player orders yet. There is no history.
+No orders yet. No history.
 
-YOUR SCRATCHPAD (empty if first thought):
+YOUR SCRATCHPAD:
 ${state.scratchpad || "(empty)"}
 
-Update the scratchpad with the starting political and military situation, then issue_briefings for Turn 1 — the first private letters each council receives as the realm slides toward war.`;
+First: update_scratchpad with a full starting ledger (crown, money in £, named hosts with headcounts, who holds which castle, secrets). Do not be brief on the pad.
+Then: issue_briefings for Turn 1 — under 180 words each, facts only.`;
   }
 
   return `TURN ${state.turn} RESOLVE
 
-Lancaster is commanded by: ${lanc}
-York is commanded by: ${york}
+Lancaster commander: ${lanc}
+York commander: ${york}
 
-The players have sealed orders in reply to the briefings you issued for this turn. Adjudicate what actually happened. Then update_scratchpad, and either issue_briefings for the NEXT turn or declare_winner.
+Adjudicate both orders against the scratchpad. Then rewrite the entire scratchpad with what is now true (numbers must move). Then issue_briefings for the NEXT turn (under 180 words, facts each house would know) or declare_winner.
 
 === BRIEFINGS YOU ISSUED (Turn ${state.turn}) ===
 
@@ -134,7 +153,7 @@ ${state.pendingActions.lancaster ?? "(none)"}
 YORK:
 ${state.pendingActions.york ?? "(none)"}
 
-=== COMPLETE HISTORY (all prior turns) ===
+=== COMPLETE HISTORY ===
 ${formatHistory(state)}
 
 === YOUR SCRATCHPAD ===
@@ -145,16 +164,16 @@ function fallbackBriefings(opening: boolean): Record<FactionId, string> {
   if (opening) {
     return {
       lancaster:
-        "To the council of the red rose.\n\nThe king's peace frays. Henry is unwell in mind and the queen's party looks to you to hold the affinity together. Rumour out of the north says York musters under colour of 'good government'. The Exchequer is thin; the Calais garrison writes for pay. Write your will: whom you trust, where you spend treasure, and whether you strike or wait.",
+        "Henry is unfit to rule; Margaret and Somerset hold the council. The Exchequer can cover about £12,000 this term; Calais is 12 weeks in arrears. York has been named as a possible protector in the Commons rumour. Somerset still holds the Tower. Decide: pay Calais, arrest York, or call a great council.",
       york:
-        "To the council of the white rose.\n\nThe duke's claim is spoken more loudly in halls than in statute. Henry's court is a nest of Beauforts; the realm wants a protector and fears a usurper. Warwick's men in Calais ask whether they ride this season. A rider from Ludlow says the marcher tenantry will rise if you give the word. Write your will: alliance, delay, or the field.",
+        "You have the protectorate claim and Warwick's indenture. About 3,000 can be put in the field from the marches in six weeks if you spend the wool money. London is split. Somerset holds the Tower and the king's ear. Calais looks to you if you can find their pay. Decide: come to London in arms, bid for parliament, or wait.",
     };
   }
   return {
     lancaster:
-      "To Lancaster.\n\nCouriers crossed in the night and the picture is incomplete. Your last orders were attempted; some bore fruit, some were blunted by weather, purse, or treachery you cannot yet name. The other rose is not idle. Send fresh instruction.",
+      "Your last orders went out. Returns are incomplete. Treasury and hosts are as you last knew them; the other rose moved. Send the next instruction.",
     york:
-      "To York.\n\nThe chronicler has only fragments. Your last orders went out; not all returned. London talks two ways at once. Instruct your captains and your friends at court before the next season closes.",
+      "Your last orders went out. Returns are incomplete. Treasury and hosts are as you last knew them; the other rose moved. Send the next instruction.",
   };
 }
 
@@ -176,8 +195,16 @@ function applyToolInput(
     const lancaster = typeof input.lancaster === "string" ? input.lancaster.trim() : "";
     const york = typeof input.york === "string" ? input.york.trim() : "";
     if (!lancaster || !york) return "Both lancaster and york briefings are required.";
+    if (!acc.scratchpad.trim()) {
+      return "Scratchpad is empty. update_scratchpad with the full true ledger first, then issue_briefings.";
+    }
+    const lw = wordCount(lancaster);
+    const yw = wordCount(york);
+    if (lw > MAX_BRIEFING_WORDS || yw > MAX_BRIEFING_WORDS) {
+      return `Too long (Lancaster ${lw} words, York ${yw}). Each briefing must be under ${MAX_BRIEFING_WORDS} words. Cut atmosphere; keep names, figures, choices.`;
+    }
     acc.briefings = { lancaster, york };
-    return "Briefings accepted. The turn may now advance.";
+    return "Briefings accepted.";
   }
   if (name === "declare_winner") {
     const winner = input.winner === "york" ? "york" : input.winner === "lancaster" ? "lancaster" : null;
@@ -272,7 +299,7 @@ export async function runGmTurn(
     for (let round = 0; round < maxRounds; round++) {
       const nudge =
         round > 0 && !acc.briefings && !acc.winner
-          ? "You must now call issue_briefings (war continues) or declare_winner (war decided). You may update_scratchpad first."
+          ? "Call issue_briefings (under 180 words, facts) or declare_winner. If the scratchpad is thin, update_scratchpad with the full ledger first."
           : null;
       if (nudge) {
         messages.push({ role: "user", content: nudge });
@@ -300,7 +327,11 @@ export async function runGmTurn(
 
       messages.push({ role: "assistant", content: response.content });
       const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
-      for (const tu of toolUses) {
+      const ordered = [
+        ...toolUses.filter((tu) => tu.name === "update_scratchpad"),
+        ...toolUses.filter((tu) => tu.name !== "update_scratchpad"),
+      ];
+      for (const tu of ordered) {
         const input = (tu.input ?? {}) as Record<string, unknown>;
         const result = applyToolInput(tu.name, input, acc);
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: result });
