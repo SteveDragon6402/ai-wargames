@@ -2,7 +2,6 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { RoseGlyph } from "./components/RoseGlyph";
 
 async function safeJson(res: Response): Promise<Record<string, unknown>> {
@@ -83,9 +82,33 @@ export default function SecretTestLanding() {
         padding: 24,
       }}
     >
-      <Link href="/" className="rose-link" style={{ marginBottom: 28, alignSelf: "center" }}>
-        ← The other war
-      </Link>
+      <nav
+        style={{
+          display: "flex",
+          gap: 8,
+          marginBottom: 28,
+          border: "1px solid #2a241c",
+          padding: 4,
+        }}
+      >
+        <a href="/" className="rose-link" style={{ padding: "8px 16px", letterSpacing: "0.12em" }}>
+          War of the Five Kings
+        </a>
+        <span
+          style={{
+            padding: "8px 16px",
+            fontSize: 10,
+            fontWeight: 700,
+            letterSpacing: "0.12em",
+            textTransform: "uppercase",
+            color: "#b08d3e",
+            background: "#1a1208",
+            border: "1px solid #6e5724",
+          }}
+        >
+          Secret Test
+        </span>
+      </nav>
 
       <div style={{ display: "flex", alignItems: "center", gap: 28, marginBottom: 28 }}>
         <div style={{ textAlign: "center" }}>

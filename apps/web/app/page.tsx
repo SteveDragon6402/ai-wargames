@@ -83,6 +83,47 @@ export default function HomePage() {
         fontFamily: "var(--font-mono), monospace",
       }}
     >
+      {/* Campaign menu */}
+      <nav
+        style={{
+          display: "flex",
+          gap: 8,
+          marginBottom: 36,
+          border: "1px solid #1e1e1e",
+          padding: 4,
+        }}
+      >
+        <span
+          style={{
+            padding: "8px 16px",
+            fontSize: 10,
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: "0.12em",
+            color: "#c8941a",
+            background: "#1a1200",
+            border: "1px solid #3a2a00",
+          }}
+        >
+          War of the Five Kings
+        </span>
+        <a
+          href="/secret-test"
+          style={{
+            padding: "8px 16px",
+            fontSize: 10,
+            fontWeight: 700,
+            textTransform: "uppercase",
+            letterSpacing: "0.12em",
+            color: "#c8c0b0",
+            textDecoration: "none",
+            border: "1px solid #2a241c",
+          }}
+        >
+          Secret Test
+        </a>
+      </nav>
+
       {/* House sigils */}
       <div
         style={{
@@ -414,14 +455,12 @@ export default function HomePage() {
         <a
           href="/secret-test"
           style={{
-            fontSize: 9,
-            color: "#3a2a1a",
+            fontSize: 11,
+            color: "#c8941a",
             textTransform: "uppercase",
-            letterSpacing: "0.14em",
+            letterSpacing: "0.12em",
             textDecoration: "none",
           }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = "#c8941a")}
-          onMouseLeave={(e) => (e.currentTarget.style.color = "#3a2a1a")}
         >
           Secret Test — The Wars of the Roses
         </a>
