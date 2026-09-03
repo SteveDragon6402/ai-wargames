@@ -404,9 +404,27 @@ export default function HomePage() {
           color: "#1a1a1a",
           textTransform: "uppercase",
           letterSpacing: "0.15em",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          gap: 10,
         }}
       >
-        AI-adjudicated node warfare · secure channel
+        <span>AI-adjudicated node warfare · secure channel</span>
+        <a
+          href="/secret-test"
+          style={{
+            fontSize: 9,
+            color: "#3a2a1a",
+            textTransform: "uppercase",
+            letterSpacing: "0.14em",
+            textDecoration: "none",
+          }}
+          onMouseEnter={(e) => (e.currentTarget.style.color = "#c8941a")}
+          onMouseLeave={(e) => (e.currentTarget.style.color = "#3a2a1a")}
+        >
+          Secret Test — The Wars of the Roses
+        </a>
       </div>
     </main>
   );

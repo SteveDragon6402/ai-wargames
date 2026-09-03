@@ -1,0 +1,284 @@
+.rose-root {
+  --oak: #0c0a08;
+  --oak-raised: #14110d;
+  --parchment: #e8dcc4;
+  --parchment-deep: #d4c4a4;
+  --ink: #2a2418;
+  --ink-soft: #5a4e3a;
+  --gold: #b08d3e;
+  --gold-dim: #6e5724;
+  --lancaster: #7a1420;
+  --lancaster-hot: #a01c2c;
+  --york: #cfc8b8;
+  --york-steel: #8a8580;
+  --mute: #5a5348;
+  min-height: 100dvh;
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(176, 141, 62, 0.08), transparent 50%),
+    var(--oak);
+  color: #c8c0b0;
+  font-family: var(--font-sans), Inter, system-ui, sans-serif;
+}
+
+.rose-serif {
+  font-family: var(--font-rose), "Palatino Linotype", Palatino, serif;
+}
+
+.rose-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--mute);
+}
+
+.rose-title {
+  font-family: var(--font-rose), Palatino, serif;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: #efe6d2;
+}
+
+.rose-panel {
+  border: 1px solid #2a241c;
+  background: var(--oak-raised);
+}
+
+.rose-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #0a0806;
+  border: 1px solid #2a241c;
+  color: #e8dcc4;
+  padding: 10px 14px;
+  font-size: 15px;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.rose-input:focus {
+  border-color: var(--gold-dim);
+}
+
+.rose-input::placeholder {
+  color: #3a342c;
+}
+
+.rose-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 28px;
+  background: #1a1208;
+  border: 1px solid var(--gold-dim);
+  color: var(--gold);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  cursor: pointer;
+  font-family: inherit;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+
+.rose-btn:hover:not(:disabled) {
+  border-color: var(--gold);
+  color: #e8c86a;
+  background: #241808;
+}
+
+.rose-btn:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.rose-btn-ghost {
+  background: transparent;
+  border: 1px solid #2a241c;
+  color: #8a8070;
+}
+
+.rose-btn-ghost:hover:not(:disabled) {
+  border-color: #8a8070;
+  color: #c8c0b0;
+  background: transparent;
+}
+
+.rose-link {
+  font-size: 11px;
+  color: #5a5348;
+  text-decoration: none;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: color 0.12s;
+}
+
+.rose-link:hover {
+  color: var(--gold);
+}
+
+.rose-letter {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(90, 50, 20, 0.06), transparent 42%),
+    var(--parchment);
+  color: var(--ink);
+  box-shadow:
+    0 18px 50px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 1px rgba(80, 50, 20, 0.18);
+  padding: 36px 40px 44px;
+}
+
+.rose-letter-body {
+  font-family: var(--font-rose), Palatino, serif;
+  font-size: 19px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  color: var(--ink);
+}
+
+.rose-letter-body::first-letter {
+  float: left;
+  font-size: 3.1em;
+  line-height: 0.78;
+  padding-right: 10px;
+  font-weight: 600;
+}
+
+.rose-letter.house-lancaster .rose-letter-body::first-letter {
+  color: var(--lancaster);
+}
+
+.rose-letter.house-york .rose-letter-body::first-letter {
+  color: #3a3c42;
+}
+
+.rose-seal {
+  position: absolute;
+  top: 18px;
+  right: 18px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.rose-seal.lancaster {
+  background: radial-gradient(circle at 35% 30%, #c43a48, var(--lancaster));
+}
+
+.rose-seal.york {
+  background: radial-gradient(circle at 35% 30%, #f4eee0, #b8b0a0);
+}
+
+.rose-composer {
+  background:
+    linear-gradient(180deg, rgba(90, 50, 20, 0.04), transparent 30%),
+    #efe4cc;
+  color: var(--ink);
+  box-shadow: 0 12px 36px rgba(0, 0, 0, 0.4);
+  padding: 24px 28px 20px;
+}
+
+.rose-composer textarea {
+  width: 100%;
+  min-height: 180px;
+  box-sizing: border-box;
+  resize: vertical;
+  border: none;
+  background: transparent;
+  color: var(--ink);
+  font-family: var(--font-rose), Palatino, serif;
+  font-size: 18px;
+  line-height: 1.5;
+  outline: none;
+}
+
+.rose-composer textarea::placeholder {
+  color: #9a8c74;
+}
+
+.rose-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 6, 4, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  animation: rose-fade 0.4s ease;
+}
+
+@keyframes rose-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes rose-letter-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.rose-letter-enter {
+  animation: rose-letter-in 0.55s ease;
+}
+
+@keyframes rose-pulse {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 1; }
+}
+
+.rose-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  animation: rose-pulse 1.6s ease-in-out infinite;
+}
+
+.rose-error {
+  border: 1px solid var(--lancaster);
+  background: #14080a;
+  color: #d07070;
+  padding: 10px 14px;
+  font-size: 13px;
+}
+
+.rose-desk {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 28px;
+  max-width: 1080px;
+  margin: 0 auto;
+  padding: 28px 24px 64px;
+}
+
+.rose-end-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  margin-top: 22px;
+}
+
+@media (max-width: 860px) {
+  .rose-desk {
+    grid-template-columns: 1fr;
+    padding: 16px 14px 48px;
+  }
+
+  .rose-letter {
+    padding: 24px 20px 32px;
+  }
+
+  .rose-letter-body {
+    font-size: 17px;
+  }
+
+  .rose-end-cols {
+    grid-template-columns: 1fr;
+  }
+}

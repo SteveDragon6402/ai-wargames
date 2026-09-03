@@ -73,6 +73,16 @@ export const gotGames = pgTable("got_games", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+/** Secret Test — War of the Roses GM-adjudicated correspondence game. */
+export const secretTestGames = pgTable("secret_test_games", {
+  roomId: uuid("room_id")
+    .primaryKey()
+    .references(() => rooms.id, { onDelete: "cascade" }),
+  /** Full SecretTestState JSON blob — never send unfiltered to clients */
+  state: jsonb("state").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const orders = pgTable(
   "orders",
   {
