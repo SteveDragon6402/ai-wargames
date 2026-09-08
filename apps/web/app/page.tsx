@@ -11,13 +11,31 @@ async function safeJson(res: Response): Promise<Record<string, unknown>> {
   }
 }
 
+/** Which GOT campaign the uplink creates/joins. Each has its own api namespace. */
+const CAMPAIGNS = {
+  "got-houses-v2": {
+    label: "Riverlands Campaign",
+    title: "The Riverlands Campaign",
+    tagline: "Four regions · North · Riverlands · Westerlands · Crownlands",
+  },
+  "got-houses": {
+    label: "War of the Five Kings",
+    title: "War of the Five Kings",
+    tagline: "AI-adjudicated · node warfare · Westeros theatre",
+  },
+} as const;
+
+type CampaignId = keyof typeof CAMPAIGNS;
+
 export default function HomePage() {
   const router = useRouter();
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [campaign, setCampaign] = useState<CampaignId>("got-houses-v2");
   const codeRef = useRef<HTMLInputElement>(null);
+  const active = CAMPAIGNS[campaign];
 
   async function createRoom() {
     if (!name.trim()) {
@@ -27,14 +45,14 @@ export default function HomePage() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/got-houses/rooms", {
+      const res = await fetch(`/api/${campaign}/rooms`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ displayName: name.trim() }),
       });
       const data = await safeJson(res);
       if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Failed to create room");
-      router.push(`/got-houses/room/${data.roomId}/lobby`);
+      router.push(`/${campaign}/room/${data.roomId}/lobby`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
     } finally {
@@ -55,14 +73,14 @@ export default function HomePage() {
     setLoading(true);
     setError("");
     try {
-      const res = await fetch("/api/got-houses/rooms/join", {
+      const res = await fetch(`/api/${campaign}/rooms/join`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ code: code.toUpperCase(), displayName: name.trim() }),
       });
       const data = await safeJson(res);
       if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Failed to join");
-      router.push(`/got-houses/room/${data.roomId}/lobby`);
+      router.push(`/${campaign}/room/${data.roomId}/lobby`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
     } finally {
@@ -93,20 +111,30 @@ export default function HomePage() {
           padding: 4,
         }}
       >
-        <span
-          style={{
-            padding: "8px 16px",
-            fontSize: 10,
-            fontWeight: 700,
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
-            color: "#c8941a",
-            background: "#1a1200",
-            border: "1px solid #3a2a00",
-          }}
-        >
-          War of the Five Kings
-        </span>
+        {(Object.keys(CAMPAIGNS) as CampaignId[]).map((id) => {
+          const selected = id === campaign;
+          return (
+            <button
+              key={id}
+              type="button"
+              onClick={() => setCampaign(id)}
+              style={{
+                padding: "8px 16px",
+                fontSize: 10,
+                fontWeight: 700,
+                textTransform: "uppercase",
+                letterSpacing: "0.12em",
+                fontFamily: "inherit",
+                cursor: selected ? "default" : "pointer",
+                color: selected ? "#c8941a" : "#c8c0b0",
+                background: selected ? "#1a1200" : "transparent",
+                border: `1px solid ${selected ? "#3a2a00" : "#2a241c"}`,
+              }}
+            >
+              {CAMPAIGNS[id].label}
+            </button>
+          );
+        })}
         <a
           href="/secret-test"
           style={{
@@ -192,10 +220,10 @@ export default function HomePage() {
             marginBottom: 6,
           }}
         >
-          War of the Five Kings
+          {active.title}
         </h1>
         <p style={{ fontSize: 9, color: "#2a2a2a", textTransform: "uppercase", letterSpacing: "0.2em" }}>
-          AI-adjudicated · node warfare · Westeros theatre
+          {active.tagline}
         </p>
       </div>
 
@@ -420,7 +448,7 @@ export default function HomePage() {
           }}
         >
           <a
-            href="/got-houses"
+            href={`/${campaign}`}
             style={{
               fontSize: 9,
               color: "#2a2a2a",

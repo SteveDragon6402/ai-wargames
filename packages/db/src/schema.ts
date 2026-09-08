@@ -73,6 +73,20 @@ export const gotGames = pgTable("got_games", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
 });
 
+/**
+ * GOT Houses v2 — four-region campaign. Separate table from got_games because
+ * the v2 GameState blob is not shape-compatible with v1 (different map, siege
+ * terms, capture pledges); loading one into the other silently corrupts a board.
+ */
+export const gotV2Games = pgTable("got_v2_games", {
+  roomId: uuid("room_id")
+    .primaryKey()
+    .references(() => rooms.id, { onDelete: "cascade" }),
+  /** Full v2 GameState JSON blob */
+  state: jsonb("state").notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
 /** Secret Test — War of the Roses GM-adjudicated correspondence game. */
 export const secretTestGames = pgTable("secret_test_games", {
   roomId: uuid("room_id")

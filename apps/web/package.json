@@ -7,7 +7,9 @@
     "prebuild": "pnpm --filter @wargame/db build",
     "build": "NODE_ENV=production next build",
     "start": "next start -p ${PORT:-3000}",
-    "lint": "next lint"
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test app/got-houses-v2/lib/*.test.ts app/got-houses-v2/hooks/*.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
