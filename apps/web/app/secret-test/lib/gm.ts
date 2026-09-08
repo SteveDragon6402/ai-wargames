@@ -1,52 +1,52 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { FactionId, SecretTestState } from "../types";
-import { GM_MAX_TOKENS, MAX_BRIEFING_WORDS, SCRATCHPAD_MAX_CHARS } from "../types";
-import { archiveCurrentTurn, isOpeningResolve } from "./state";
-import { wordCount } from "./words";
+import { SEATS, STATES } from "../data/valden";
+import type { CosTranslation, FactionId, SecretTestState, Winner } from "../types";
+import { GM_MAX_TOKENS, MAX_VOTER_POLLS, SCRATCHPAD_MAX_CHARS, isDebateMonth } from "../types";
+import { emptyTranslation } from "./state";
+import { pollVoters, type VoterSample } from "./poll";
+import { statesWon, tallyStates } from "./tally";
 
-const SYSTEM_PROMPT = `You are the hidden game-master of a Wars of the Roses correspondence game, England, 1455. You simulate the whole realm. There is no board.
+function trimScratchpad(text: string): string {
+  if (text.length <= SCRATCHPAD_MAX_CHARS) return text;
+  return text.slice(0, SCRATCHPAD_MAX_CHARS);
+}
 
-TRUTH vs DISPATCH
-- Scratchpad = the true world. Players never see it. Be unafraid of it: rewrite the entire ledger every turn. Dense. Named. Numbered.
-- Briefings = what that house actually knows this turn. Short, factual, direct. Asymmetric: rumours, delays, gaps. Never dump the true map into both letters. Never quote the other house's orders.
+function clampLean(n: number): number {
+  return Math.max(-1, Math.min(1, n));
+}
 
-SCRATCHPAD — use it fully, every turn
-Rewrite the whole thing. Do not append a one-liner. Include at least:
-- Crown: who holds power at court, king's health, queen, protector
-- Money: treasuries in £, debts, customs, who is unpaid and by how many weeks
-- Forces: named hosts, headcount, location, condition, commander
-- Ground: who holds which castle/town; garrisons (numbers)
-- Diplomacy: marriages, indentures, the Church, Calais, Burgundy, Scotland
-- Secrets: plots the other side does not know
-- Last season: what actually happened when both orders resolved (casualties, money spent, who moved)
-Invent consistent figures and keep them. If York spends 800 marks, subtract it. If 400 men fall at St Albans, the next scratchpad shows 400 fewer.
+function clampTurnout(n: number): number {
+  return Math.max(0.2, Math.min(0.95, n));
+}
 
-BRIEFINGS — short, then stop
-- Hard cap: under 180 words each. Prefer 80–140.
-- Facts and figures the recipient would have: "2,000 under Salisbury at Middleham"; "Calais owed 14 weeks' pay"; "Somerset holds the Tower".
-- Direct. No atmosphere, no biblical cadence, no "the realm groans", no wax-and-roses prose.
-- Structure: (1) what happened that you would know (2) your present strength/purse/friends as you know them (3) one or two live choices. Then stop.
-- Address the house, not "Player 1". Period names. No game-UI talk.
+const SYSTEM_PROMPT = `You are the election GM for the Republic of Valden, a small northern federation. Two blank-slate campaigns (red and blue). 12 months. 17 constituencies in 5 states. Winning a majority of seats in a state takes the state. Winning 3 states wins the election.
+
+You are discerning. A candidate cannot visit 12 seats. Trust the chief-of-staff translations for what actually happened and what was refused. Charge money honestly. If they fundraise, you decide the take. If they overpromised, the CoS already cut it — do not secretly grant the rest.
+
+HARD
+- Money is the only public hard resource. Apply cash deltas. Do not go below 0.
+- Seat lean is −1 (solid blue) to +1 (solid red). Turnout 0.2–0.95. Patch only seats that moved.
+- Issues: 1–3 national issues each month. If a campaign did not opine in their directive, they have no stance — you may punish silence or let it pass.
+- Debates: months 9 and 11. If the NEXT month is 9 or 11, set three shared questions. Debate answers come raw — both candidates get the same questions.
+
+SCRATCHPAD
+Rewrite the whole ledger every turn: money, leans, turnout, secrets, what each CoS actually executed, poll notes. Dense. Numbered.
+
+POLLING
+If you are unsure how a line lands, call poll_voters (max 8: any seats, any demographics). Cheap bots. Then judge. If you already know, do not poll.
 
 TOOLS
-Always update_scratchpad first (full rewrite). Then issue_briefings, or declare_winner if the war is actually decided.
-Do not declare a winner on the opening turn, or after one exchange, unless a house is extinguished or the crown is unopposed.
-After player orders, briefings are the NEXT turn: only what followed, as each house would learn it.
+1. update_scratchpad — full rewrite
+2. apply_world — money deltas, seat patches, issues, optional debateQuestions (exactly 3 strings if next month is a debate)
+3. poll_voters — discretionary
+4. declare_winner — only after month 12's campaign is applied (or if the race is mathematically dead). Include state-by-state and campaign breakdowns.
 
-WINNER (declare_winner only)
-- reason: a short factual verdict (what settled it — field, purse, parliament, murder). Under 120 words.
-- breakdowns: how each player actually played (secrecy, money, force, delay). Tight, specific, a few short paragraphs. No panegyric.
+Opening month: no actions yet. Seed the world, issues, and a first read of the map. Do not declare a winner.`;
 
-HOUSES (unless the scratchpad has already moved them)
-- Lancaster: Henry VI, Margaret of Anjou, Beaufort/Tudor affinities.
-- York: Richard, Duke of York, his sons, Warwick, Calais, the marcher lords.
-Players direct the house; keep identities consistent in the scratchpad.`;
-
-export const GM_TOOLS: Anthropic.Messages.Tool[] = [
+const GM_TOOLS: Anthropic.Messages.Tool[] = [
   {
     name: "update_scratchpad",
-    description:
-      "Replace the entire private ledger of the true world. Players never see this. Be dense and specific: £, headcounts, castle holders, unpaid weeks, secrets. Full rewrite every turn — do not write a timid summary.",
+    description: "Replace the entire true ledger. Players never see this.",
     input_schema: {
       type: "object",
       properties: { text: { type: "string" } },
@@ -54,306 +54,433 @@ export const GM_TOOLS: Anthropic.Messages.Tool[] = [
     },
   },
   {
-    name: "issue_briefings",
+    name: "apply_world",
     description:
-      "Private dispatch to each house. Under 180 words each, prefer 80–140. Facts, names, figures only. No atmosphere. After player orders these are the NEXT turn.",
+      "Apply cash deltas, seat lean/turnout patches, next-month issues, and debate questions if the next month is 9 or 11.",
     input_schema: {
       type: "object",
       properties: {
-        lancaster: { type: "string" },
-        york: { type: "string" },
+        moneyDelta: {
+          type: "object",
+          properties: { red: { type: "number" }, blue: { type: "number" } },
+        },
+        seats: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              lean: { type: "number" },
+              turnout: { type: "number" },
+            },
+            required: ["id"],
+          },
+        },
+        issues: { type: "array", items: { type: "string" } },
+        debateQuestions: { type: "array", items: { type: "string" } },
+        noteForBriefings: {
+          type: "string",
+          description: "Short factual note both chiefs of staff will read (public events, not secrets).",
+        },
       },
-      required: ["lancaster", "york"],
+    },
+  },
+  {
+    name: "poll_voters",
+    description: `Spin up up to ${MAX_VOTER_POLLS} cheap voter bots. Any seat, any demographic.`,
+    input_schema: {
+      type: "object",
+      properties: {
+        samples: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              seatId: { type: "string" },
+              demographic: { type: "string" },
+              question: { type: "string" },
+            },
+            required: ["seatId", "demographic", "question"],
+          },
+        },
+      },
+      required: ["samples"],
     },
   },
   {
     name: "declare_winner",
-    description:
-      "End the war when it is actually decided. Short factual reason. Tight personality notes on how each player conducted the war.",
+    description: "End the race after month 12 resolve.",
     input_schema: {
       type: "object",
       properties: {
-        winner: { type: "string", enum: ["lancaster", "york"] },
+        winner: { type: "string", enum: ["red", "blue"] },
         reason: { type: "string" },
-        lancasterBreakdown: { type: "string" },
-        yorkBreakdown: { type: "string" },
+        redBreakdown: { type: "string" },
+        blueBreakdown: { type: "string" },
       },
-      required: ["winner", "reason", "lancasterBreakdown", "yorkBreakdown"],
+      required: ["winner", "reason", "redBreakdown", "blueBreakdown"],
     },
   },
 ];
 
-function trimScratchpad(text: string): string {
-  if (text.length <= SCRATCHPAD_MAX_CHARS) return text;
-  return text.slice(0, SCRATCHPAD_MAX_CHARS);
-}
-
-function houseName(players: { factionId: string; displayName: string }[], faction: FactionId): string {
-  return players.find((p) => p.factionId === faction)?.displayName ?? faction;
-}
-
 function formatHistory(state: SecretTestState): string {
-  if (state.history.length === 0) return "(none yet)";
+  if (state.history.length === 0) return "(none)";
   return state.history
-    .map((entry) => {
+    .map((h) => {
       return [
-        `—— TURN ${entry.turn} ——`,
-        `LANCASTER BRIEFING:\n${entry.briefings.lancaster}`,
-        `YORK BRIEFING:\n${entry.briefings.york}`,
-        `LANCASTER ORDERS:\n${entry.actions.lancaster}`,
-        `YORK ORDERS:\n${entry.actions.york}`,
-      ].join("\n\n");
+        `— Month ${h.month} —`,
+        `RED did: ${h.translations.red?.executed ?? h.actions.red}`,
+        `BLUE did: ${h.translations.blue?.executed ?? h.actions.blue}`,
+        h.debateAnswers?.red ? `RED debate: ${h.debateAnswers.red.join(" | ")}` : "",
+        h.debateAnswers?.blue ? `BLUE debate: ${h.debateAnswers.blue.join(" | ")}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n");
     })
     .join("\n\n");
 }
 
+function mapBlock(state: SecretTestState): string {
+  return state.seats
+    .map((s) => {
+      const def = SEATS.find((d) => d.id === s.id);
+      return `${s.id} ${def?.name} [${def?.stateId}] lean=${s.lean.toFixed(2)} turn=${s.turnout.toFixed(2)}`;
+    })
+    .join("\n");
+}
+
 export function buildGmUserMessage(
   state: SecretTestState,
-  players: { factionId: string; displayName: string }[]
+  translations: Record<FactionId, CosTranslation>,
+  names: Record<FactionId, string>,
+  opening: boolean
 ): string {
-  const lanc = houseName(players, "lancaster");
-  const york = houseName(players, "york");
-  const opening = isOpeningResolve(state);
+  const nextMonth = Math.min(12, opening ? 1 : state.month + 1);
+  const needDebateQs = isDebateMonth(nextMonth);
 
   if (opening) {
-    return `OPENING OF THE WAR — England, 1455.
+    return `OPENING — Month 1. Republic of Valden. Red candidate: ${names.red}. Blue candidate: ${names.blue}.
+Both start at kr 4,000,000. No directives yet.
+Set issues and a first scratchpad. apply_world with issues (keep leans near seed unless you have a reason). Do not declare a winner.
+${needDebateQs ? "Next month is a debate month — include 3 debateQuestions." : ""}
 
-Lancaster commander: ${lanc}
-York commander: ${york}
-
-No orders yet. No history.
-
-YOUR SCRATCHPAD:
-${state.scratchpad || "(empty)"}
-
-First: update_scratchpad with a full starting ledger (crown, money in £, named hosts with headcounts, who holds which castle, secrets). Do not be brief on the pad.
-Then: issue_briefings for Turn 1 — under 180 words each, facts only.`;
+MAP:\n${mapBlock(state)}
+SCRATCHPAD:\n${state.scratchpad || "(empty)"}`;
   }
 
-  return `TURN ${state.turn} RESOLVE
+  return `MONTH ${state.month} RESOLVE. Next month will be ${nextMonth}.
+Red: ${names.red}. Blue: ${names.blue}.
+Cash now — red kr ${state.cash.red} / blue kr ${state.cash.blue}.
+${needDebateQs ? "NEXT month is a DEBATE month. apply_world MUST include exactly 3 debateQuestions." : "No debate questions unless you want to preview none."}
+${state.month === 12 ? "This is the LAST campaign month. After applying the world, declare_winner from the map (3 of 5 states)." : "Do not declare a winner."}
 
-Lancaster commander: ${lanc}
-York commander: ${york}
+RED CoS executed: ${translations.red.executed}
+RED deferred: ${translations.red.deferred}
+RED cost asked: kr ${translations.red.costKr}
+RED priorities: ${translations.red.prioritiesForGm}
+RED raw directive: ${state.pendingActions.red?.text ?? "(none)"}
+RED debate: ${state.pendingActions.red?.debateAnswers?.join(" | ") ?? "n/a"}
 
-Adjudicate both orders against the scratchpad. Then rewrite the entire scratchpad with what is now true (numbers must move). Then issue_briefings for the NEXT turn (under 180 words, facts each house would know) or declare_winner.
+BLUE CoS executed: ${translations.blue.executed}
+BLUE deferred: ${translations.blue.deferred}
+BLUE cost asked: kr ${translations.blue.costKr}
+BLUE priorities: ${translations.blue.prioritiesForGm}
+BLUE raw directive: ${state.pendingActions.blue?.text ?? "(none)"}
+BLUE debate: ${state.pendingActions.blue?.debateAnswers?.join(" | ") ?? "n/a"}
 
-=== BRIEFINGS YOU ISSUED (Turn ${state.turn}) ===
-
-LANCASTER:
-${state.briefings.lancaster}
-
-YORK:
-${state.briefings.york}
-
-=== PLAYER ORDERS (Turn ${state.turn}) ===
-
-LANCASTER:
-${state.pendingActions.lancaster ?? "(none)"}
-
-YORK:
-${state.pendingActions.york ?? "(none)"}
-
-=== COMPLETE HISTORY ===
-${formatHistory(state)}
-
-=== YOUR SCRATCHPAD ===
-${state.scratchpad || "(empty)"}`;
+ISSUES THIS MONTH: ${state.issues.join("; ")}
+MAP:\n${mapBlock(state)}
+HISTORY:\n${formatHistory(state)}
+SCRATCHPAD:\n${state.scratchpad || "(empty)"}`;
 }
 
-function fallbackBriefings(opening: boolean): Record<FactionId, string> {
-  if (opening) {
-    return {
-      lancaster:
-        "Henry is unfit to rule; Margaret and Somerset hold the council. The Exchequer can cover about £12,000 this term; Calais is 12 weeks in arrears. York has been named as a possible protector in the Commons rumour. Somerset still holds the Tower. Decide: pay Calais, arrest York, or call a great council.",
-      york:
-        "You have the protectorate claim and Warwick's indenture. About 3,000 can be put in the field from the marches in six weeks if you spend the wool money. London is split. Somerset holds the Tower and the king's ear. Calais looks to you if you can find their pay. Decide: come to London in arms, bid for parliament, or wait.",
-    };
-  }
-  return {
-    lancaster:
-      "Your last orders went out. Returns are incomplete. Treasury and hosts are as you last knew them; the other rose moved. Send the next instruction.",
-    york:
-      "Your last orders went out. Returns are incomplete. Treasury and hosts are as you last knew them; the other rose moved. Send the next instruction.",
-  };
+interface Acc {
+  scratchpad: string;
+  applied: boolean;
+  moneyDelta: { red: number; blue: number };
+  seatPatches: { id: string; lean?: number; turnout?: number }[];
+  issues: string[];
+  debateQuestions: string[];
+  noteForBriefings: string;
+  winner?: { factionId: FactionId; reason: string; breakdowns: Record<FactionId, string> };
+  pollsUsed: number;
 }
 
-function applyToolInput(
+function applyTool(
   name: string,
   input: Record<string, unknown>,
-  acc: {
-    scratchpad: string;
-    briefings?: Record<FactionId, string>;
-    winner?: SecretTestState["winner"];
-  }
-): string {
+  acc: Acc
+): { result: string; samples?: VoterSample[] } {
   if (name === "update_scratchpad") {
-    const text = typeof input.text === "string" ? input.text : "";
-    acc.scratchpad = trimScratchpad(text);
-    return `Scratchpad stored (${acc.scratchpad.length} characters).`;
+    acc.scratchpad = trimScratchpad(typeof input.text === "string" ? input.text : "");
+    return { result: `Scratchpad stored (${acc.scratchpad.length} chars).` };
   }
-  if (name === "issue_briefings") {
-    const lancaster = typeof input.lancaster === "string" ? input.lancaster.trim() : "";
-    const york = typeof input.york === "string" ? input.york.trim() : "";
-    if (!lancaster || !york) return "Both lancaster and york briefings are required.";
-    if (!acc.scratchpad.trim()) {
-      return "Scratchpad is empty. update_scratchpad with the full true ledger first, then issue_briefings.";
+  if (name === "apply_world") {
+    const md = input.moneyDelta as { red?: number; blue?: number } | undefined;
+    acc.moneyDelta = {
+      red: typeof md?.red === "number" ? md.red : acc.moneyDelta.red,
+      blue: typeof md?.blue === "number" ? md.blue : acc.moneyDelta.blue,
+    };
+    if (Array.isArray(input.seats)) {
+      acc.seatPatches = input.seats
+        .filter((s): s is Record<string, unknown> => !!s && typeof s === "object" && typeof s.id === "string")
+        .map((s) => ({
+          id: String(s.id),
+          lean: typeof s.lean === "number" ? s.lean : undefined,
+          turnout: typeof s.turnout === "number" ? s.turnout : undefined,
+        }));
     }
-    const lw = wordCount(lancaster);
-    const yw = wordCount(york);
-    if (lw > MAX_BRIEFING_WORDS || yw > MAX_BRIEFING_WORDS) {
-      return `Too long (Lancaster ${lw} words, York ${yw}). Each briefing must be under ${MAX_BRIEFING_WORDS} words. Cut atmosphere; keep names, figures, choices.`;
+    if (Array.isArray(input.issues)) {
+      acc.issues = input.issues.filter((x): x is string => typeof x === "string").slice(0, 4);
     }
-    acc.briefings = { lancaster, york };
-    return "Briefings accepted.";
+    if (Array.isArray(input.debateQuestions)) {
+      acc.debateQuestions = input.debateQuestions.filter((x): x is string => typeof x === "string").slice(0, 3);
+    }
+    if (typeof input.noteForBriefings === "string") acc.noteForBriefings = input.noteForBriefings;
+    acc.applied = true;
+    return { result: "World patch stored." };
+  }
+  if (name === "poll_voters") {
+    const left = MAX_VOTER_POLLS - acc.pollsUsed;
+    if (left <= 0) return { result: "Poll cap reached this turn." };
+    const raw = Array.isArray(input.samples) ? input.samples : [];
+    const samples: VoterSample[] = raw
+      .filter((s): s is Record<string, unknown> => !!s && typeof s === "object")
+      .map((s) => ({
+        seatId: typeof s.seatId === "string" ? s.seatId : "",
+        demographic: typeof s.demographic === "string" ? s.demographic : "resident",
+        question: typeof s.question === "string" ? s.question : "How do you feel about the campaigns this month?",
+      }))
+      .filter((s) => s.seatId)
+      .slice(0, left);
+    acc.pollsUsed += samples.length;
+    return { result: `Polling ${samples.length} voters…`, samples };
   }
   if (name === "declare_winner") {
-    const winner = input.winner === "york" ? "york" : input.winner === "lancaster" ? "lancaster" : null;
+    const winner = input.winner === "blue" ? "blue" : input.winner === "red" ? "red" : null;
     const reason = typeof input.reason === "string" ? input.reason.trim() : "";
-    const lancasterBreakdown =
-      typeof input.lancasterBreakdown === "string" ? input.lancasterBreakdown.trim() : "";
-    const yorkBreakdown = typeof input.yorkBreakdown === "string" ? input.yorkBreakdown.trim() : "";
-    if (!winner || !reason || !lancasterBreakdown || !yorkBreakdown) {
-      return "winner, reason, lancasterBreakdown, and yorkBreakdown are all required.";
+    const redBreakdown = typeof input.redBreakdown === "string" ? input.redBreakdown.trim() : "";
+    const blueBreakdown = typeof input.blueBreakdown === "string" ? input.blueBreakdown.trim() : "";
+    if (!winner || !reason || !redBreakdown || !blueBreakdown) {
+      return { result: "winner, reason, redBreakdown, blueBreakdown required." };
     }
     acc.winner = {
       factionId: winner,
       reason,
-      breakdowns: { lancaster: lancasterBreakdown, york: yorkBreakdown },
+      breakdowns: { red: redBreakdown, blue: blueBreakdown },
     };
-    return "Winner recorded. The war ends.";
+    return { result: "Winner recorded." };
   }
-  return `Unknown tool: ${name}`;
+  return { result: `Unknown tool ${name}` };
 }
 
-function gmModel(): string {
-  return process.env.MODEL_GM?.trim() || "claude-sonnet-4-6";
+function fallbackDebateQuestions(): string[] {
+  return [
+    "Should Valden expand the Gas Terminal?",
+    "How would you cut hospital waiting lists without raising the payroll tax?",
+    "What is your line on fishing quotas for the Skerries?",
+  ];
 }
 
-function applyOutcome(state: SecretTestState, acc: {
-  scratchpad: string;
-  briefings?: Record<FactionId, string>;
-  winner?: SecretTestState["winner"];
-}): SecretTestState {
-  const opening = isOpeningResolve(state);
+export function applyGmOutcome(
+  state: SecretTestState,
+  translations: Record<FactionId, CosTranslation>,
+  acc: Acc,
+  opening: boolean
+): { next: SecretTestState; briefingNote: string } {
   const next: SecretTestState = {
     ...state,
-    scratchpad: acc.scratchpad,
+    scratchpad: acc.scratchpad || state.scratchpad,
     gmLock: false,
     gmLockAt: undefined,
   };
 
-  if (acc.winner) {
-    if (!opening) {
-      next.history = [...state.history, archiveCurrentTurn(state)];
+  if (acc.applied || acc.winner) {
+    next.cash = {
+      red: Math.max(0, Math.round(state.cash.red + (acc.moneyDelta.red || 0))),
+      blue: Math.max(0, Math.round(state.cash.blue + (acc.moneyDelta.blue || 0))),
+    };
+    if (!acc.applied) {
+      next.cash = {
+        red: Math.max(0, state.cash.red - (translations.red.costKr || 0)),
+        blue: Math.max(0, state.cash.blue - (translations.blue.costKr || 0)),
+      };
     }
-    next.winner = acc.winner;
-    next.phase = "ended";
-    next.pendingActions = {};
-    return next;
+    const byId = new Map(state.seats.map((s) => [s.id, { ...s }]));
+    for (const p of acc.seatPatches) {
+      const cur = byId.get(p.id);
+      if (!cur) continue;
+      if (typeof p.lean === "number") cur.lean = clampLean(p.lean);
+      if (typeof p.turnout === "number") cur.turnout = clampTurnout(p.turnout);
+      byId.set(p.id, cur);
+    }
+    next.seats = [...byId.values()];
+    if (acc.issues.length) next.issues = acc.issues;
+  } else if (!opening) {
+    next.cash = {
+      red: Math.max(0, state.cash.red - translations.red.costKr),
+      blue: Math.max(0, state.cash.blue - translations.blue.costKr),
+    };
   }
 
-  const briefings = acc.briefings ?? fallbackBriefings(opening);
-  if (opening) {
-    next.briefings = briefings;
-    next.phase = "awaiting_actions";
-    next.pendingActions = {};
-    next.turn = 1;
-    return next;
+  const nextMonth = opening ? 1 : Math.min(12, state.month + (acc.winner ? 0 : 1));
+  if (!opening && !acc.winner) {
+    next.month = state.month + 1;
+  } else if (opening) {
+    next.month = 1;
   }
 
-  next.history = [...state.history, archiveCurrentTurn(state)];
-  next.briefings = briefings;
+  if (isDebateMonth(next.month)) {
+    next.debateQuestions =
+      acc.debateQuestions.length === 3 ? acc.debateQuestions : fallbackDebateQuestions();
+  } else {
+    next.debateQuestions = [];
+  }
+
+  if (!opening) {
+    next.history = [
+      ...state.history,
+      {
+        month: state.month,
+        briefings: { ...state.briefings },
+        actions: {
+          red: state.pendingActions.red?.text ?? "",
+          blue: state.pendingActions.blue?.text ?? "",
+        },
+        translations,
+        debateAnswers: {
+          red: state.pendingActions.red?.debateAnswers,
+          blue: state.pendingActions.blue?.debateAnswers,
+        },
+      },
+    ];
+  }
+
   next.pendingActions = {};
-  next.turn = state.turn + 1;
-  next.phase = "awaiting_actions";
-  return next;
+  next.lastTranslations = translations;
+
+  if (acc.winner || (!opening && state.month === 12)) {
+    const states = tallyStates(next.seats);
+    let winnerFaction = acc.winner?.factionId;
+    if (!winnerFaction) {
+      const redN = statesWon(states, "red");
+      const blueN = statesWon(states, "blue");
+      winnerFaction = redN === blueN ? (next.cash.red >= next.cash.blue ? "red" : "blue") : redN > blueN ? "red" : "blue";
+    }
+    next.winner = {
+      factionId: winnerFaction,
+      reason: acc.winner?.reason ?? `Final map: red ${statesWon(states, "red")} states, blue ${statesWon(states, "blue")}.`,
+      breakdowns: acc.winner?.breakdowns ?? {
+        red: "See the map and the money.",
+        blue: "See the map and the money.",
+      },
+      states,
+    };
+    next.phase = "ended";
+    next.month = 12;
+  } else {
+    next.phase = "awaiting_actions";
+  }
+
+  void nextMonth;
+  return { next, briefingNote: acc.noteForBriefings || acc.scratchpad.slice(0, 400) };
 }
 
 export async function runGmTurn(
   state: SecretTestState,
-  players: { factionId: string; displayName: string }[]
-): Promise<SecretTestState> {
-  const opening = isOpeningResolve(state);
+  translations: Record<FactionId, CosTranslation>,
+  names: Record<FactionId, string>,
+  opening: boolean
+): Promise<{ next: SecretTestState; briefingNote: string }> {
+  const acc: Acc = {
+    scratchpad: state.scratchpad,
+    applied: false,
+    moneyDelta: { red: 0, blue: 0 },
+    seatPatches: [],
+    issues: [],
+    debateQuestions: [],
+    noteForBriefings: "",
+    pollsUsed: 0,
+  };
+
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
-    console.warn("[secret-test/gm] ANTHROPIC_API_KEY missing — fallback briefings");
-    return applyOutcome(state, {
-      scratchpad: state.scratchpad || "Key missing. Fallback opening of 1455.",
-      briefings: fallbackBriefings(opening),
-    });
+    if (!opening) {
+      acc.moneyDelta = { red: -translations.red.costKr, blue: -translations.blue.costKr };
+      acc.applied = true;
+    }
+    acc.issues = state.issues.length ? state.issues : ["Hospital waits", "Quotas", "Gas Terminal"];
+    acc.noteForBriefings = "Quiet month. The map barely moved.";
+    return applyGmOutcome(state, translations, acc, opening);
   }
 
   const client = new Anthropic({ apiKey });
-  const model = gmModel();
-  const userMessage = buildGmUserMessage(state, players);
-  const acc: {
-    scratchpad: string;
-    briefings?: Record<FactionId, string>;
-    winner?: SecretTestState["winner"];
-  } = { scratchpad: state.scratchpad };
-
-  const messages: Anthropic.Messages.MessageParam[] = [{ role: "user", content: userMessage }];
-  const maxRounds = 8;
+  const model = process.env.MODEL_GM?.trim() || "claude-sonnet-4-6";
+  const messages: Anthropic.Messages.MessageParam[] = [
+    { role: "user", content: buildGmUserMessage(state, translations, names, opening) },
+  ];
 
   try {
-    for (let round = 0; round < maxRounds; round++) {
-      const nudge =
-        round > 0 && !acc.briefings && !acc.winner
-          ? "Call issue_briefings (under 180 words, facts) or declare_winner. If the scratchpad is thin, update_scratchpad with the full ledger first."
-          : null;
-      if (nudge) {
-        messages.push({ role: "user", content: nudge });
+    for (let round = 0; round < 8; round++) {
+      if (round > 0 && !acc.applied && !acc.winner) {
+        messages.push({
+          role: "user",
+          content: "Call apply_world now. After month 12, also declare_winner.",
+        });
       }
-
       const response = await client.messages.create({
         model,
         max_tokens: GM_MAX_TOKENS,
         system: SYSTEM_PROMPT,
         tools: GM_TOOLS,
-        tool_choice: { type: "auto" },
         messages,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        ...( { thinking: { type: "disabled" } } as any),
+        ...({ thinking: { type: "disabled" } } as any),
       });
-
       const toolUses = response.content.filter(
         (b): b is Anthropic.Messages.ToolUseBlock => b.type === "tool_use"
       );
-
       if (toolUses.length === 0) {
-        if (acc.briefings || acc.winner) break;
+        if (acc.applied || acc.winner) break;
         continue;
       }
-
       messages.push({ role: "assistant", content: response.content });
-      const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
       const ordered = [
-        ...toolUses.filter((tu) => tu.name === "update_scratchpad"),
-        ...toolUses.filter((tu) => tu.name !== "update_scratchpad"),
+        ...toolUses.filter((t) => t.name === "update_scratchpad"),
+        ...toolUses.filter((t) => t.name === "poll_voters"),
+        ...toolUses.filter((t) => t.name !== "update_scratchpad" && t.name !== "poll_voters"),
       ];
+      const toolResults: Anthropic.Messages.ToolResultBlockParam[] = [];
       for (const tu of ordered) {
         const input = (tu.input ?? {}) as Record<string, unknown>;
-        const result = applyToolInput(tu.name, input, acc);
-        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content: result });
+        const { result, samples } = applyTool(tu.name, input, acc);
+        let content = result;
+        if (samples?.length) {
+          const replies = await pollVoters(samples);
+          content = replies
+            .map((r) => `[${r.seatId} / ${r.demographic}] ${r.reply}`)
+            .join("\n");
+        }
+        toolResults.push({ type: "tool_result", tool_use_id: tu.id, content });
       }
       messages.push({ role: "user", content: toolResults });
-
-      if (acc.briefings || acc.winner) {
-        // Allow a trailing scratchpad in the same batch; then stop.
+      if ((acc.applied || acc.winner) && !toolUses.some((t) => t.name === "poll_voters")) {
         break;
       }
     }
   } catch (err) {
-    console.error("[secret-test/gm] Claude call failed", err);
-    if (!acc.briefings && !acc.winner) {
-      acc.briefings = fallbackBriefings(opening);
-    }
+    console.error("[secret-test/gm]", err);
   }
 
-  if (!acc.briefings && !acc.winner) {
-    console.warn("[secret-test/gm] No terminal tool — using fallback briefings");
-    acc.briefings = fallbackBriefings(opening);
+  if (!acc.applied && !acc.winner && !opening) {
+    acc.moneyDelta = { red: -translations.red.costKr, blue: -translations.blue.costKr };
+    acc.applied = true;
+    acc.noteForBriefings = "The month closed without a full GM write. Costs were taken as the CoS estimated.";
   }
 
-  return applyOutcome(state, acc);
+  return applyGmOutcome(state, translations, acc, opening);
+}
+
+export function openingTranslations(): Record<FactionId, CosTranslation> {
+  return { red: emptyTranslation(), blue: emptyTranslation() };
 }

@@ -13,11 +13,11 @@ export async function POST(
 
   try {
     const loaded = await loadSecretRoom(roomId);
-    if (!loaded) return NextResponse.json({ error: "The cipher is unknown." }, { status: 404 });
+    if (!loaded) return NextResponse.json({ error: "Unknown room." }, { status: 404 });
 
     const { room, roomPlayers, state } = loaded;
     if (room.status !== "lobby") {
-      return NextResponse.json({ error: "This council has already opened." }, { status: 400 });
+      return NextResponse.json({ error: "This race has already started." }, { status: 400 });
     }
 
     const sessionToken = await getSessionToken();
@@ -25,10 +25,10 @@ export async function POST(
       ? roomPlayers.find((p) => p.sessionToken === sessionToken)
       : null;
     if (!viewer || viewer.id !== room.hostPlayerId) {
-      return NextResponse.json({ error: "Only the host may open the war." }, { status: 403 });
+      return NextResponse.json({ error: "Only the host can open the campaign." }, { status: 403 });
     }
     if (roomPlayers.length < 2) {
-      return NextResponse.json({ error: "Both houses must be seated." }, { status: 400 });
+      return NextResponse.json({ error: "Both campaigns must be seated." }, { status: 400 });
     }
     if (!state) {
       return NextResponse.json({ error: "Game state missing." }, { status: 500 });
@@ -36,7 +36,7 @@ export async function POST(
 
     const db = getDb();
     await db.update(rooms).set({ status: "playing" }).where(eq(rooms.id, roomId));
-    await saveState(roomId, { ...state, phase: "resolving", turn: 1 });
+    await saveState(roomId, { ...state, phase: "resolving", month: 1 });
 
     return NextResponse.json({ ok: true });
   } catch (e) {

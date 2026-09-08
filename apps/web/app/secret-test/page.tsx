@@ -2,7 +2,6 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { RoseGlyph } from "./components/RoseGlyph";
 
 async function safeJson(res: Response): Promise<Record<string, unknown>> {
   try {
@@ -22,7 +21,7 @@ export default function SecretTestLanding() {
 
   async function createRoom() {
     if (!name.trim()) {
-      setError("Give the chronicler your name.");
+      setError("Enter the name the ballot will carry.");
       return;
     }
     setLoading(true);
@@ -34,7 +33,7 @@ export default function SecretTestLanding() {
         body: JSON.stringify({ displayName: name.trim() }),
       });
       const data = await safeJson(res);
-      if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Failed to raise a standard");
+      if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Failed to open a campaign");
       router.push(`/secret-test/room/${data.roomId}/lobby`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
@@ -45,12 +44,12 @@ export default function SecretTestLanding() {
 
   async function joinRoom() {
     if (code.length !== 6) {
-      setError("The cipher must be six characters.");
+      setError("Room code must be six characters.");
       codeRef.current?.focus();
       return;
     }
     if (!name.trim()) {
-      setError("Give the chronicler your name.");
+      setError("Enter the name the ballot will carry.");
       return;
     }
     setLoading(true);
@@ -87,11 +86,11 @@ export default function SecretTestLanding() {
           display: "flex",
           gap: 8,
           marginBottom: 28,
-          border: "1px solid #2a241c",
+          border: "1px solid #2a2a2e",
           padding: 4,
         }}
       >
-        <a href="/" className="rose-link" style={{ padding: "8px 16px", letterSpacing: "0.12em" }}>
+        <a href="/" className="rose-link" style={{ padding: "8px 16px" }}>
           War of the Five Kings
         </a>
         <span
@@ -101,8 +100,8 @@ export default function SecretTestLanding() {
             fontWeight: 700,
             letterSpacing: "0.12em",
             textTransform: "uppercase",
-            color: "#b08d3e",
-            background: "#1a1208",
+            color: "#c4a35a",
+            background: "#16140e",
             border: "1px solid #6e5724",
           }}
         >
@@ -110,97 +109,72 @@ export default function SecretTestLanding() {
         </span>
       </nav>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 28, marginBottom: 28 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 28, marginBottom: 22 }}>
         <div style={{ textAlign: "center" }}>
-          <RoseGlyph house="lancaster" size={52} />
-          <div className="rose-label" style={{ marginTop: 8, color: "#a01c2c" }}>
-            Lancaster
-          </div>
+          <div style={{ width: 44, height: 44, borderRadius: 4, background: "#c42828", margin: "0 auto" }} />
+          <div className="rose-label" style={{ marginTop: 8, color: "#c42828" }}>Red</div>
         </div>
-        <div
-          className="rose-serif"
-          style={{ fontSize: 13, color: "#3a342c", letterSpacing: "0.2em", fontStyle: "italic" }}
-        >
+        <div className="rose-serif" style={{ fontSize: 13, color: "#4a4a4e", fontStyle: "italic" }}>
           versus
         </div>
         <div style={{ textAlign: "center" }}>
-          <RoseGlyph house="york" size={52} />
-          <div className="rose-label" style={{ marginTop: 8, color: "#cfc8b8" }}>
-            York
-          </div>
+          <div style={{ width: 44, height: 44, borderRadius: 4, background: "#2b54a8", margin: "0 auto" }} />
+          <div className="rose-label" style={{ marginTop: 8, color: "#6a8ad8" }}>Blue</div>
         </div>
       </div>
 
-      <h1 className="rose-title" style={{ fontSize: 42, margin: "0 0 6px", textAlign: "center" }}>
-        The Wars of the Roses
+      <h1 className="rose-title" style={{ fontSize: 40, margin: "0 0 6px", textAlign: "center" }}>
+        Republic of Valden
       </h1>
-      <p className="rose-label" style={{ marginBottom: 8 }}>
-        Secret Test
-      </p>
+      <p className="rose-label" style={{ marginBottom: 8 }}>Secret Test · election</p>
       <p
         className="rose-serif"
         style={{
-          maxWidth: 420,
+          maxWidth: 460,
           textAlign: "center",
-          color: "#8a8070",
+          color: "#9a9890",
           fontSize: 17,
           fontStyle: "italic",
           lineHeight: 1.45,
-          margin: "0 0 36px",
+          margin: "0 0 32px",
         }}
       >
-        England, 1455. Two players. Private dispatches. You will never see the other house’s letters.
-        Lancaster or York is assigned by lot.
+        Twelve months. Seventeen constituencies. Five states. Win three states and you take the presidency.
+        You are assigned red or blue at random. Blank slate — positions are whatever you say.
       </p>
 
       <div className="rose-panel" style={{ width: "100%", maxWidth: 400 }}>
-        <div
-          className="rose-label"
-          style={{
-            borderBottom: "1px solid #2a241c",
-            padding: "10px 18px",
-            color: "#6e5724",
-          }}
-        >
-          The privy council
+        <div className="rose-label" style={{ borderBottom: "1px solid #2a2a2e", padding: "10px 18px", color: "#6e5724" }}>
+          Campaign desk
         </div>
         <div style={{ padding: 22, display: "flex", flexDirection: "column", gap: 16 }}>
           <div>
             <label className="rose-label" htmlFor="st-name" style={{ display: "block", marginBottom: 6 }}>
-              Your name
+              Candidate name
             </label>
             <input
               id="st-name"
               className="rose-input"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="As the chronicle will know you"
+              placeholder="As it will appear on the ballot"
               maxLength={32}
               onKeyDown={(e) => e.key === "Enter" && createRoom()}
             />
           </div>
-
           <button type="button" className="rose-btn" disabled={loading} onClick={createRoom}>
-            {loading ? "Raising the standard…" : "Raise your standard"}
+            {loading ? "Opening the office…" : "Open a campaign"}
           </button>
-
           <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ flex: 1, height: 1, background: "#1e1a14" }} />
-            <span className="rose-label">or enter by cipher</span>
-            <div style={{ flex: 1, height: 1, background: "#1e1a14" }} />
+            <div style={{ flex: 1, height: 1, background: "#222" }} />
+            <span className="rose-label">or join by code</span>
+            <div style={{ flex: 1, height: 1, background: "#222" }} />
           </div>
-
           <div style={{ display: "flex", gap: 8 }}>
             <input
               ref={codeRef}
               className="rose-input"
-              style={{
-                flex: 1,
-                textAlign: "center",
-                letterSpacing: "0.28em",
-                textTransform: "uppercase",
-                fontSize: 18,
-              }}
+              style={{ flex: 1, textAlign: "center", letterSpacing: "0.28em", textTransform: "uppercase", fontSize: 18 }}
               value={code}
               onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
               placeholder="XXXXXX"
@@ -219,10 +193,6 @@ export default function SecretTestLanding() {
         </div>
         {error && <div className="rose-error" style={{ margin: "0 18px 18px" }}>{error}</div>}
       </div>
-
-      <p className="rose-label" style={{ marginTop: 36, color: "#2a241c" }}>
-        A chronicler behind the arras · one throne
-      </p>
     </main>
   );
 }

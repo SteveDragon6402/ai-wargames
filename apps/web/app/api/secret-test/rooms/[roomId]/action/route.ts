@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { getSessionToken } from "@/lib/session";
-import { isFactionId } from "@/app/secret-test/types";
+import { isDebateMonth, isFactionId } from "@/app/secret-test/types";
 import { loadSecretRoom, saveState } from "@/app/secret-test/lib/store";
 import { bothActionsIn } from "@/app/secret-test/lib/state";
-import { validateActionText } from "@/app/secret-test/lib/words";
+import { validateActionText, validateDebateAnswers } from "@/app/secret-test/lib/words";
 
 export async function POST(
   req: Request,
@@ -12,7 +12,7 @@ export async function POST(
   const { roomId } = await params;
   if (!roomId) return NextResponse.json({ error: "Missing roomId" }, { status: 400 });
 
-  let body: { text?: string };
+  let body: { text?: string; debateAnswers?: unknown };
   try {
     body = await req.json();
   } catch {
@@ -25,37 +25,47 @@ export async function POST(
 
   try {
     const loaded = await loadSecretRoom(roomId);
-    if (!loaded) return NextResponse.json({ error: "The cipher is unknown." }, { status: 404 });
+    if (!loaded) return NextResponse.json({ error: "Unknown room." }, { status: 404 });
 
     const { room, roomPlayers, state } = loaded;
     if (room.status !== "playing") {
-      return NextResponse.json({ error: "The war has not opened." }, { status: 400 });
+      return NextResponse.json({ error: "The campaign has not opened." }, { status: 400 });
     }
     if (!state) return NextResponse.json({ error: "Game state missing." }, { status: 500 });
     if (state.phase === "ended") {
-      return NextResponse.json({ error: "The war is decided." }, { status: 400 });
+      return NextResponse.json({ error: "The election is over." }, { status: 400 });
     }
     if (state.phase !== "awaiting_actions") {
-      return NextResponse.json({ error: "Couriers are still riding." }, { status: 400 });
+      return NextResponse.json({ error: "Staff are still working last month's plan." }, { status: 400 });
     }
+
+    const debateNeeded = isDebateMonth(state.month) ? state.debateQuestions.length || 3 : 0;
+    const debateErr = validateDebateAnswers(body.debateAnswers, debateNeeded);
+    if (debateErr) return NextResponse.json({ error: debateErr }, { status: 400 });
 
     const sessionToken = await getSessionToken();
     const viewer = sessionToken
       ? roomPlayers.find((p) => p.sessionToken === sessionToken)
       : null;
     if (!viewer || !isFactionId(viewer.factionId)) {
-      return NextResponse.json({ error: "Your session is not in this council." }, { status: 403 });
+      return NextResponse.json({ error: "Your session is not in this race." }, { status: 403 });
     }
 
-    if (state.pendingActions[viewer.factionId]?.trim()) {
-      return NextResponse.json({ error: "Your riders have already gone." }, { status: 400 });
+    if (state.pendingActions[viewer.factionId]?.text?.trim()) {
+      return NextResponse.json({ error: "This month's plan is already in." }, { status: 400 });
     }
 
     const next = {
       ...state,
       pendingActions: {
         ...state.pendingActions,
-        [viewer.factionId]: text.trim(),
+        [viewer.factionId]: {
+          text: text.trim(),
+          debateAnswers:
+            debateNeeded > 0 && Array.isArray(body.debateAnswers)
+              ? body.debateAnswers.map((a) => String(a).trim())
+              : undefined,
+        },
       },
     };
 

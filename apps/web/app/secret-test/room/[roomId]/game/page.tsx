@@ -4,9 +4,19 @@ import type { CSSProperties } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { RoseGlyph } from "../../../components/RoseGlyph";
-import { HOUSE_LABEL, HOUSE_SHORT, MAX_ACTION_WORDS, type FactionId, type SecretTestSnapshot, type Winner } from "../../../types";
+import ValdenMap from "../../../components/ValdenMap";
+import { formatKr } from "../../../lib/lean";
 import { wordCount } from "../../../lib/words";
+import { STATES } from "../../../data/valden";
+import {
+  CAMPAIGN_LABEL,
+  MAX_ACTION_WORDS,
+  MAX_DEBATE_WORDS,
+  isDebateMonth,
+  type FactionId,
+  type SecretTestSnapshot,
+  type Winner,
+} from "../../../types";
 
 export default function SecretTestGamePage() {
   const params = useParams<{ roomId: string }>();
@@ -17,9 +27,10 @@ export default function SecretTestGamePage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [draft, setDraft] = useState("");
+  const [debate, setDebate] = useState<string[]>(["", "", ""]);
   const [sending, setSending] = useState(false);
   const [sendError, setSendError] = useState("");
-  const [openTurns, setOpenTurns] = useState<Set<number>>(() => new Set());
+  const [openMonths, setOpenMonths] = useState<Set<number>>(() => new Set());
   const resolveInFlight = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -28,7 +39,7 @@ export default function SecretTestGamePage() {
       const res = await fetch(`/api/secret-test/rooms/${roomId}`);
       const data = (await res.json()) as SecretTestSnapshot & { error?: string };
       if (!res.ok) {
-        setError(typeof data.error === "string" ? data.error : "The cipher is unknown.");
+        setError(typeof data.error === "string" ? data.error : "Unknown room.");
         return;
       }
       if (data.room.status === "lobby") {
@@ -37,7 +48,7 @@ export default function SecretTestGamePage() {
       }
       setSnapshot(data);
     } catch {
-      setError("Failed to reach the council.");
+      setError("Failed to reach the desk.");
     } finally {
       setLoading(false);
     }
@@ -52,8 +63,8 @@ export default function SecretTestGamePage() {
   useEffect(() => {
     const chronicle = snapshot?.game?.chronicle;
     if (!chronicle?.length) return;
-    const latest = Math.max(...chronicle.map((e) => e.turn));
-    setOpenTurns((prev) => {
+    const latest = Math.max(...chronicle.map((e) => e.month));
+    setOpenMonths((prev) => {
       if (prev.has(latest)) return prev;
       const next = new Set(prev);
       next.add(latest);
@@ -73,19 +84,24 @@ export default function SecretTestGamePage() {
       });
   }, [snapshot?.game?.phase, roomId, refresh]);
 
-  async function sealAndSend() {
-    if (!roomId) return;
+  async function submit() {
+    if (!roomId || !snapshot?.game) return;
     setSending(true);
     setSendError("");
     try {
+      const debateOn = isDebateMonth(snapshot.game.month) && snapshot.game.debateQuestions.length > 0;
       const res = await fetch(`/api/secret-test/rooms/${roomId}/action`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: draft }),
+        body: JSON.stringify({
+          text: draft,
+          debateAnswers: debateOn ? debate : undefined,
+        }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "The seal would not take.");
+      if (!res.ok) throw new Error(data.error ?? "Could not file the plan.");
       setDraft("");
+      setDebate(["", "", ""]);
       await refresh();
     } catch (e) {
       setSendError(e instanceof Error ? e.message : "Error");
@@ -97,7 +113,7 @@ export default function SecretTestGamePage() {
   if (loading) {
     return (
       <main style={center}>
-        <p className="rose-label">The desk is being laid…</p>
+        <p className="rose-label">Laying out the map…</p>
       </main>
     );
   }
@@ -105,10 +121,8 @@ export default function SecretTestGamePage() {
   if (error || !snapshot) {
     return (
       <main style={center}>
-        <p className="rose-error">{error || "The cipher is unknown."}</p>
-        <Link href="/secret-test" className="rose-link" style={{ marginTop: 16 }}>
-          ← Return
-        </Link>
+        <p className="rose-error">{error || "Unknown room."}</p>
+        <Link href="/secret-test" className="rose-link" style={{ marginTop: 16 }}>← Return</Link>
       </main>
     );
   }
@@ -116,17 +130,15 @@ export default function SecretTestGamePage() {
   if (!snapshot.viewer || !snapshot.game) {
     return (
       <main style={center}>
-        <p className="rose-error">Your session is not in this council.</p>
-        <Link href="/secret-test" className="rose-link" style={{ marginTop: 16 }}>
-          ← Return
-        </Link>
+        <p className="rose-error">Your session is not in this race.</p>
+        <Link href="/secret-test" className="rose-link" style={{ marginTop: 16 }}>← Return</Link>
       </main>
     );
   }
 
   const { game, viewer } = snapshot;
   const house = viewer.factionId;
-  const houseColor = house === "lancaster" ? "#c45c5c" : "#cfc8b8";
+  const houseColor = house === "red" ? "#e07070" : "#7a9ae0";
 
   if (game.phase === "ended" && game.winner) {
     return <EndScreen house={house} winner={game.winner} viewerName={viewer.displayName} />;
@@ -136,18 +148,15 @@ export default function SecretTestGamePage() {
   const over = words > MAX_ACTION_WORDS;
   const submitted = Boolean(game.myPendingAction);
   const resolving = game.phase === "resolving";
-  const phaseLine = resolving
-    ? "Couriers riding…"
-    : submitted
-      ? "Your letter awaits a reply"
-      : "Your letter awaits the seal";
+  const debateOn = isDebateMonth(game.month) && game.debateQuestions.length > 0;
+  const debateOver = debateOn && game.debateQuestions.some((_, i) => wordCount(debate[i] ?? "") > MAX_DEBATE_WORDS);
 
   return (
     <div style={{ minHeight: "100dvh", position: "relative" }}>
       {resolving && (
         <div className="rose-overlay">
-          <p className="rose-serif" style={{ fontSize: 22, color: "#e8dcc4", fontStyle: "italic" }}>
-            The chronicler is gathering reports…
+          <p className="rose-serif" style={{ fontSize: 20, color: "#ece8df", fontStyle: "italic" }}>
+            Staff are working the month…
           </p>
         </div>
       )}
@@ -158,78 +167,85 @@ export default function SecretTestGamePage() {
           alignItems: "center",
           justifyContent: "space-between",
           gap: 16,
-          padding: "16px 24px",
-          borderBottom: "1px solid #1e1a14",
+          padding: "14px 20px",
+          borderBottom: "1px solid #1e1e22",
           flexWrap: "wrap",
         }}
       >
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <RoseGlyph house={house} size={28} />
-          <div>
-            <div className="rose-serif" style={{ fontSize: 18, color: houseColor }}>
-              {HOUSE_LABEL[house]}
+        <div>
+          <div className="rose-serif" style={{ fontSize: 18, color: houseColor }}>
+            {CAMPAIGN_LABEL[house]} · {viewer.displayName}
+          </div>
+          <div className="rose-label">Month {game.month} / 12</div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div className="rose-serif" style={{ fontSize: 18 }}>{formatKr(game.cash)}</div>
+          <div className="rose-label">Your pot</div>
+          {game.opponentRumor && (
+            <div className="rose-serif" style={{ fontSize: 13, color: "#8a8a86", maxWidth: 280 }}>
+              {game.opponentRumor}
             </div>
-            <div className="rose-label">{viewer.displayName}</div>
-          </div>
-        </div>
-        <div style={{ textAlign: "center" }}>
-          <div className="rose-label">Turn {game.turn}</div>
-          <div className="rose-serif" style={{ fontSize: 15, color: "#8a8070", fontStyle: "italic" }}>
-            {phaseLine}
-          </div>
-        </div>
-        <div className="rose-label" style={{ textAlign: "right" }}>
-          The other rose is seated
-          <div style={{ color: "#3a342c", marginTop: 4 }}>Their letters are not yours to read</div>
+          )}
         </div>
       </header>
+
+      <ValdenMap seats={game.map} />
 
       <div className="rose-desk">
         <div>
           {game.briefing ? (
-            <article className={`rose-letter house-${house} rose-letter-enter`} key={game.turn}>
-              <div className={`rose-seal ${house}`}>
-                <RoseGlyph house={house} size={18} />
-              </div>
-              <div className="rose-label" style={{ color: "#6e5724", marginBottom: 12 }}>
-                Dispatch — Turn {game.turn}
+            <article className="rose-letter">
+              <div className="rose-label" style={{ color: "#6e5724", marginBottom: 10 }}>
+                Chief of staff — month {game.month}
               </div>
               <div className="rose-letter-body">{game.briefing}</div>
+              {game.recommendations.length > 0 && (
+                <ul style={{ marginTop: 16, paddingLeft: 18, color: "#1c1c1e" }}>
+                  {game.recommendations.map((r, i) => (
+                    <li key={i} className="rose-serif" style={{ marginBottom: 4 }}>
+                      {r.action} — {formatKr(r.costKr)}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </article>
           ) : (
             <article className="rose-letter">
-              <p className="rose-serif" style={{ fontStyle: "italic", color: "#5a4e3a" }}>
-                No dispatch has yet been laid upon this desk.
+              <p className="rose-serif" style={{ fontStyle: "italic" }}>
+                Waiting on the first staff memo.
               </p>
             </article>
           )}
 
-          <div className="rose-composer" style={{ marginTop: 22 }}>
+          {game.issues.length > 0 && (
+            <p className="rose-serif" style={{ color: "#9a9890", marginTop: 12, fontSize: 14 }}>
+              Live issues (opine in your directive or stay silent): {game.issues.join(" · ")}
+            </p>
+          )}
+
+          <div className="rose-composer" style={{ marginTop: 20 }}>
             <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 8 }}>
-              <div className="rose-label" style={{ color: "#6e5724" }}>
-                Your orders
-              </div>
+              <div className="rose-label" style={{ color: "#6e5724" }}>This month’s directives</div>
               {!submitted && (
-                <div
-                  className="rose-label"
-                  style={{ color: over ? "#7a1420" : words > 420 ? "#7a1420" : "#6e5724" }}
-                >
-                  {words} / {MAX_ACTION_WORDS} words
+                <div className="rose-label" style={{ color: over ? "#c42828" : "#6e5724" }}>
+                  {words} / {MAX_ACTION_WORDS}
                 </div>
               )}
             </div>
             {submitted ? (
               <div>
-                <p className="rose-serif" style={{ fontSize: 17, whiteSpace: "pre-wrap", color: "#2a2418" }}>
-                  {game.myPendingAction}
-                </p>
-                <p
-                  className="rose-serif"
-                  style={{ marginTop: 16, fontStyle: "italic", color: "#5a4e3a" }}
-                >
-                  {game.opponentSubmitted
-                    ? "Both seals are in. The chronicler is at work."
-                    : "Your riders have gone. Waiting on the other house."}
+                <p className="rose-serif" style={{ fontSize: 16, whiteSpace: "pre-wrap" }}>{game.myPendingAction}</p>
+                {game.myPendingDebate && (
+                  <div style={{ marginTop: 12 }}>
+                    {game.myPendingDebate.map((a, i) => (
+                      <p key={i} className="rose-serif" style={{ fontSize: 15, marginBottom: 8 }}>
+                        Q{i + 1}: {a}
+                      </p>
+                    ))}
+                  </div>
+                )}
+                <p className="rose-serif" style={{ marginTop: 14, fontStyle: "italic", color: "#5a564c" }}>
+                  {game.opponentSubmitted ? "Both plans are in." : "Waiting on the other campaign."}
                 </p>
               </div>
             ) : (
@@ -237,19 +253,41 @@ export default function SecretTestGamePage() {
                 <textarea
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
-                  placeholder="Write as a captain of the house: marches, marriages, treasure, murder, delay…"
+                  placeholder="One package this month. Visit 1–2 adjacent seats, or a speech, or media, or a fundraiser. If you do not take a line on the issues, you stay mute."
                   disabled={resolving || sending}
-                  maxLength={4000}
                 />
+                {debateOn && (
+                  <div style={{ marginTop: 16 }}>
+                    <div className="rose-label" style={{ marginBottom: 8 }}>Debate — same questions as the other campaign</div>
+                    {game.debateQuestions.map((q, i) => (
+                      <div key={i} style={{ marginBottom: 12 }}>
+                        <div className="rose-serif" style={{ fontSize: 15, marginBottom: 4 }}>{q}</div>
+                        <textarea
+                          value={debate[i] ?? ""}
+                          onChange={(e) => {
+                            const next = [...debate];
+                            next[i] = e.target.value;
+                            setDebate(next);
+                          }}
+                          style={{ minHeight: 72 }}
+                          disabled={resolving || sending}
+                        />
+                        <div className="rose-label">
+                          {wordCount(debate[i] ?? "")} / {MAX_DEBATE_WORDS}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
                   <button
                     type="button"
                     className="rose-btn"
                     style={{ color: "#3a2a10", borderColor: "#6e5724", background: "#d4c4a4" }}
-                    disabled={resolving || sending || over || !draft.trim()}
-                    onClick={sealAndSend}
+                    disabled={resolving || sending || over || debateOver || !draft.trim()}
+                    onClick={submit}
                   >
-                    {sending ? "Sealing…" : "Seal and send"}
+                    {sending ? "Filing…" : "File with the chief of staff"}
                   </button>
                 </div>
                 {sendError && <p className="rose-error" style={{ marginTop: 12 }}>{sendError}</p>}
@@ -259,29 +297,23 @@ export default function SecretTestGamePage() {
         </div>
 
         <aside>
-          <div className="rose-label" style={{ marginBottom: 12, color: "#6e5724" }}>
-            Your chronicle
-          </div>
+          <div className="rose-label" style={{ marginBottom: 12, color: "#6e5724" }}>Your months</div>
           {game.chronicle.length === 0 ? (
-            <p className="rose-serif" style={{ fontStyle: "italic", color: "#5a5348", fontSize: 15 }}>
-              The first season has not yet closed.
+            <p className="rose-serif" style={{ fontStyle: "italic", color: "#6a6a6e", fontSize: 15 }}>
+              Month 1 has not closed.
             </p>
           ) : (
             [...game.chronicle].reverse().map((entry) => {
-              const open = openTurns.has(entry.turn);
+              const open = openMonths.has(entry.month);
               return (
-                <div
-                  key={entry.turn}
-                  className="rose-panel"
-                  style={{ marginBottom: 10, overflow: "hidden" }}
-                >
+                <div key={entry.month} className="rose-panel" style={{ marginBottom: 10 }}>
                   <button
                     type="button"
                     onClick={() => {
-                      setOpenTurns((prev) => {
+                      setOpenMonths((prev) => {
                         const next = new Set(prev);
-                        if (next.has(entry.turn)) next.delete(entry.turn);
-                        else next.add(entry.turn);
+                        if (next.has(entry.month)) next.delete(entry.month);
+                        else next.add(entry.month);
                         return next;
                       });
                     }}
@@ -290,34 +322,27 @@ export default function SecretTestGamePage() {
                       textAlign: "left",
                       background: "transparent",
                       border: "none",
-                      color: "#c8c0b0",
+                      color: "#d8d6d0",
                       padding: "10px 12px",
                       cursor: "pointer",
                       fontFamily: "inherit",
                     }}
                   >
-                    <span className="rose-label">Turn {entry.turn}</span>
+                    <span className="rose-label">Month {entry.month}</span>
                   </button>
                   {open && (
                     <div style={{ padding: "0 12px 14px" }}>
-                      <div className="rose-label" style={{ marginBottom: 4 }}>
-                        What you were told
-                      </div>
-                      <p
-                        className="rose-serif"
-                        style={{ fontSize: 14, color: "#a89c88", whiteSpace: "pre-wrap", marginBottom: 10 }}
-                      >
+                      <p className="rose-serif" style={{ fontSize: 14, color: "#a89c88", whiteSpace: "pre-wrap" }}>
                         {entry.briefing}
                       </p>
-                      <div className="rose-label" style={{ marginBottom: 4 }}>
-                        What you ordered
-                      </div>
-                      <p
-                        className="rose-serif"
-                        style={{ fontSize: 14, color: "#c8c0b0", whiteSpace: "pre-wrap" }}
-                      >
+                      <p className="rose-serif" style={{ fontSize: 14, color: "#c8c0b0", whiteSpace: "pre-wrap", marginTop: 8 }}>
                         {entry.action}
                       </p>
+                      {entry.note && (
+                        <p className="rose-serif" style={{ fontSize: 13, color: "#8a8a86", marginTop: 8, fontStyle: "italic" }}>
+                          {entry.note}
+                        </p>
+                      )}
                     </div>
                   )}
                 </div>
@@ -341,52 +366,41 @@ function EndScreen({
 }) {
   const won = winner.factionId === house;
   return (
-    <main style={{ maxWidth: 920, margin: "0 auto", padding: "40px 20px 80px" }}>
-      <p className="rose-label" style={{ color: "#6e5724" }}>
-        England · the war is decided
-      </p>
-      <h1 className="rose-title" style={{ fontSize: 40, margin: "8px 0 12px" }}>
-        {HOUSE_SHORT[winner.factionId]} holds England
+    <main style={{ maxWidth: 920, margin: "0 auto", padding: "36px 20px 80px" }}>
+      <p className="rose-label" style={{ color: "#6e5724" }}>Election night · Valden</p>
+      <h1 className="rose-title" style={{ fontSize: 36, margin: "8px 0 12px" }}>
+        {CAMPAIGN_LABEL[winner.factionId]} takes the presidency
       </h1>
-      <p className="rose-serif" style={{ color: won ? "#c8b070" : "#8a8070", fontStyle: "italic" }}>
-        {viewerName} — you sat for {HOUSE_LABEL[house]}. {won ? "The chronicle favours you." : "The chronicle does not."}
+      <p className="rose-serif" style={{ color: won ? "#c8b070" : "#8a8a86", fontStyle: "italic" }}>
+        {viewerName} — you ran {CAMPAIGN_LABEL[house]}. {won ? "You won." : "You lost."}
       </p>
-
-      <article className="rose-letter rose-letter-enter" style={{ marginTop: 28 }}>
-        <div className="rose-label" style={{ color: "#6e5724", marginBottom: 10 }}>
-          A historian’s verdict
-        </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 16 }}>
+        {STATES.map((s) => {
+          const who = winner.states[s.id];
+          const color = who === "red" ? "#c42828" : who === "blue" ? "#2b54a8" : "#6a6a6e";
+          return (
+            <span key={s.id} className="rose-label" style={{ border: `1px solid ${color}`, color, padding: "4px 8px" }}>
+              {s.name}: {who}
+            </span>
+          );
+        })}
+      </div>
+      <article className="rose-letter" style={{ marginTop: 24 }}>
+        <div className="rose-label" style={{ color: "#6e5724", marginBottom: 8 }}>Verdict</div>
         <div className="rose-letter-body">{winner.reason}</div>
       </article>
-
-      <div className="rose-end-cols">
-        <article className="rose-letter house-lancaster">
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <RoseGlyph house="lancaster" size={22} />
-            <span className="rose-label" style={{ color: "#7a1420" }}>
-              On the Lancastrian
-            </span>
-          </div>
-          <div className="rose-letter-body" style={{ fontSize: 16 }}>
-            {winner.breakdowns.lancaster}
-          </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 18 }}>
+        <article className="rose-letter">
+          <div className="rose-label" style={{ color: "#c42828", marginBottom: 8 }}>On the red campaign</div>
+          <div className="rose-letter-body" style={{ fontSize: 16 }}>{winner.breakdowns.red}</div>
         </article>
-        <article className="rose-letter house-york">
-          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
-            <RoseGlyph house="york" size={22} />
-            <span className="rose-label" style={{ color: "#3a3c42" }}>
-              On the Yorkist
-            </span>
-          </div>
-          <div className="rose-letter-body" style={{ fontSize: 16 }}>
-            {winner.breakdowns.york}
-          </div>
+        <article className="rose-letter">
+          <div className="rose-label" style={{ color: "#2b54a8", marginBottom: 8 }}>On the blue campaign</div>
+          <div className="rose-letter-body" style={{ fontSize: 16 }}>{winner.breakdowns.blue}</div>
         </article>
       </div>
-      <div style={{ marginTop: 32 }}>
-        <Link href="/secret-test" className="rose-link">
-          ← Raise another standard
-        </Link>
+      <div style={{ marginTop: 28 }}>
+        <Link href="/secret-test" className="rose-link">← Open another campaign</Link>
       </div>
     </main>
   );

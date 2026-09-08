@@ -11,8 +11,8 @@ const cormorant = Cormorant_Garamond({
 });
 
 export const metadata: Metadata = {
-  title: "Secret Test — The Wars of the Roses",
-  description: "Two houses. Private dispatches. One throne.",
+  title: "Secret Test — Valden",
+  description: "Twelve months. Seventeen seats. Five states. One election.",
 };
 
 export default function SecretTestLayout({

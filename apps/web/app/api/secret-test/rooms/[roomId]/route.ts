@@ -13,14 +13,13 @@ export async function GET(
 
   try {
     const loaded = await loadSecretRoom(roomId);
-    if (!loaded) return NextResponse.json({ error: "The cipher is unknown." }, { status: 404 });
+    if (!loaded) return NextResponse.json({ error: "Unknown room." }, { status: 404 });
 
     const { room, roomPlayers, state } = loaded;
     const sessionToken = await getSessionToken();
     const viewer = sessionToken
       ? (roomPlayers.find((p) => p.sessionToken === sessionToken) ?? null)
       : null;
-
     const faction = viewer && isFactionId(viewer.factionId) ? viewer.factionId : null;
 
     return NextResponse.json({

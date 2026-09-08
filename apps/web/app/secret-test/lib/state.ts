@@ -1,12 +1,21 @@
-import type { GamePhase, SecretTestState, Winner } from "../types";
+import { SEATS, STARTING_ISSUES } from "../data/valden";
+import type { FactionId, GamePhase, PendingTurn, SecretTestState, Winner } from "../types";
+import { STARTING_CASH } from "../types";
 
 export function createInitialState(): SecretTestState {
   return {
-    turn: 1,
+    month: 1,
     phase: "awaiting_actions",
     scratchpad: "",
-    briefings: { lancaster: "", york: "" },
+    cash: { red: STARTING_CASH, blue: STARTING_CASH },
+    seats: SEATS.map((s) => ({ id: s.id, lean: s.startLean, turnout: s.startTurnout })),
+    issues: [...STARTING_ISSUES],
+    debateQuestions: [],
+    briefings: { red: "", blue: "" },
+    opponentRumors: { red: "", blue: "" },
+    recommendations: { red: [], blue: [] },
     pendingActions: {},
+    lastTranslations: {},
     history: [],
     gmLock: false,
   };
@@ -19,19 +28,33 @@ function isPhase(value: unknown): value is GamePhase {
 export function parseState(raw: unknown): SecretTestState | null {
   if (!raw || typeof raw !== "object") return null;
   const o = raw as Record<string, unknown>;
-  if (typeof o.turn !== "number" || !isPhase(o.phase)) return null;
+  const month = typeof o.month === "number" ? o.month : typeof o.turn === "number" ? o.turn : null;
+  if (month == null || !isPhase(o.phase)) return null;
+  if (!Array.isArray(o.seats)) return null;
+  const cash = o.cash as SecretTestState["cash"] | undefined;
+  if (!cash || typeof cash.red !== "number" || typeof cash.blue !== "number") return null;
   const briefings = o.briefings as SecretTestState["briefings"] | undefined;
-  if (!briefings || typeof briefings.lancaster !== "string" || typeof briefings.york !== "string") {
+  if (!briefings || typeof briefings.red !== "string" || typeof briefings.blue !== "string") {
     return null;
   }
   return {
-    turn: o.turn,
+    month,
     phase: o.phase,
     scratchpad: typeof o.scratchpad === "string" ? o.scratchpad : "",
+    cash,
+    seats: o.seats as SecretTestState["seats"],
+    issues: Array.isArray(o.issues) ? (o.issues as string[]) : [],
+    debateQuestions: Array.isArray(o.debateQuestions) ? (o.debateQuestions as string[]) : [],
     briefings,
+    opponentRumors: (o.opponentRumors as SecretTestState["opponentRumors"]) ?? { red: "", blue: "" },
+    recommendations: (o.recommendations as SecretTestState["recommendations"]) ?? { red: [], blue: [] },
     pendingActions:
       o.pendingActions && typeof o.pendingActions === "object"
         ? (o.pendingActions as SecretTestState["pendingActions"])
+        : {},
+    lastTranslations:
+      o.lastTranslations && typeof o.lastTranslations === "object"
+        ? (o.lastTranslations as SecretTestState["lastTranslations"])
         : {},
     history: Array.isArray(o.history) ? (o.history as SecretTestState["history"]) : [],
     winner: o.winner as Winner | undefined,
@@ -40,17 +63,21 @@ export function parseState(raw: unknown): SecretTestState | null {
   };
 }
 
+export function pendingText(pending: PendingTurn | undefined): string {
+  return pending?.text?.trim() ?? "";
+}
+
 export function bothActionsIn(state: SecretTestState): boolean {
-  return Boolean(state.pendingActions.lancaster?.trim() && state.pendingActions.york?.trim());
+  return Boolean(pendingText(state.pendingActions.red) && pendingText(state.pendingActions.blue));
 }
 
 export function isOpeningResolve(state: SecretTestState): boolean {
   return (
     state.history.length === 0 &&
-    !state.briefings.lancaster.trim() &&
-    !state.briefings.york.trim() &&
-    !state.pendingActions.lancaster &&
-    !state.pendingActions.york
+    !state.briefings.red.trim() &&
+    !state.briefings.blue.trim() &&
+    !pendingText(state.pendingActions.red) &&
+    !pendingText(state.pendingActions.blue)
   );
 }
 
@@ -70,13 +97,16 @@ export function withLock(state: SecretTestState, locked: boolean): SecretTestSta
   };
 }
 
-export function archiveCurrentTurn(state: SecretTestState): SecretTestState["history"][number] {
+export function emptyTranslation() {
   return {
-    turn: state.turn,
-    briefings: { ...state.briefings },
-    actions: {
-      lancaster: state.pendingActions.lancaster ?? "",
-      york: state.pendingActions.york ?? "",
-    },
+    executed: "No executable package.",
+    deferred: "Entire directive deferred.",
+    costKr: 0,
+    playerNote: "We could not field a plan this month.",
+    prioritiesForGm: "No campaign activity.",
   };
+}
+
+export function factionCash(state: SecretTestState, faction: FactionId): number {
+  return state.cash[faction] ?? 0;
 }

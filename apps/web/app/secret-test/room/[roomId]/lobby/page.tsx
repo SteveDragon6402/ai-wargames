@@ -4,25 +4,17 @@ import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { RoseGlyph } from "../../../components/RoseGlyph";
-import { HOUSE_LABEL, HOUSE_SHORT, isFactionId, type FactionId, type SecretTestSnapshot } from "../../../types";
+import {
+  CAMPAIGN_LABEL,
+  CAMPAIGN_SHORT,
+  isFactionId,
+  type FactionId,
+  type SecretTestSnapshot,
+} from "../../../types";
 
-const HOUSE_STYLE: Record<
-  FactionId,
-  { color: string; border: string; bg: string; empty: string }
-> = {
-  lancaster: {
-    color: "#c45c5c",
-    border: "#7a1420",
-    bg: "#12080a",
-    empty: "The red rose has no captain yet.",
-  },
-  york: {
-    color: "#cfc8b8",
-    border: "#5a564c",
-    bg: "#12110e",
-    empty: "The white rose has no captain yet.",
-  },
+const STYLE: Record<FactionId, { color: string; border: string; bg: string; empty: string }> = {
+  red: { color: "#e07070", border: "#c42828", bg: "#140808", empty: "No candidate yet." },
+  blue: { color: "#7a9ae0", border: "#2b54a8", bg: "#080a14", empty: "No candidate yet." },
 };
 
 export default function SecretTestLobbyPage() {
@@ -43,7 +35,7 @@ export default function SecretTestLobbyPage() {
       const res = await fetch(`/api/secret-test/rooms/${roomId}`);
       const data = (await res.json()) as SecretTestSnapshot & { error?: string };
       if (!res.ok) {
-        setError(typeof data.error === "string" ? data.error : "The cipher is unknown.");
+        setError(typeof data.error === "string" ? data.error : "Unknown room.");
         return;
       }
       setSnapshot(data);
@@ -51,7 +43,7 @@ export default function SecretTestLobbyPage() {
         router.replace(`/secret-test/room/${roomId}/game`);
       }
     } catch {
-      setError("Failed to reach the council.");
+      setError("Failed to reach the desk.");
     } finally {
       setLoading(false);
     }
@@ -69,7 +61,7 @@ export default function SecretTestLobbyPage() {
     try {
       const res = await fetch(`/api/secret-test/rooms/${roomId}/start`, { method: "POST" });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error ?? "Could not open the war");
+      if (!res.ok) throw new Error(data.error ?? "Could not open the campaign");
       router.push(`/secret-test/room/${roomId}/game`);
     } catch (e) {
       setStartError(e instanceof Error ? e.message : "Error");
@@ -78,26 +70,18 @@ export default function SecretTestLobbyPage() {
     }
   }
 
-  function copyCode() {
-    if (snapshot?.room.code) {
-      navigator.clipboard.writeText(snapshot.room.code).catch(() => {});
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }
-  }
-
   if (loading) {
     return (
-      <main className="rose-root" style={center}>
-        <p className="rose-label">The hall is being prepared…</p>
+      <main style={center}>
+        <p className="rose-label">The office is being opened…</p>
       </main>
     );
   }
 
   if (error || !snapshot) {
     return (
-      <main className="rose-root" style={center}>
-        <p className="rose-error">{error || "The cipher is unknown."}</p>
+      <main style={center}>
+        <p className="rose-error">{error || "Unknown room."}</p>
         <Link href="/secret-test" className="rose-link" style={{ marginTop: 16 }}>
           ← Return
         </Link>
@@ -125,109 +109,75 @@ export default function SecretTestLobbyPage() {
         <Link href="/secret-test" className="rose-link">
           ← Secret Test
         </Link>
-        <span style={{ color: "#2a241c" }}>|</span>
+        <span style={{ color: "#2a2a2e" }}>|</span>
         <span className="rose-label" style={{ color: "#6e5724" }}>
-          England, 1455
+          Republic of Valden
         </span>
       </div>
 
       <h1 className="rose-title" style={{ fontSize: 32, margin: "8px 0 4px" }}>
-        The council chamber
+        Campaign lobby
       </h1>
-      <p
-        className="rose-serif"
-        style={{ color: "#8a8070", fontStyle: "italic", marginBottom: 28, textAlign: "center" }}
-      >
-        The throne is weak. Two houses will take their seats. Dispatches remain sealed from the rival.
+      <p className="rose-serif" style={{ color: "#8a8a86", fontStyle: "italic", marginBottom: 24, textAlign: "center" }}>
+        Twelve months to election night. Win three of five states.
       </p>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 28 }}>
-        <span
-          className="rose-dot"
-          style={{ background: hasEnough ? "#5a8f4a" : "#b08d3e" }}
-        />
-        <span className="rose-label">
-          {hasEnough ? "Both houses are seated" : "Awaiting the rival house…"}
-        </span>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 24 }}>
+        <span className="rose-dot" style={{ background: hasEnough ? "#5a8f4a" : "#c4a35a" }} />
+        <span className="rose-label">{hasEnough ? "Both campaigns are seated" : "Awaiting the other campaign…"}</span>
       </div>
 
-      <div style={{ textAlign: "center", marginBottom: 32 }}>
+      <div style={{ textAlign: "center", marginBottom: 28 }}>
         <div className="rose-label" style={{ marginBottom: 8 }}>
-          Cipher — share with the other captain
+          Room code — share with the other candidate
         </div>
         <button
           type="button"
-          onClick={copyCode}
+          onClick={() => {
+            if (snapshot.room.code) {
+              navigator.clipboard.writeText(snapshot.room.code).catch(() => {});
+              setCopied(true);
+              setTimeout(() => setCopied(false), 2000);
+            }
+          }}
           className="rose-serif"
           style={{
             fontSize: 40,
             letterSpacing: "0.28em",
-            color: "#b08d3e",
+            color: "#c4a35a",
             background: "transparent",
             border: "none",
             cursor: "pointer",
-            padding: 0,
           }}
         >
           {room.code}
         </button>
-        {copied && (
-          <div className="rose-label" style={{ color: "#5a8f4a", marginTop: 6 }}>
-            Copied
-          </div>
-        )}
+        {copied && <div className="rose-label" style={{ color: "#5a8f4a", marginTop: 6 }}>Copied</div>}
       </div>
 
-      <div style={{ display: "flex", gap: 14, width: "100%", maxWidth: 560, marginBottom: 28 }}>
-        {(["lancaster", "york"] as FactionId[]).map((faction) => {
+      <div style={{ display: "flex", gap: 14, width: "100%", maxWidth: 560, marginBottom: 24 }}>
+        {(["red", "blue"] as FactionId[]).map((faction) => {
           const player = players.find((p) => p.factionId === faction);
           const isMe = viewer?.factionId === faction;
-          const s = HOUSE_STYLE[faction];
+          const s = STYLE[faction];
           return (
-            <div
-              key={faction}
-              style={{
-                flex: 1,
-                border: `1px solid ${isMe ? s.color : s.border}`,
-                background: s.bg,
-              }}
-            >
+            <div key={faction} style={{ flex: 1, border: `1px solid ${isMe ? s.color : s.border}`, background: s.bg }}>
               <div style={{ height: 3, background: s.border }} />
-              <div style={{ padding: "16px 16px 18px" }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                  <RoseGlyph house={faction} size={22} />
-                  <div
-                    className="rose-label"
-                    style={{ color: s.color, letterSpacing: "0.12em" }}
-                  >
-                    {HOUSE_SHORT[faction]}
-                  </div>
-                </div>
-                <div className="rose-label" style={{ marginBottom: 12, color: "#3a342c" }}>
-                  {HOUSE_LABEL[faction]}
+              <div style={{ padding: "16px" }}>
+                <div className="rose-label" style={{ color: s.color, marginBottom: 8 }}>
+                  {CAMPAIGN_SHORT[faction]}
                 </div>
                 {player ? (
-                  <>
-                    <div className="rose-serif" style={{ fontSize: 20, color: "#efe6d2" }}>
-                      {player.displayName}
-                      {isMe && (
-                        <span
-                          className="rose-label"
-                          style={{
-                            marginLeft: 8,
-                            color: s.color,
-                            border: `1px solid ${s.border}`,
-                            padding: "2px 7px",
-                            verticalAlign: "middle",
-                          }}
-                        >
-                          You
-                        </span>
-                      )}
-                    </div>
-                  </>
+                  <div className="rose-serif" style={{ fontSize: 20, color: "#efece4" }}>
+                    {player.displayName}
+                    {isMe && (
+                      <span className="rose-label" style={{ marginLeft: 8, color: s.color, border: `1px solid ${s.border}`, padding: "2px 7px" }}>
+                        You
+                      </span>
+                    )}
+                  </div>
                 ) : (
-                  <div className="rose-serif" style={{ fontSize: 15, color: "#3a342c", fontStyle: "italic" }}>
+                  <div className="rose-serif" style={{ fontSize: 15, color: "#4a4a4e", fontStyle: "italic" }}>
                     {s.empty}
                   </div>
                 )}
@@ -238,21 +188,19 @@ export default function SecretTestLobbyPage() {
       </div>
 
       {viewer && isFactionId(viewer.factionId) && (
-        <p className="rose-serif" style={{ color: "#8a8070", marginBottom: 22 }}>
-          You are <span style={{ color: "#efe6d2" }}>{viewer.displayName}</span>
-          {" — "}
-          {HOUSE_LABEL[viewer.factionId]}
+        <p className="rose-serif" style={{ color: "#8a8a86", marginBottom: 20 }}>
+          You are <span style={{ color: "#efece4" }}>{viewer.displayName}</span> — {CAMPAIGN_LABEL[viewer.factionId]}
         </p>
       )}
 
       {canStart ? (
         <button type="button" className="rose-btn" disabled={starting} onClick={startGame}>
-          {starting ? "Breaking the first seals…" : "Open the first dispatches"}
+          {starting ? "Opening the map…" : "Start the twelve months"}
         </button>
       ) : !hasEnough ? (
-        <p className="rose-label">The other rose has not yet entered the hall.</p>
+        <p className="rose-label">The other campaign has not entered.</p>
       ) : !isHost ? (
-        <p className="rose-label">Awaiting the host to open the first dispatches…</p>
+        <p className="rose-label">Waiting for the host to start…</p>
       ) : null}
 
       {startError && <p className="rose-error" style={{ marginTop: 16 }}>{startError}</p>}

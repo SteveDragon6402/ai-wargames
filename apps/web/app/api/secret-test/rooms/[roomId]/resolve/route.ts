@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { GM_LOCK_MS } from "@/app/secret-test/types";
 import { loadSecretRoom, saveState } from "@/app/secret-test/lib/store";
 import { lockIsFresh, withLock } from "@/app/secret-test/lib/state";
-import { runGmTurn } from "@/app/secret-test/lib/gm";
+import { runMonthPipeline } from "@/app/secret-test/lib/pipeline";
 
 export const maxDuration = 120;
 
@@ -15,11 +15,11 @@ export async function POST(
 
   try {
     const loaded = await loadSecretRoom(roomId);
-    if (!loaded) return NextResponse.json({ error: "The cipher is unknown." }, { status: 404 });
+    if (!loaded) return NextResponse.json({ error: "Unknown room." }, { status: 404 });
 
     const { room, roomPlayers, state } = loaded;
     if (room.status !== "playing") {
-      return NextResponse.json({ error: "The war has not opened." }, { status: 400 });
+      return NextResponse.json({ error: "The campaign has not opened." }, { status: 400 });
     }
     if (!state) return NextResponse.json({ error: "Game state missing." }, { status: 500 });
     if (state.phase !== "resolving") {
@@ -32,13 +32,13 @@ export async function POST(
     await saveState(roomId, withLock(state, true));
 
     try {
-      const next = await runGmTurn({ ...state, gmLock: true }, roomPlayers);
+      const next = await runMonthPipeline({ ...state, gmLock: true }, roomPlayers);
       await saveState(roomId, withLock(next, false));
-      return NextResponse.json({ ok: true, phase: next.phase, turn: next.turn });
+      return NextResponse.json({ ok: true, phase: next.phase, month: next.month });
     } catch (err) {
-      console.error("[POST /api/secret-test/rooms/[roomId]/resolve] gm", err);
+      console.error("[POST /api/secret-test/rooms/[roomId]/resolve] pipeline", err);
       await saveState(roomId, withLock(state, false));
-      return NextResponse.json({ error: "The chronicler failed. Retry." }, { status: 500 });
+      return NextResponse.json({ error: "The war room failed. Retry." }, { status: 500 });
     }
   } catch (e) {
     console.error("[POST /api/secret-test/rooms/[roomId]/resolve]", e);

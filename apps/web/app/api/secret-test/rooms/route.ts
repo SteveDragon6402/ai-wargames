@@ -15,7 +15,7 @@ export async function POST(req: Request) {
   }
 
   const displayName =
-    (typeof body.displayName === "string" ? body.displayName.trim() : "") || "Captain";
+    (typeof body.displayName === "string" ? body.displayName.trim() : "") || "Candidate";
 
   try {
     const db = getDb();

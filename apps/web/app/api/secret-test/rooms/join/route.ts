@@ -15,10 +15,10 @@ export async function POST(req: Request) {
 
   const code = typeof body.code === "string" ? body.code.toUpperCase().trim() : "";
   const displayName =
-    (typeof body.displayName === "string" ? body.displayName.trim() : "") || "Captain";
+    (typeof body.displayName === "string" ? body.displayName.trim() : "") || "Candidate";
 
   if (code.length !== 6) {
-    return NextResponse.json({ error: "The cipher must be six characters." }, { status: 400 });
+    return NextResponse.json({ error: "The code must be six characters." }, { status: 400 });
   }
 
   try {
@@ -26,22 +26,22 @@ export async function POST(req: Request) {
     const [room] = await db.select().from(rooms).where(eq(rooms.code, code)).limit(1);
 
     if (!room) {
-      return NextResponse.json({ error: "The cipher is unknown." }, { status: 404 });
+      return NextResponse.json({ error: "Unknown room code." }, { status: 404 });
     }
     if (room.scenarioId !== "secret-test") {
-      return NextResponse.json({ error: "That cipher belongs to another war." }, { status: 400 });
+      return NextResponse.json({ error: "That code belongs to another game." }, { status: 400 });
     }
     if (room.status !== "lobby") {
-      return NextResponse.json({ error: "This council has already opened." }, { status: 400 });
+      return NextResponse.json({ error: "This race has already started." }, { status: 400 });
     }
 
     const existing = await db.select().from(players).where(eq(players.roomId, room.id));
     if (existing.length >= 2) {
-      return NextResponse.json({ error: "Both seats are taken." }, { status: 400 });
+      return NextResponse.json({ error: "Both campaigns are filled." }, { status: 400 });
     }
 
     const host = existing[0];
-    const hostFaction = host && isFactionId(host.factionId) ? host.factionId : "lancaster";
+    const hostFaction = host && isFactionId(host.factionId) ? host.factionId : "red";
     const factionId = rivalFaction(hostFaction);
     const playerId = randomUUID();
     const sessionToken = randomUUID();
