@@ -1,6 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { applyFriendlyPresenceRefill } from "./hold-runtime";
+import {
+  applyFriendlyPresenceRefill,
+  holdSpineColor,
+  holdSpineOwner,
+} from "./hold-runtime";
 import { holdRuntime } from "./test-helpers";
 import { army } from "./test-helpers";
 
@@ -52,5 +56,14 @@ describe("applyFriendlyPresenceRefill", () => {
     );
     assert.equal(next["16"].controller, "north");
     assert.ok((next["16"].garrison.units[0]?.count ?? 0) > 0);
+  });
+});
+
+describe("holdSpineOwner", () => {
+  it("falls back to home country when the seat is unheld", () => {
+    assert.equal(holdSpineOwner(null, "north"), "north");
+    assert.equal(holdSpineOwner(null, "westerlands"), "westerlands");
+    assert.equal(holdSpineColor(null, "north"), "#3a6ea8");
+    assert.equal(holdSpineColor("westerlands", "north"), "#b03030");
   });
 });

@@ -55,6 +55,19 @@ export interface CharacterToolContext {
     /** Filled in by accept_terms / reject_terms / propose_terms. */
     decision: SurrenderDecision | null;
   };
+  /**
+   * Set on a pre-battle judgment pass. Filled by record_battle_judgment so the
+   * deed is a tool call, not guessed from prose.
+   */
+  battleJudgment?: {
+    commitment: "commit" | "hold_back";
+    betrayal: "loyal" | "turn_independent" | "turn_join_enemy";
+    instructions: string;
+    take: string;
+    outlook: string;
+    approach: string;
+    mood?: string;
+  } | null;
 }
 
 export interface ToolLoopResult {
@@ -667,6 +680,45 @@ export const CHARACTER_TOOL_DEFS: Anthropic.Messages.Tool[] = [
     },
   },
   {
+    name: "record_battle_judgment",
+    description:
+      "Commit how you will act in the coming fight. Call this once after you have looked at what you need. This is not spoken aloud.",
+    input_schema: {
+      type: "object",
+      properties: {
+        take: { type: "string", description: "Your read of the field, ≤15 words." },
+        outlook: { type: "string", description: "How you think it will go, ≤15 words." },
+        approach: { type: "string", description: "What you will do, ≤15 words." },
+        instructions: {
+          type: "string",
+          description:
+            "Short orders for your men, under 50 words. How you want this fight fought.",
+        },
+        commitment: {
+          type: "string",
+          enum: ["commit", "hold_back"],
+          description:
+            "commit = throw your strength in. hold_back = keep your men out of the worst of it (they take fewer losses).",
+        },
+        betrayal: {
+          type: "string",
+          enum: ["loyal", "turn_independent", "turn_join_enemy"],
+          description:
+            "loyal = fight for your liege. turn_independent = turn on him but do not join the other side. turn_join_enemy = ride over to the enemy.",
+        },
+        mood: { type: "string", description: "Optional private mood after deciding." },
+      },
+      required: [
+        "take",
+        "outlook",
+        "approach",
+        "instructions",
+        "commitment",
+        "betrayal",
+      ],
+    },
+  },
+  {
     name: "propose_terms",
     description:
       "Put your own terms on the table — either a counter to what was offered, or an unprompted offer to yield if your position is hopeless. The other side must still accept.",
@@ -1061,6 +1113,30 @@ ${castle}`,
       };
     }
 
+    case "record_battle_judgment": {
+      if (!("battleJudgment" in ctx) || ctx.battleJudgment === undefined) {
+        return { result: "This is not a battle judgment." };
+      }
+      const commitment =
+        input.commitment === "hold_back" ? "hold_back" : "commit";
+      const betrayal =
+        input.betrayal === "turn_join_enemy" || input.betrayal === "turn_independent"
+          ? input.betrayal
+          : "loyal";
+      ctx.battleJudgment = {
+        commitment,
+        betrayal,
+        instructions: String(input.instructions ?? "").trim(),
+        take: String(input.take ?? "").trim(),
+        outlook: String(input.outlook ?? "").trim(),
+        approach: String(input.approach ?? "").trim(),
+        mood: typeof input.mood === "string" ? input.mood : undefined,
+      };
+      return {
+        result: "Judgment recorded for the coming fight.",
+      };
+    }
+
     case "list_past_threads": {
       const mine = ctx.conversations.filter((t) =>
         t.participantIds.includes(npc.id)
@@ -1196,6 +1272,8 @@ export async function runCharacterToolLoop(opts: {
   outputMode?: "speech" | "raw";
   /** Optional progress hooks — set these to stream the line as it is said. */
   events?: ToolLoopEvents;
+  /** If set, only these tools are offered (plus speak in speech mode). */
+  allowedTools?: string[];
 }): Promise<ToolLoopResult> {
   const { client, system, userMessage, ctx, events } = opts;
   const maxRounds = opts.maxRounds ?? 5;
@@ -1208,9 +1286,11 @@ export async function runCharacterToolLoop(opts: {
   // to them at all — otherwise a JSON-producing prompt can be answered with a
   // line of dialogue instead.
   const speakTool = CHARACTER_TOOL_DEFS.find((t) => t.name === SPEAK_TOOL_NAME)!;
-  const tools = speechMode
+  const allowed = opts.allowedTools ? new Set(opts.allowedTools) : null;
+  const tools = (speechMode
     ? CHARACTER_TOOL_DEFS
-    : CHARACTER_TOOL_DEFS.filter((t) => t.name !== SPEAK_TOOL_NAME);
+    : CHARACTER_TOOL_DEFS.filter((t) => t.name !== SPEAK_TOOL_NAME)
+  ).filter((t) => !allowed || t.name === SPEAK_TOOL_NAME || allowed.has(t.name));
 
   const patches = new Map<string, NpcRuntimePatch>();
   const adviceBag: AdviceRecord[] = [];

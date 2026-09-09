@@ -217,4 +217,5 @@ export const INITIAL_GAME_STATE: GameState = {
   adviceLog: [],
   holdStates: OPENING.holdStates,
   garrisonPanel: null,
+  turnedHouses: [],
 };

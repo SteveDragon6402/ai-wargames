@@ -1,9 +1,9 @@
 "use client";
 
-import { memo } from "react";
 import { Handle, Position } from "@xyflow/react";
 import type { Army, Faction } from "../types";
 import { REGION_COLORS, REGION_BORDER_COLORS } from "../data/holds";
+import { holdSpineColor, holdSpineOwner } from "../lib/hold-runtime";
 
 /** Where a garrison stands relative to the seat's own default strength. */
 export type GarrisonBand =
@@ -22,6 +22,12 @@ export interface HoldNodeData {
   isInMoveMode: boolean;
   /** Who holds the seat right now; null when unheld. */
   controller?: Faction | "hostile" | null;
+  /** Regional home — used for the spine when controller is missing. */
+  homeFaction?: Faction | "hostile" | null;
+  /** Precomputed ownership strip — kept as a primitive so React Flow refreshes it. */
+  spineColor?: string;
+  /** Northern houses that have gone over to the Westerlands. */
+  turnedHouses?: string[];
   /** Distinct from fortify — men inside the walls */
   hasGarrison?: boolean;
   /** Garrison headcount, for the tooltip and band. */
@@ -69,17 +75,25 @@ function ArmyDot({
   army,
   fortified,
   resting,
+  turnedHouses,
 }: {
   army: Army;
   fortified?: boolean;
   resting?: boolean;
+  turnedHouses?: string[];
 }) {
   const men = strengthOf(army);
   const k = men >= 1000 ? `${Math.round(men / 1000)}` : "·";
   const activity = fortified ? "fortifying" : resting ? "resting" : "in the field";
+  const turned =
+    !!turnedHouses?.length &&
+    army.units.some((u) => turnedHouses.includes(u.house));
+  const color = turned ? FACTION_COLORS.westerlands : FACTION_COLORS[army.faction];
   return (
     <span
-      title={`${army.name} — ${men.toLocaleString()} men, ${activity}`}
+      title={`${army.name} — ${men.toLocaleString()} men, ${activity}${
+        turned ? " (turned cloak)" : ""
+      }`}
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -88,7 +102,7 @@ function ArmyDot({
         height: 11,
         padding: "0 2px",
         borderRadius: fortified ? 1 : 6,
-        background: FACTION_COLORS[army.faction],
+        background: color,
         border: fortified
           ? "1px solid rgba(255,255,255,0.45)"
           : "1px solid rgba(255,255,255,0.15)",
@@ -136,6 +150,9 @@ function HoldNode({ data }: { data: HoldNodeData }) {
     isMoveTarget,
     isInMoveMode,
     controller,
+    homeFaction,
+    spineColor,
+    turnedHouses,
     hasGarrison,
     garrisonMen,
     garrisonBand,
@@ -174,17 +191,16 @@ function HoldNode({ data }: { data: HoldNodeData }) {
   }
 
   const controllerColor =
-    controller === "north" || controller === "westerlands"
-      ? FACTION_COLORS[controller]
-      : controller === "hostile"
-        ? "#6a5a3a"
-        : "#333";
+    spineColor ?? holdSpineColor(controller, homeFaction);
+  const spineWho = holdSpineOwner(controller, homeFaction);
   const controllerLabel =
     controller === "north" || controller === "westerlands"
       ? `Held by ${FACTION_NAMES[controller]}`
       : controller === "hostile"
         ? "Held against both sides"
-        : "Unheld";
+        : spineWho === "north" || spineWho === "westerlands"
+          ? `Unheld — ${FACTION_NAMES[spineWho]} country`
+          : "Unheld";
 
   return (
     <>
@@ -195,20 +211,36 @@ function HoldNode({ data }: { data: HoldNodeData }) {
           border: `1px solid ${borderColor}`,
           boxShadow: glowStyle || undefined,
           borderRadius: 2,
-          padding: "4px 7px",
+          padding: "4px 7px 4px 10px",
           minWidth: 90,
           maxWidth: 130,
           cursor: "pointer",
           userSelect: "none",
           transition: "border-color 0.15s, box-shadow 0.15s",
           position: "relative",
+          overflow: "hidden",
           opacity: isInMoveMode && !isMoveTarget && !isSelected ? 0.4 : 1,
-          // Ownership as a coloured spine down the left edge: readable at a
-          // glance across the whole map, which a glyph is not.
-          borderLeft: `3px solid ${controllerColor}`,
         }}
         title={controllerLabel}
       >
+        {/*
+          Dedicated strip — not borderLeft. React's style diff will re-apply the
+          `border` shorthand after the first update and silently drop borderLeft
+          if that colour string did not change, which is why the spine vanished
+          after turn 1.
+        */}
+        <div
+          aria-hidden
+          style={{
+            position: "absolute",
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 3,
+            background: controllerColor,
+            pointerEvents: "none",
+          }}
+        />
         {/* Hold name */}
         <div
           style={{
@@ -244,6 +276,7 @@ function HoldNode({ data }: { data: HoldNodeData }) {
                 army={a}
                 fortified={(a.activity?.turnsFortiying ?? 0) > 0}
                 resting={(a.activity?.turnsResting ?? 0) > 0}
+                turnedHouses={turnedHouses}
               />
             ))}
           </div>
@@ -361,4 +394,4 @@ function HoldNode({ data }: { data: HoldNodeData }) {
   );
 }
 
-export default memo(HoldNode);
+export default HoldNode;

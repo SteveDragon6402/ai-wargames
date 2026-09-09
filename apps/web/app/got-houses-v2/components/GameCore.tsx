@@ -38,6 +38,10 @@ import {
   holdsRipeForAiSurrender,
 } from "../lib/surrender";
 import { boardFingerprint, factionOrdersEqual, stateProgress } from "../lib/room-sync";
+import {
+  applyBriefsToBattle,
+  collectBattleCharacterIds,
+} from "../lib/battle-briefs";
 
 export type SyncRole = "host" | "guest" | "solo";
 
@@ -91,6 +95,7 @@ function normalizeState(raw: GameState): GameState {
       summaryError: r.summaryError,
     })),
     garrisonPanel: raw.garrisonPanel ?? null,
+    turnedHouses: raw.turnedHouses ?? [],
     north: {
       orders: raw.north?.orders ?? [],
       stanceOrders: raw.north?.stanceOrders ?? {},
@@ -489,21 +494,10 @@ export default function GameCore({
         console.log("West armies:", battle.westArmies.map((a) => `${a.name} (${a.id})`));
         console.log("Last stand:", battle.lastStand ?? false);
 
-        // NPC commander briefs (never player lords)
+        // Every living NPC in the fight — commanders and notables, beasts too.
+        // Player lords (Robb, Tywin) stay out of the AI pass.
         let commanderBriefs: CommanderBrief[] = [];
-        const armyIds = new Set(
-          [...battle.northArmies, ...battle.westArmies].map((a) => a.id)
-        );
-        const commanderIds = Object.values(characters)
-          .filter(
-            (c) =>
-              c.kind === "npc" &&
-              c.alive &&
-              c.role === "commander" &&
-              c.armyId &&
-              armyIds.has(c.armyId)
-          )
-          .map((c) => c.id);
+        const commanderIds = collectBattleCharacterIds(battle, characters);
 
         if (commanderIds.length > 0) {
           try {
@@ -545,10 +539,23 @@ export default function GameCore({
           }
         }
 
-        const battleWithBriefs: BattleContext = {
-          ...battle,
-          commanderBriefs,
-        };
+        const applied = applyBriefsToBattle(battle, commanderBriefs);
+        if (
+          commanderBriefs.length > 0 ||
+          applied.flips.length > 0 ||
+          applied.turnedHouses.length > 0 ||
+          (applied.battle.rogueArmies?.length ?? 0) > 0
+        ) {
+          dispatch({
+            type: "APPLY_BATTLE_BRIEFS",
+            flips: applied.flips,
+            turnedHouses: applied.turnedHouses,
+            rogueArmyIds: (applied.battle.rogueArmies ?? []).map((a) => a.id),
+            armyCommitments: applied.battle.armyCommitments,
+            commanderBriefs,
+          });
+        }
+        const battleWithBriefs: BattleContext = applied.battle;
 
         try {
           console.log("→ POSTing to /api/got-houses-v2/battle …");

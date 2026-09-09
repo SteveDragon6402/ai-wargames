@@ -957,6 +957,43 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
+    case "APPLY_BATTLE_BRIEFS": {
+      const flipBy = new Map(action.flips.map((f) => [f.armyId, f.faction]));
+      const rogue = new Set(action.rogueArmyIds ?? []);
+      const armies = state.armies.map((a) => {
+        const faction = flipBy.get(a.id);
+        return faction ? { ...a, faction } : a;
+      });
+      const characters = { ...state.characters };
+      for (const [id, c] of Object.entries(characters)) {
+        if (c.kind !== "npc" || !c.armyId) continue;
+        const faction = flipBy.get(c.armyId);
+        if (faction) characters[id] = { ...c, faction };
+      }
+      const pendingBattles = state.pendingBattles.map((b) => {
+        const move = (a: (typeof b.northArmies)[number]) => {
+          const faction = flipBy.get(a.id) ?? a.faction;
+          return { ...a, faction };
+        };
+        const all = [...b.northArmies, ...b.westArmies, ...(b.rogueArmies ?? [])].map(move);
+        return {
+          ...b,
+          northArmies: all.filter((a) => a.faction === "north" && !rogue.has(a.id)),
+          westArmies: all.filter((a) => a.faction === "westerlands" && !rogue.has(a.id)),
+          rogueArmies: all.filter((a) => rogue.has(a.id)),
+          armyCommitments: action.armyCommitments ?? b.armyCommitments,
+          commanderBriefs: action.commanderBriefs ?? b.commanderBriefs,
+        };
+      });
+      return {
+        ...state,
+        armies,
+        characters,
+        pendingBattles,
+        turnedHouses: [...new Set([...(state.turnedHouses ?? []), ...action.turnedHouses])],
+      };
+    }
+
     case "BATTLES_RESOLVED": {
       const { reports } = action;
 
@@ -967,7 +1004,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         const battle = state.pendingBattles.find((b) => b.holdId === report.holdId);
         if (!battle) return null;
         return new Set(
-          [...battle.northArmies, ...battle.westArmies].map((a) => a.id)
+          [
+            ...battle.northArmies,
+            ...battle.westArmies,
+            ...(battle.rogueArmies ?? []),
+          ].map((a) => a.id)
         );
       };
 

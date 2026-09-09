@@ -21,6 +21,10 @@ import {
   validateBattleOutcome,
   type ExecutorOutput,
 } from "@/app/got-houses-v2/lib/battle-validate";
+import {
+  emptyChronicleReason,
+  textOfContent,
+} from "@/app/got-houses-v2/lib/battle-model";
 
 /**
  * Battle resolution in three stages.
@@ -40,10 +44,18 @@ import {
 
 const LOG = "[got-houses-v2/battle]";
 
-const CHRONICLER_MODELS = ["claude-sonnet-5", "claude-sonnet-5", "claude-haiku-4-5"];
+const CHRONICLER_MODELS = ["claude-sonnet-5", "claude-haiku-4-5"];
 const EXECUTOR_MODELS = ["claude-sonnet-5", "claude-haiku-4-5"];
-const CHRONICLER_MAX_TOKENS = 3000;
+const CHRONICLER_MAX_TOKENS = 4000;
 const EXECUTOR_MAX_TOKENS = 4000;
+
+/**
+ * Sonnet 5 thinks by default. Those tokens count against max_tokens and are
+ * omitted from the response, so a 3k budget is often spent entirely on hidden
+ * reasoning — the call "succeeds" with no text block, and we fall back.
+ * The chronicle is the product; thinking is not needed for it.
+ */
+const NO_THINKING = { thinking: { type: "disabled" as const } };
 
 /** Closing verdict vocabulary. Stage 1 must end on exactly one of these. */
 const OUTCOME_VOCABULARY: Record<DefeatType, string> = {
@@ -195,13 +207,28 @@ function buildChroniclerMessage(
   const briefs = battle.commanderBriefs ?? [];
   const briefsBlock =
     briefs.length > 0
-      ? `COMMANDER TAKES (NPC only — soft mechanics; player lords have no takes):\n${briefs
-          .map(
-            (b) =>
-              `- ${b.name} [${b.armyId}] mood="${b.mood}"\n  take: ${b.take}\n  outlook: ${b.outlook}\n  approach: ${b.approach}`
-          )
+      ? `COMMANDER TAKES (NPC only — player lords have no takes). Commitment and betrayal are mechanical:\n${briefs
+          .map((b) => {
+            const commit =
+              b.commitment === "hold_back"
+                ? "HOLDS BACK — fewer losses, less weight in the fight"
+                : "COMMITS";
+            const turn =
+              b.betrayal === "turn_join_enemy"
+                ? "TURNED — rides with the enemy"
+                : b.betrayal === "turn_independent"
+                  ? "TURNED — fights neither liege nor as the enemy's man"
+                  : "loyal";
+            return `- ${b.name} [${b.armyId}] (${b.role}, House ${b.house ?? "?"}) mood="${b.mood}" ${commit}; ${turn}\n  take: ${b.take}\n  outlook: ${b.outlook}\n  approach: ${b.approach}\n  orders: ${b.instructions}`;
+          })
           .join("\n")}`
       : "COMMANDER TAKES: none available";
+
+  const rogue = battle.rogueArmies ?? [];
+  const rogueNote =
+    rogue.length > 0
+      ? `\nA THIRD FORCE is on the field (turned on their liege, not joined to the other side). They are not part of either coalition.\n${rogue.map((a) => armyBlock(battle, a, hold)).join("\n\n")}`
+      : "";
 
   return `BATTLE LOCATION: ${locationLine}
 Hold ground: ${hold?.ground ?? "unknown"}
@@ -219,6 +246,7 @@ FORCES ENGAGED AT ${locationName.toUpperCase()}
 ${sideBlock(battle, battle.northArmies, "The North", summary.north, hold)}
 
 ${sideBlock(battle, battle.westArmies, "The Westerlands", summary.west, hold)}
+${rogueNote}
 
 ═══════════════════════════════════════════════════════════════
 TASK: adjudicate this engagement at ${locationName} and write the report.
@@ -257,6 +285,7 @@ Rules:
 - Read the report's phases and its closing VERDICT line, and make the numbers match what it describes. If the report says a flank was annihilated, that unit type takes heavy losses. If it says a rear-guard withdrew in order, losses are light.
 - Use only the army ids, house names and unit types given in the force data. Never invent an id, a house or a character.
 - Casualty counts must be whole numbers greater than zero, and can never exceed the men that army actually has.
+- An army marked HOLDS BACK must take substantially lighter losses than a committed host on the same side.
 - Only report a named figure as fallen if the report says or clearly implies they fell.
 - retreatingArmyIds must be exactly the losing side's army ids (all of them), or both sides' ids if the verdict was "Neither".
 - conditionUpdates must contain one entry for every army in the battle, describing its state after the fight in one vivid sentence each. A routed army is shattered and desperate; an orderly retreat leaves it bruised but not broken; a pyrrhic winner is bloodied and wary.
@@ -363,6 +392,19 @@ function buildExecutorMessage(
           })
           .join("\n")}`;
 
+  const commitments = battle.armyCommitments ?? {};
+  const commitNote = Object.keys(commitments).length
+    ? `\nCOMMITMENT:\n${Object.entries(commitments)
+        .map(([id, c]) => `  - ${id}: ${c === "hold_back" ? "HOLDS BACK (lighter losses)" : "commits"}`)
+        .join("\n")}`
+    : "";
+  const briefs = (battle.commanderBriefs ?? [])
+    .map(
+      (b) =>
+        `  - ${b.name} [${b.armyId}]: ${b.commitment}; ${b.betrayal}; orders: ${b.instructions}`
+    )
+    .join("\n");
+
   return `BATTLE AT: ${hold?.name ?? battle.holdId}
 ${describeForceRatio(summary)}
 Engagement type: ${battle.engagement ?? "field"}${battle.lastStand ? " (LAST STAND — the trapped side had no retreat)" : ""}
@@ -370,6 +412,9 @@ Engagement type: ${battle.engagement ?? "field"}${battle.lastStand ? " (LAST STA
 FORCES AND EXACT IDENTIFIERS
 ${roster(battle.northArmies, "THE NORTH")}
 ${roster(battle.westArmies, "THE WESTERLANDS")}
+${roster(battle.rogueArmies ?? [], "THIRD FORCE (turned on their liege, not joined to the enemy)")}
+${commitNote}
+${briefs ? `\nCOMMANDER ORDERS:\n${briefs}` : ""}
 
 THE BATTLE REPORT (authoritative — do not contradict it)
 ─────────────────────────────────────────────────────────
@@ -428,11 +473,13 @@ function isOverloaded(message: string): boolean {
   );
 }
 
-/** Try each model in turn, backing off only on transient overload. */
+
+/** Try each model in turn, backing off on overload or an empty usable body. */
 async function callWithFallback(
   client: Anthropic,
   models: string[],
-  build: (model: string) => Anthropic.Messages.MessageCreateParamsNonStreaming
+  build: (model: string) => Anthropic.Messages.MessageCreateParamsNonStreaming,
+  usable?: (response: Anthropic.Messages.Message) => string | null
 ): Promise<{ response: Anthropic.Messages.Message; model: string } | { error: string }> {
   let lastError = "";
   for (let attempt = 0; attempt < models.length; attempt++) {
@@ -440,22 +487,28 @@ async function callWithFallback(
     if (attempt > 0) await new Promise((r) => setTimeout(r, attempt * 1200));
     try {
       const response = await client.messages.create(build(model));
+      const reject = usable?.(response);
+      if (reject) {
+        lastError = `${model}: ${reject}`;
+        console.warn(`${LOG} ${lastError}`);
+        continue;
+      }
       return { response, model };
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
       console.warn(`${LOG} ${model} attempt ${attempt + 1} failed:`, lastError);
-      if (!isOverloaded(lastError)) break;
+      // Keep going — Haiku does not think by default, so an empty Sonnet 5
+      // reply or a thinking-config 400 is not the end of adjudication.
+      if (!isOverloaded(lastError) && /authentication|api.?key|401|403/i.test(lastError)) {
+        break;
+      }
     }
   }
   return { error: lastError || "no model responded" };
 }
 
 function textOf(response: Anthropic.Messages.Message): string {
-  return response.content
-    .filter((b): b is Anthropic.Messages.TextBlock => b.type === "text")
-    .map((b) => b.text)
-    .join("\n")
-    .trim();
+  return textOfContent(response.content);
 }
 
 async function runChronicler(
@@ -465,12 +518,19 @@ async function runChronicler(
   summary: ForceSummary
 ): Promise<{ chronicle: string } | { error: string }> {
   const message = buildChroniclerMessage(battle, holdsMap, summary);
-  const result = await callWithFallback(client, CHRONICLER_MODELS, (model) => ({
-    model,
-    max_tokens: CHRONICLER_MAX_TOKENS,
-    system: CHRONICLER_SYSTEM,
-    messages: [{ role: "user", content: message }],
-  }));
+  const result = await callWithFallback(
+    client,
+    CHRONICLER_MODELS,
+    (model) =>
+      ({
+        model,
+        max_tokens: CHRONICLER_MAX_TOKENS,
+        system: CHRONICLER_SYSTEM,
+        messages: [{ role: "user", content: message }],
+        ...NO_THINKING,
+      }) as Anthropic.Messages.MessageCreateParamsNonStreaming,
+    (response) => emptyChronicleReason(response)
+  );
   if ("error" in result) return result;
 
   const chronicle = textOf(result.response);
@@ -495,14 +555,17 @@ async function runExecutor(
   const message = buildExecutorMessage(battle, holdsMap, summary, chronicle);
 
   for (let round = 0; round < 2; round++) {
-    const result = await callWithFallback(client, EXECUTOR_MODELS, (model) => ({
-      model,
-      max_tokens: EXECUTOR_MAX_TOKENS,
-      system: EXECUTOR_SYSTEM,
-      tools: [OUTCOME_TOOL],
-      tool_choice: { type: "tool", name: OUTCOME_TOOL.name },
-      messages: [{ role: "user", content: message }],
-    }));
+    const result = await callWithFallback(client, EXECUTOR_MODELS, (model) =>
+      ({
+        model,
+        max_tokens: EXECUTOR_MAX_TOKENS,
+        system: EXECUTOR_SYSTEM,
+        tools: [OUTCOME_TOOL],
+        tool_choice: { type: "tool", name: OUTCOME_TOOL.name },
+        messages: [{ role: "user", content: message }],
+        ...NO_THINKING,
+      }) as Anthropic.Messages.MessageCreateParamsNonStreaming
+    );
     if ("error" in result) return result;
 
     // A tool call cut off mid-arguments yields unusable partial JSON, so retry

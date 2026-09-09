@@ -23,8 +23,14 @@ export function buildFallbackReport(
   const { holdResult, lossShare } = fallbackOutcome(battle, summary);
 
   const casualties: Casualty[] = [];
-  for (const army of [...battle.northArmies, ...battle.westArmies]) {
-    const share = lossShare[army.faction] ?? 0.1;
+  const holdBack = battle.armyCommitments ?? {};
+  for (const army of [
+    ...battle.northArmies,
+    ...battle.westArmies,
+    ...(battle.rogueArmies ?? []),
+  ]) {
+    let share = lossShare[army.faction] ?? 0.1;
+    if (holdBack[army.id] === "hold_back") share *= 0.35;
     const total = Math.floor(army.units.reduce((s, u) => s + u.count, 0) * share);
     for (const [unit, n] of distributeProportional(army.units, total)) {
       if (n > 0) {

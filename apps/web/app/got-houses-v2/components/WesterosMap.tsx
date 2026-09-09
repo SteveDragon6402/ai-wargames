@@ -27,8 +27,8 @@ import type {
   Faction,
   MoveOrder,
 } from "../types";
-import { getCastleSeed } from "../data/castles";
-import { isGarrisonable } from "../lib/hold-runtime";
+import { getCastleSeed, homeFactionForRegion } from "../data/castles";
+import { holdSpineColor, isGarrisonable } from "../lib/hold-runtime";
 import { headcountOf, minimumSiegeForce } from "../lib/siege";
 import HoldNode, {
   type GarrisonBand,
@@ -166,6 +166,12 @@ function MapInner({ state, dispatch }: Props) {
         isMoveTarget,
         isInMoveMode,
         controller: hs?.controller ?? null,
+        homeFaction: hs?.homeFaction ?? homeFactionForRegion(hold.region),
+        spineColor: holdSpineColor(
+          hs?.controller ?? null,
+          hs?.homeFaction ?? homeFactionForRegion(hold.region)
+        ),
+        turnedHouses: state.turnedHouses ?? [],
         hasGarrison: garrisonMen > 0,
         garrisonMen,
         garrisonBand: band,
@@ -197,6 +203,8 @@ function MapInner({ state, dispatch }: Props) {
     state.selectedHoldId,
     state.moveMode,
     state.holdStates,
+    state.turnedHouses,
+    state.turn,
     pledgedHoldIds,
     handleHoldClick,
   ]);
@@ -355,7 +363,19 @@ function MapInner({ state, dispatch }: Props) {
                   flexShrink: 0,
                 }}
               />
-              <LegendText>Left edge = who holds the seat</LegendText>
+              <LegendText>Left edge = who holds the seat (every turn)</LegendText>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+              <div
+                style={{
+                  width: 12,
+                  height: 10,
+                  borderRadius: 5,
+                  background: "#b03030",
+                  flexShrink: 0,
+                }}
+              />
+              <LegendText>Turned northern house (rides red)</LegendText>
             </div>
           </div>
 

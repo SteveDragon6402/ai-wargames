@@ -22,6 +22,49 @@ export function isFriendlyTo(
   return state.controller === faction;
 }
 
+const SPINE: Record<"north" | "westerlands" | "hostile" | "none", string> = {
+  north: "#3a6ea8",
+  westerlands: "#b03030",
+  hostile: "#6a5a3a",
+  none: "#555555",
+};
+
+/**
+ * Who the ownership strip should show. An empty seat still wears its
+ * country's colour — `controller` is often null after the opening turn.
+ */
+export function holdSpineOwner(
+  controller: Faction | "hostile" | null | undefined,
+  homeFaction: Faction | "hostile" | null | undefined
+): Faction | "hostile" | null {
+  if (
+    controller === "north" ||
+    controller === "westerlands" ||
+    controller === "hostile"
+  ) {
+    return controller;
+  }
+  if (
+    homeFaction === "north" ||
+    homeFaction === "westerlands" ||
+    homeFaction === "hostile"
+  ) {
+    return homeFaction;
+  }
+  return null;
+}
+
+export function holdSpineColor(
+  controller: Faction | "hostile" | null | undefined,
+  homeFaction: Faction | "hostile" | null | undefined
+): string {
+  const who = holdSpineOwner(controller, homeFaction);
+  if (who === "north" || who === "westerlands" || who === "hostile") {
+    return SPINE[who];
+  }
+  return SPINE.none;
+}
+
 /** Abstract default garrison units for home/hostile refill. */
 export function makeDefaultGarrisonUnits(
   holdId: string,

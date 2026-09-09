@@ -391,8 +391,12 @@ export interface BattleContext {
   armyOrders?: Record<string, "march" | "rest" | "fortify">;
   /** When true, one side is trapped with no retreat options — fight to the last */
   lastStand?: boolean;
-  /** NPC commander takes — player lords never included */
+  /** NPC commander / notable takes — player lords never included */
   commanderBriefs?: CommanderBrief[];
+  /** Per-army commit vs hold-back, from the commander pass */
+  armyCommitments?: Record<string, "commit" | "hold_back">;
+  /** Hosts that turned on their liege but did not join the other side */
+  rogueArmies?: Army[];
   /** Field clash vs storming the walls vs sallying out */
   engagement?: BattleEngagement;
   /** When set, a synthetic `garrison:{holdId}` army is in the fight */
@@ -634,6 +638,17 @@ export interface CommanderBrief {
   take: string;
   outlook: string;
   approach: string;
+  /** How they want their men used. Only army commanders move the needle. */
+  commitment: "commit" | "hold_back";
+  /**
+   * Betray the liege: stay a third force, or ride over to the enemy.
+   * Beasts cannot betray. Only army commanders split or flip a host.
+   */
+  betrayal: "loyal" | "turn_independent" | "turn_join_enemy";
+  /** ≤50 words, passed to the chronicler as their order of the day. */
+  instructions: string;
+  role: "commander" | "notable";
+  house?: string;
 }
 
 export interface NpcRuntimePatch {
@@ -727,6 +742,11 @@ export interface GameState {
   holdStates: Record<string, HoldRuntime>;
   /** Garrison peel panel (null = closed) */
   garrisonPanel: GarrisonPanelState | null;
+  /**
+   * Northern houses that have ridden over to the Westerlands.
+   * Their hosts paint red on the map.
+   */
+  turnedHouses?: string[];
 }
 
 export type GameAction =
@@ -739,6 +759,14 @@ export type GameAction =
   | { type: "SUBMIT_FACTION"; faction: Faction; deferAdjudicate?: boolean }
   | { type: "ADJUDICATE_MOVES" }
   | { type: "BATTLES_RESOLVED"; reports: BattleReport[] }
+  | {
+      type: "APPLY_BATTLE_BRIEFS";
+      flips: { armyId: string; faction: Faction }[];
+      turnedHouses: string[];
+      rogueArmyIds?: string[];
+      armyCommitments?: Record<string, "commit" | "hold_back">;
+      commanderBriefs?: CommanderBrief[];
+    }
   | { type: "SET_RETREAT"; armyId: string; toHoldId: string }
   | { type: "COMMIT_RETREATS" }
   | { type: "COMBINE_ARMIES" }

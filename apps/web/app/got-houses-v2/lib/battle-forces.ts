@@ -85,7 +85,7 @@ export function describeForceRatio(summary: ForceSummary): string {
  */
 export function fallbackOutcome(
   battle: BattleContext,
-  summary: ForceSummary
+  _summary: ForceSummary
 ): { holdResult: Faction | "abandoned"; lossShare: Record<Faction, number> } {
   const orders = battle.armyOrders ?? {};
   const posture = (armies: Army[]): number => {
@@ -100,8 +100,14 @@ export function fallbackOutcome(
     return armies.length > 0 ? score / armies.length : 0;
   };
 
-  const northScore = summary.north.total * (1 + 0.12 * posture(battle.northArmies));
-  const westScore = summary.west.total * (1 + 0.12 * posture(battle.westArmies));
+  const committed = (armies: Army[]) =>
+    armies.reduce((s, a) => {
+      const n = armyStrength(a);
+      return s + (battle.armyCommitments?.[a.id] === "hold_back" ? n * 0.4 : n);
+    }, 0);
+
+  const northScore = committed(battle.northArmies) * (1 + 0.12 * posture(battle.northArmies));
+  const westScore = committed(battle.westArmies) * (1 + 0.12 * posture(battle.westArmies));
 
   // Within 6% is genuinely indecisive — both sides pull back.
   const spread = Math.abs(northScore - westScore);
