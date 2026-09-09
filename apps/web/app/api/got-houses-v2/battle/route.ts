@@ -108,26 +108,26 @@ function armyBlock(
   army: Army,
   hold: Hold | undefined
 ): string {
-  const order = battle.armyOrders?.[army.id] ?? "march";
-  const statusLine =
-    order === "rest"
-      ? "Order: EXPLICITLY RESTING — encamped, off-guard, not expecting to fight"
-      : order === "fortify"
-        ? "Order: FORTIFYING — digging in, constructing field defences"
-        : "Order: MARCHING / ENGAGING";
+    const order = battle.armyOrders?.[army.id] ?? "march";
+    const statusLine =
+      order === "rest"
+        ? "Order: EXPLICITLY RESTING — encamped, off-guard, not expecting to fight"
+        : order === "fortify"
+          ? "Order: FORTIFYING — digging in, constructing field defences"
+          : "Order: MARCHING / ENGAGING";
 
   const commanders =
     army.leaders.map((l) => `${l.name}${l.title ? ` (${l.title})` : ""}`).join(", ") ||
     "none (host has no named commander)";
-  const notablesText = army.notables?.length
+    const notablesText = army.notables?.length
     ? army.notables.map((n) => `      • ${n.name} — ${n.description}`).join("\n")
     : "      • None";
 
-  const unitLines = army.units
+    const unitLines = army.units
     .map((u) => `      • ${u.count.toLocaleString()} ${u.house} ${u.type}`)
-    .join("\n");
+      .join("\n");
 
-  const act = army.activity;
+    const act = army.activity;
   const activityParts =
     [
       act.turnsResting > 0 ? `resting ${act.turnsResting} turn(s)` : null,
@@ -139,14 +139,14 @@ function armyBlock(
       .filter(Boolean)
       .join("; ") || "no notable recent history";
 
-  const approach = battle.armyApproaches?.[army.id];
-  const approachLine = approach
-    ? `Approach: marched from ${approach.fromHoldName} — ${approach.route}`
-    : "Approach: already present at this hold (defending / held position)";
+    const approach = battle.armyApproaches?.[army.id];
+    const approachLine = approach
+      ? `Approach: marched from ${approach.fromHoldName} — ${approach.route}`
+      : "Approach: already present at this hold (defending / held position)";
 
   const regionFit = hold ? regionSoftFor(hold.region, army.faction) : "Unknown country";
 
-  return `  ▸ ${army.name} [id: "${army.id}"]
+    return `  ▸ ${army.name} [id: "${army.id}"]
     Commanders: ${commanders}
     Notables:
 ${notablesText}
@@ -160,7 +160,7 @@ ${unitLines}
     ${approachLine}
     Activity: ${activityParts}
     ${statusLine}`;
-}
+  }
 
 function sideBlock(
   battle: BattleContext,
@@ -169,10 +169,10 @@ function sideBlock(
   force: ForceSummary["north"],
   hold: Hold | undefined
 ): string {
-  if (armies.length === 0) return "";
-  const separator = "─".repeat(60);
+    if (armies.length === 0) return "";
+    const separator = "─".repeat(60);
   const composition = `${force.byType.cavalry.toLocaleString()} cavalry / ${force.byType.infantry.toLocaleString()} infantry / ${force.byType.archers.toLocaleString()} archers`;
-  return `${separator}
+    return `${separator}
 SIDE: ${sideLabel.toUpperCase()}  |  ${force.armyCount} arm${force.armyCount !== 1 ? "ies" : "y"}  |  ${force.total.toLocaleString()} troops combined
 Composition: ${composition}
 All armies below fight as ONE coalition. Treat them as a unified force.
@@ -187,9 +187,11 @@ function buildChroniclerMessage(
 ): string {
   const hold = holdsMap.get(battle.holdId);
   const locationName = hold?.name ?? battle.holdId;
-  const locationLine = hold
-    ? `${hold.name} (${hold.region} — seat of House ${hold.house}, held by ${hold.lord})`
-    : `Hold ${battle.holdId}`;
+  const locationLine =
+    battle.seatLine ??
+    (hold
+      ? `${hold.name} (${hold.region} — seat of House ${hold.house}, held by ${hold.lord})`
+      : `Hold ${battle.holdId}`);
   const trait = hold ? regionTrait(hold.region) : null;
 
   const lastStandNote = battle.lastStand
@@ -197,12 +199,18 @@ function buildChroniclerMessage(
     : "";
 
   const engagement = battle.engagement ?? "field";
+  const wallsNote = battle.wallsStand
+    ? `\nTHIS IS A FIELD BATTLE before the walls of ${locationName}. The castle/city is NOT being stormed and is NOT taken if this field is won. A living garrison still holds the seat. Do not write as if the city has fallen.`
+    : "";
+  const combinedNote = battle.combinedAssault
+    ? `\nTHIS FIGHT IS SIMULTANEOUS: a storm of the gates, a sally from the walls, and a field host arriving all collide in one engagement. Adjudicate them as one battle, not as separate days.`
+    : "";
   const engagementNote =
     engagement === "storm"
-      ? `\nENGAGEMENT TYPE: STORM THE GATES — field armies assault the walls against a defending GARRISON (its army id starts with "garrison:"). The garrison fights from fortifications; treat walls, towers and gates as decisive advantages for the defenders unless numbers or leadership overwhelm them.`
+      ? `\nENGAGEMENT TYPE: STORM THE GATES — field armies assault the walls against a defending GARRISON (its army id starts with "garrison:"). The garrison fights from fortifications; treat walls, towers and gates as decisive advantages for the defenders unless numbers or leadership overwhelm them.${combinedNote}`
       : engagement === "sally"
-        ? `\nENGAGEMENT TYPE: SALLY OUT — the defending GARRISON (plus any relieving field armies on their side) sorties against the besiegers. This may be a two-front fight if relief has marched onto the invested hold.`
-        : "";
+        ? `\nENGAGEMENT TYPE: SALLY OUT — the defending GARRISON (plus any relieving field armies on their side) sorties against the besiegers. This may be a two-front fight if relief has marched onto the invested hold.${combinedNote}`
+        : wallsNote;
 
   const briefs = battle.commanderBriefs ?? [];
   const briefsBlock =

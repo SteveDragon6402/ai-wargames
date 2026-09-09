@@ -33,13 +33,21 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
   const myLord = factionLordId(faction);
   const enemy = enemyLordId(faction);
 
-  const commanders = Object.values(state.characters).filter(
-    (c) =>
-      c.kind === "npc" &&
-      c.alive &&
-      c.faction === faction &&
-      c.role === "commander"
-  );
+  const commanders = Object.values(state.characters).filter((c) => {
+    if (
+      c.kind !== "npc" ||
+      !c.alive ||
+      c.faction !== faction ||
+      c.role !== "commander"
+    ) {
+      return false;
+    }
+    if (c.holdId && !c.armyId) {
+      const hs = state.holdStates?.[c.holdId];
+      if (!hs || garrisonHeadcount(hs.garrison) <= 0) return false;
+    }
+    return true;
+  });
   const notablesByArmy = new Map<string, CharacterState[]>();
   for (const c of Object.values(state.characters)) {
     if (c.kind !== "npc" || !c.alive || c.faction !== faction || c.role !== "notable") {
@@ -57,7 +65,7 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
     const seed = getCastleSeed(holdId);
     if (!isGarrisonable(seed)) continue;
     const men = garrisonHeadcount(hs.garrison);
-    if (men <= 0 && !hs.siege) continue;
+    if (men <= 0 || !hs.siege) continue;
 
     const besieging = hs.siege?.besiegerFaction === faction;
     if (!besieging) continue;
@@ -207,8 +215,20 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
       <Section title="Vassals & notables">
         {[...notablesByArmy.entries()].map(([armyId, list]) => {
           const army = state.armies.find((a) => a.id === armyId);
-          const garrisonHold = armyId.startsWith("garrison:")
-            ? HOLDS_MAP.get(armyId.slice("garrison:".length))?.name
+          const garrisonHoldId = armyId.startsWith("garrison:")
+            ? armyId.slice("garrison:".length)
+            : null;
+          const gs = garrisonHoldId
+            ? state.holdStates?.[garrisonHoldId]
+            : undefined;
+          if (garrisonHoldId && (!gs || garrisonHeadcount(gs.garrison) <= 0)) {
+            return null;
+          }
+          if (armyId !== "unassigned" && !army && !garrisonHoldId) {
+            return null;
+          }
+          const garrisonHold = garrisonHoldId
+            ? HOLDS_MAP.get(garrisonHoldId)?.name
             : null;
           return (
             <div key={armyId} style={{ marginBottom: 12 }}>

@@ -137,8 +137,12 @@ export default function SidePanel({ state, dispatch }: Props) {
     underSiege && holdRuntime!.siege!.besiegerFaction === myFaction;
   const amDefenderUnderSiege =
     underSiege &&
-    friendlyHold &&
-    holdRuntime!.siege!.besiegerFaction !== myFaction;
+    holdRuntime!.siege!.besiegerFaction !== myFaction &&
+    (holdRuntime!.controller === myFaction ||
+      holdRuntime!.garrison.faction === myFaction ||
+      ((holdRuntime!.controller === null ||
+        holdRuntime!.controller === "hostile") &&
+        holdRuntime!.homeFaction === myFaction));
 
   const factionFo =
     myFaction === "north" ? state.north : state.westerlands;

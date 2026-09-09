@@ -127,6 +127,7 @@ Inquire with tools if you need memory, then record_battle_judgment.`,
           "get_recent_messages",
           "get_thread_history",
           "list_past_threads",
+          "turns_to",
           "record_battle_judgment",
         ],
       });

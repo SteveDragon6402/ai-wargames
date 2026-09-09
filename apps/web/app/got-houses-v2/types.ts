@@ -401,6 +401,15 @@ export interface BattleContext {
   engagement?: BattleEngagement;
   /** When set, a synthetic `garrison:{holdId}` army is in the fight */
   garrisonHoldId?: string;
+  /**
+   * True when a living garrison holds the walls but is NOT in this fight.
+   * Winning the field does not take the seat.
+   */
+  wallsStand?: boolean;
+  /** Storm, sally, and a relieving host collided in one fight. */
+  combinedAssault?: boolean;
+  /** Who holds the seat right now — not the house that built it. */
+  seatLine?: string;
 }
 
 export interface RetreatEntry {
@@ -441,7 +450,7 @@ export interface TirednessArmyContext {
   currentStance: string;
   moveType: "rest" | "march";
   movesSinceRest: number;
-  territory: "home" | "neutral";
+  territory: "home" | "neutral" | "hostile";
   holdName: string;
   /** Soft ground at the army's current hold — adjudicator only */
   holdGround: string;

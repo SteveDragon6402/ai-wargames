@@ -24,6 +24,7 @@ import { HOLDS, HOLDS_MAP } from "../data/holds";
 import { getCastleSeed } from "../data/castles";
 import { searchAdvice, searchFactionEvents } from "./faction-events";
 import { garrisonHeadcount } from "./hold-runtime";
+import { describeSeat, turnsBetween } from "./travel";
 
 export interface CharacterToolContext {
   actingCharacterId: CharacterId;
@@ -171,6 +172,14 @@ about ${NPC_CHAT_MAX_WORDS} words of punchy dialogue; do not exceed ${NPC_CHAT_H
 
 You cannot leave, decline, or end the conversation — the player controls that.
 Tools are private. Only the ${SPEAK_TOOL_NAME} line is heard.
+
+TIME: the campaign is counted in TURNS, not days. Adjacent holds are 1 turn apart.
+Never say "three days' ride" — say "1 turn" or "2 turns". Use the turns_to tool
+when you need a distance. Food stores may still be spoken of in days.
+
+WHO HOLDS A SEAT: the house that built a castle is not always who holds it now.
+If the Westerlands occupy the Twins, the Freys are gone from those walls — do not
+talk as if Walder Frey still commands there. Read Controller / current holder.
 
 If you cannot call tools for some reason, write your line as a single final
 message beginning with "SPEAK: " and nothing after it.`;
@@ -507,6 +516,26 @@ export const CHARACTER_TOOL_DEFS: Anthropic.Messages.Tool[] = [
     },
   },
   {
+    name: "turns_to",
+    description:
+      "How many TURNS (not days) a march is. Each neighbouring hold is 1 turn. Use this instead of guessing days.",
+    input_schema: {
+      type: "object",
+      properties: {
+        fromHold: {
+          type: "string",
+          description:
+            "Hold name to start from. Omit to use where you currently are.",
+        },
+        toHold: {
+          type: "string",
+          description: "Destination hold name, or a person's name whose host you mean.",
+        },
+      },
+      required: ["toHold"],
+    },
+  },
+  {
     name: "survey_map",
     description:
       "Look at the realm map: list holds by region with neighbours. Use when you need geography.",
@@ -815,7 +844,22 @@ export function executeCharacterTool(
         const links = h.links
           .map((id) => HOLDS_MAP.get(id)?.name ?? id)
           .join(", ");
-        return `${h.name} (${h.region}, House ${h.house}) — roads to: ${links}`;
+        const hs = ctx.holdStates?.[h.id];
+        const who =
+          hs?.controller === "north"
+            ? "held by the North"
+            : hs?.controller === "westerlands"
+              ? "held by the Westerlands"
+              : hs?.controller === "hostile"
+                ? "hostile"
+                : "unheld";
+        const occupied =
+          hs &&
+          (hs.controller === "north" || hs.controller === "westerlands") &&
+          hs.controller !== hs.homeFaction
+            ? ` — occupied, not House ${h.house}`
+            : "";
+        return `${h.name} (${h.region}, built by House ${h.house}, ${who}${occupied}) — 1 turn to: ${links}`;
       });
       return { result: lines.join("\n") };
     }
@@ -834,12 +878,56 @@ export function executeCharacterTool(
       const hs = ctx.holdStates?.[hold.id];
       const castle = formatCastleBlock(hold.id, hs);
       return {
-        result: `${hold.name} — ${hold.region}, seat of House ${hold.house} (${hold.lord}).
-Neighbours: ${links}
+        result: `${describeSeat(hold, hs)}
+Neighbours (1 turn each): ${links}
 Ground: ${hold.ground}
 Forces present:
 ${forces}
 ${castle}`,
+      };
+    }
+
+    case "turns_to": {
+      const toHoldName = String(input.toHold ?? "").trim();
+      let to = findHoldByName(toHoldName);
+      if (!to) {
+        const person = findCharacterByName(ctx.characters, toHoldName);
+        const personArmy = person?.armyId
+          ? ctx.armies.find((a) => a.id === person.armyId)
+          : undefined;
+        const personHold =
+          personArmy?.holdId ??
+          (person?.kind === "npc" ? person.holdId : null);
+        if (personHold) to = HOLDS_MAP.get(personHold);
+      }
+      if (!to) return { result: "You do not know that place." };
+
+      let fromId: string | null = null;
+      const fromName = String(input.fromHold ?? "").trim();
+      if (fromName) {
+        fromId = findHoldByName(fromName)?.id ?? null;
+      }
+      if (!fromId) {
+        const hereArmy = npc.armyId
+          ? ctx.armies.find((a) => a.id === npc.armyId)
+          : undefined;
+        fromId = hereArmy?.holdId ?? npc.holdId ?? null;
+      }
+      if (!fromId) {
+        return { result: "You are not sure where you are standing." };
+      }
+      const n = turnsBetween(fromId, to.id);
+      const fromNameShown = HOLDS_MAP.get(fromId)?.name ?? fromId;
+      if (n === null) {
+        return {
+          result: `${to.name} is not reachable from ${fromNameShown} by any road you know.`,
+        };
+      }
+      if (n === 0) {
+        return { result: `${to.name} is where you are. Zero turns.` };
+      }
+      return {
+        result: `${to.name} is ${n} turn${n === 1 ? "" : "s"} from ${fromNameShown}. Never speak of this as days.`,
       };
     }
 

@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { getCastleSeed } from "../data/castles";
 import { freeCapacity, garrisonHeadcount } from "./hold-runtime";
 import {
+  foldSiegeIntoBattles,
   investorCheckAtHold,
   MIN_SIEGE_ABSOLUTE,
   MIN_SIEGE_FRACTION,
@@ -142,5 +143,124 @@ describe("reconcilePledges", () => {
     assert.equal(settled.holdStates["16"].controller, "westerlands");
     assert.equal(settled.holdStates["16"].garrison.units[0]?.count, 80);
     assert.equal(settled.pledges.length, 0);
+  });
+
+  it("hands an unmanned conquest back to the household instead of leaving it unheld", () => {
+    const holds = {
+      "16": holdRuntime({
+        homeFaction: "north",
+        controller: "westerlands",
+        garrison: {
+          faction: null,
+          units: [],
+          leaders: [],
+          notables: [],
+          morale: "None",
+          tiredness: "None",
+          stance: "Vacant",
+        },
+      }),
+    };
+    const settled = reconcilePledges(
+      3,
+      [
+        {
+          holdId: "16",
+          faction: "westerlands",
+          minimumMen: 225,
+          turn: 2,
+          cause: "walk_in",
+        },
+      ],
+      holds,
+      []
+    );
+    assert.equal(settled.holdStates["16"].controller, "north");
+    assert.equal(settled.holdStates["16"].garrison.faction, "north");
+    assert.equal(garrisonHeadcount(settled.holdStates["16"].garrison), 0);
+    assert.equal(settled.pledges.length, 0);
+    assert.match(
+      settled.events[0]?.detail ?? "",
+      /household is returning to the walls/
+    );
+  });
+});
+
+describe("foldSiegeIntoBattles", () => {
+  it("merges a storm, a sally, and a relieving host into one fight", () => {
+    const holdId = "17";
+    const north = army({ id: "army-robb", faction: "north", holdId });
+    const west = army({ id: "army-tywin", faction: "westerlands", holdId });
+    const hs = holdRuntime({
+      homeFaction: "north",
+      controller: "north",
+      garrison: {
+        faction: "north",
+        units: [{ house: "Frey", type: "infantry", count: 800 }],
+        leaders: [{ name: "Walder Frey" }],
+        notables: [],
+        morale: "Holding",
+        tiredness: "Tired",
+        stance: "On the walls",
+      },
+      siege: {
+        besiegerFaction: "westerlands",
+        armyIds: ["army-tywin"],
+        turns: 2,
+        terms: null,
+      },
+    });
+    const field = [
+      {
+        holdId,
+        northArmies: [north],
+        westArmies: [west],
+        engagement: "field" as const,
+      },
+    ];
+    const out = foldSiegeIntoBattles(
+      field,
+      [north, west],
+      { [holdId]: hs },
+      ["army-tywin"],
+      [holdId],
+      {}
+    );
+    assert.equal(out.length, 1);
+    assert.equal(out[0].engagement, "storm");
+    assert.equal(out[0].combinedAssault, true);
+    assert.ok(out[0].northArmies.some((a) => a.id.startsWith("garrison:")));
+    assert.equal(out[0].wallsStand, false);
+  });
+
+  it("leaves a field fight outside a living garrison as field-only", () => {
+    const holdId = "30";
+    const north = army({ id: "army-robb", faction: "north", holdId });
+    const west = army({ id: "army-tywin", faction: "westerlands", holdId });
+    const hs = holdRuntime({
+      homeFaction: "westerlands",
+      controller: "westerlands",
+      garrison: {
+        faction: "westerlands",
+        units: [{ house: "Lannister", type: "infantry", count: 2000 }],
+        leaders: [],
+        notables: [],
+        morale: "Holding",
+        tiredness: "Rested",
+        stance: "On the walls",
+      },
+    });
+    const out = foldSiegeIntoBattles(
+      [{ holdId, northArmies: [north], westArmies: [west] }],
+      [north, west],
+      { [holdId]: hs },
+      [],
+      [],
+      {}
+    );
+    assert.equal(out.length, 1);
+    assert.equal(out[0].engagement, "field");
+    assert.equal(out[0].wallsStand, true);
+    assert.ok(!out[0].northArmies.some((a) => a.id.startsWith("garrison:")));
   });
 });

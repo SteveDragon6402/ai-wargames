@@ -177,6 +177,152 @@ export function refillToDefault(
   };
 }
 
+/** Share of the native default that returns to the walls each turn. */
+export const NATIVE_GARRISON_RECOVERY_SHARE = 0.25;
+
+function recoveryStep(defaultGarrison: number): number {
+  if (defaultGarrison <= 0) return 0;
+  return Math.max(50, Math.ceil(defaultGarrison * NATIVE_GARRISON_RECOVERY_SHARE));
+}
+
+/**
+ * Hand an empty seat back to its household without filling the walls.
+ * The levies come back over turns via recoverNativeGarrisons.
+ */
+export function restoreHomeHousehold(
+  holdId: string,
+  runtime: HoldRuntime
+): HoldRuntime {
+  const home = runtime.homeFaction;
+  const seed = getCastleSeed(holdId);
+  const empty = buildDefaultGarrison(holdId, home, 0);
+  return {
+    ...runtime,
+    controller: home === "hostile" ? "hostile" : home,
+    garrison: {
+      ...empty,
+      units: [],
+    },
+    siege: null,
+    supplies:
+      seed.defaultGarrison > 0
+        ? "The household is returning to the walls."
+        : runtime.supplies,
+    skipUpdates: false,
+  };
+}
+
+/**
+ * Each turn, a home-held seat that is not invested and not enemy-occupied
+ * grows its native garrison back toward default. Conquered walls with a
+ * foreign garrison do not raise levies.
+ */
+export function recoverNativeGarrisons(
+  armies: { holdId: string; faction: Faction }[],
+  holdStates: Record<string, HoldRuntime>
+): Record<string, HoldRuntime> {
+  const next = { ...holdStates };
+  for (const holdId of Object.keys(next)) {
+    const seed = getCastleSeed(holdId);
+    if (!isGarrisonable(seed)) continue;
+    let hs = normalizeHoldRuntime(next[holdId]);
+    if (hs.siege) {
+      next[holdId] = hs;
+      continue;
+    }
+
+    const home = hs.homeFaction;
+    const here = armies.filter((a) => a.holdId === holdId);
+    const occupier =
+      hs.controller === "north" || hs.controller === "westerlands"
+        ? hs.controller
+        : null;
+    const conquerorStillHere =
+      occupier !== null &&
+      occupier !== home &&
+      here.some((a) => a.faction === occupier);
+    if (conquerorStillHere) {
+      next[holdId] = hs;
+      continue;
+    }
+
+    const occupyingMen =
+      (hs.garrison.faction === "north" ||
+        hs.garrison.faction === "westerlands") &&
+      hs.garrison.faction !== home
+        ? garrisonHeadcount(hs.garrison)
+        : 0;
+    if (occupyingMen > 0) {
+      next[holdId] = hs;
+      continue;
+    }
+
+    const enemyHere = here.some(
+      (a) => a.faction !== home && (a.faction === "north" || a.faction === "westerlands")
+    );
+    if (enemyHere) {
+      next[holdId] = hs;
+      continue;
+    }
+
+    const emptyOrUnheld =
+      occupier === null ||
+      occupier === "hostile" ||
+      (occupier !== home && occupyingMen === 0);
+    if (emptyOrUnheld && home !== "hostile") {
+      const nativeMen =
+        hs.garrison.faction === home ? garrisonHeadcount(hs.garrison) : 0;
+      // Don't wipe a living household garrison just to relabel the seat.
+      hs =
+        nativeMen > 0
+          ? { ...hs, controller: home, skipUpdates: false }
+          : restoreHomeHousehold(holdId, hs);
+    }
+
+    if (hs.controller !== home) {
+      next[holdId] = hs;
+      continue;
+    }
+
+    const current = garrisonHeadcount(hs.garrison);
+    if (current >= seed.defaultGarrison) {
+      next[holdId] = hs;
+      continue;
+    }
+
+    const add = Math.min(
+      recoveryStep(seed.defaultGarrison),
+      seed.defaultGarrison - current
+    );
+    if (add <= 0) {
+      next[holdId] = hs;
+      continue;
+    }
+
+    const grown = buildDefaultGarrison(holdId, home, current + add);
+    next[holdId] = {
+      ...hs,
+      controller: home,
+      garrison: {
+        ...grown,
+        leaders: hs.garrison.leaders,
+        notables: hs.garrison.notables ?? [],
+        morale:
+          current === 0
+            ? "Household men filtering back to the walls"
+            : hs.garrison.morale,
+        tiredness: hs.garrison.tiredness,
+        stance: hs.garrison.stance,
+      },
+      supplies:
+        current + add >= seed.defaultGarrison
+          ? "The household has manned the walls again."
+          : "The household is returning to the walls.",
+    };
+  }
+  return next;
+}
+
 export function buildInitialHoldStates(): Record<string, HoldRuntime> {
   const out: Record<string, HoldRuntime> = {};
   for (const h of HOLDS) {

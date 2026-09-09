@@ -21,8 +21,10 @@ import {
   normalizeGarrison,
   normalizeHoldRuntime,
   refillToDefault,
+  restoreHomeHousehold,
   suppliesUnderSiege,
 } from "./hold-runtime";
+import { describeSeat } from "./travel";
 
 const EMPTY_ACTIVITY: ArmyActivity = {
   turnsResting: 0,
@@ -469,7 +471,7 @@ export function applyPresenceControl(
       kind: "claim",
       holdIds: [holdId],
       summary: `${holdName} taken`,
-      detail: `Turn ${turn}: ${sole.faction} took ${holdName}. At least ${minimumMen.toLocaleString()} men must be posted to the walls before the host can march on.`,
+        detail: `Turn ${turn}: ${sole.faction} took ${holdName}. The walls stand empty; posting a garrison is optional.`,
     });
   }
 
@@ -544,21 +546,17 @@ export function reconcilePledges(
       continue;
     }
 
-    // Nobody left to post to the walls: the seat slips away again.
-    next[pledge.holdId] = {
-      ...hs,
-      controller: null,
-      garrison: { ...normalizeGarrison(hs.garrison), faction: null },
-      supplies: "Abandoned before it was ever manned.",
-    };
+    // Nobody left to post to the walls: the household takes the seat back,
+    // and the native garrison grows in over the coming turns.
+    next[pledge.holdId] = restoreHomeHousehold(pledge.holdId, hs);
     events.push({
       id: eid("ev"),
       turn,
       faction: pledge.faction,
       kind: "other",
       holdIds: [pledge.holdId],
-      summary: `${holdName} slipped away`,
-      detail: `${holdName} was taken but never garrisoned, and no host remains to hold it. The seat is unheld.`,
+      summary: `${holdName} left unmanned`,
+      detail: `${holdName} was taken but never garrisoned. The household is returning to the walls.`,
     });
   }
 
@@ -616,82 +614,147 @@ export function selectGarrisonsForConditionUpdate(
   return out;
 }
 
-/** Build storm / sally battle contexts (skip holds that already have a field battle). */
-export function detectSiegeBattles(
+function battleSeatLine(holdId: string, hs: HoldRuntime): string {
+  return describeSeat(HOLDS_MAP.get(holdId), hs);
+}
+
+export function defenderFactionFor(hs: HoldRuntime, besieger: Faction): Faction {
+  if (hs.garrison.faction === "north" || hs.garrison.faction === "westerlands") {
+    return hs.garrison.faction;
+  }
+  if (hs.controller === "north" || hs.controller === "westerlands") {
+    return hs.controller;
+  }
+  return besieger === "north" ? "westerlands" : "north";
+}
+
+/**
+ * Fold storm / sally into field clashes at the same hold so they resolve as
+ * one fight, then emit leftover siege-only battles.
+ *
+ * A field clash at a living garrison with no storm/sally stays a field battle
+ * — the walls are not in it.
+ */
+export function foldSiegeIntoBattles(
+  fieldBattles: BattleContext[],
   armies: Army[],
   holdStates: Record<string, HoldRuntime>,
-  fieldBattleHoldIds: Set<string>,
   stormArmyIds: string[],
   sallyHoldIds: string[],
   armyOrdersMap: Record<string, "march" | "rest" | "fortify">
 ): BattleContext[] {
-  const battles: BattleContext[] = [];
-  const stormSet = new Set(stormArmyIds);
+  const stormHolds = new Set<string>();
+  for (const armyId of stormArmyIds) {
+    const army = armies.find((a) => a.id === armyId);
+    if (!army) continue;
+    const hs = holdStates[army.holdId];
+    if (!hs?.siege || hs.siege.besiegerFaction !== army.faction) continue;
+    if (garrisonHeadcount(hs.garrison) <= 0) continue;
+    stormHolds.add(army.holdId);
+  }
   const sallySet = new Set(sallyHoldIds);
-  const usedHolds = new Set<string>(fieldBattleHoldIds);
+  const usedHolds = new Set<string>();
+  const out: BattleContext[] = [];
 
-  function defenderFactionFor(hs: HoldRuntime, besieger: Faction): Faction {
-    if (hs.garrison.faction === "north" || hs.garrison.faction === "westerlands") {
-      return hs.garrison.faction;
+  function attachGarrison(
+    battle: BattleContext,
+    hs: HoldRuntime,
+    engagement: "storm" | "sally",
+    combined: boolean
+  ): BattleContext {
+    const besieger = hs.siege!.besiegerFaction;
+    const defenderFaction = defenderFactionFor(hs, besieger);
+    const garrisonArmy = garrisonAsArmy(battle.holdId, hs, defenderFaction);
+    const already =
+      battle.northArmies.some((a) => a.id === garrisonArmy.id) ||
+      battle.westArmies.some((a) => a.id === garrisonArmy.id);
+    let northArmies = battle.northArmies;
+    let westArmies = battle.westArmies;
+    if (!already) {
+      if (defenderFaction === "north") {
+        northArmies = [...northArmies, garrisonArmy];
+      } else {
+        westArmies = [...westArmies, garrisonArmy];
+      }
     }
-    if (hs.controller === "north" || hs.controller === "westerlands") {
-      return hs.controller;
-    }
-    return besieger === "north" ? "westerlands" : "north";
+    return {
+      ...battle,
+      northArmies,
+      westArmies,
+      armyOrders: armyOrdersMap,
+      engagement,
+      garrisonHoldId: battle.holdId,
+      wallsStand: false,
+      combinedAssault: combined,
+      seatLine: battle.seatLine ?? battleSeatLine(battle.holdId, hs),
+    };
   }
 
-  function pushSiegeBattle(
+  for (const b of fieldBattles) {
+    const hs = holdStates[b.holdId];
+    const storm = stormHolds.has(b.holdId);
+    const sally = sallySet.has(b.holdId);
+    const canFold =
+      !!hs?.siege && garrisonHeadcount(hs.garrison) > 0 && (storm || sally);
+    if (canFold) {
+      out.push(attachGarrison(b, hs, storm ? "storm" : "sally", true));
+    } else {
+      const men = hs ? garrisonHeadcount(hs.garrison) : 0;
+      out.push({
+        ...b,
+        engagement: b.engagement ?? "field",
+        wallsStand: men > 0,
+      });
+    }
+    usedHolds.add(b.holdId);
+  }
+
+  function pushSiegeOnly(
     holdId: string,
     hs: HoldRuntime,
     engagement: "storm" | "sally",
     includeRelief: boolean
   ) {
+    if (usedHolds.has(holdId)) return;
     const besieger = hs.siege!.besiegerFaction;
     const defenderFaction = defenderFactionFor(hs, besieger);
     const besiegerArmies = armies.filter(
       (a) => a.holdId === holdId && a.faction === besieger
     );
     if (besiegerArmies.length === 0) return;
-
     const relief = includeRelief
       ? armies.filter(
           (a) => a.holdId === holdId && a.faction === defenderFaction
         )
       : [];
-
     const garrisonArmy = garrisonAsArmy(holdId, hs, defenderFaction);
     const defenderArmies = [...relief, garrisonArmy];
-
-    battles.push({
+    out.push({
       holdId,
       northArmies: besieger === "north" ? besiegerArmies : defenderArmies,
       westArmies: besieger === "westerlands" ? besiegerArmies : defenderArmies,
       armyOrders: armyOrdersMap,
       engagement,
       garrisonHoldId: holdId,
+      wallsStand: false,
+      seatLine: battleSeatLine(holdId, hs),
     });
     usedHolds.add(holdId);
   }
 
   for (const holdId of sallySet) {
-    if (usedHolds.has(holdId)) continue;
     const hs = holdStates[holdId];
     if (!hs?.siege || garrisonHeadcount(hs.garrison) <= 0) continue;
-    pushSiegeBattle(holdId, hs, "sally", true);
+    pushSiegeOnly(holdId, hs, "sally", true);
   }
 
-  for (const armyId of stormSet) {
-    const army = armies.find((a) => a.id === armyId);
-    if (!army) continue;
-    const holdId = army.holdId;
-    if (usedHolds.has(holdId)) continue;
+  for (const holdId of stormHolds) {
     const hs = holdStates[holdId];
     if (!hs?.siege || garrisonHeadcount(hs.garrison) <= 0) continue;
-    if (hs.siege.besiegerFaction !== army.faction) continue;
-    pushSiegeBattle(holdId, hs, "storm", false);
+    pushSiegeOnly(holdId, hs, "storm", false);
   }
 
-  return battles;
+  return out;
 }
 
 export function applyGarrisonCasualties(

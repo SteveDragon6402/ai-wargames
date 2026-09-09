@@ -351,9 +351,9 @@ function HoldNode({ data }: { data: HoldNodeData }) {
               textTransform: "uppercase",
               letterSpacing: "0.08em",
             }}
-            title="Taken but unmanned — post a garrison before issuing orders"
+            title="Taken — walls empty. Posting a garrison is optional."
           >
-            ⚑ post garrison
+            ⚑ walls empty
           </div>
         )}
 

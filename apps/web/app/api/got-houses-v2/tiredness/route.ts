@@ -7,6 +7,7 @@ const SYSTEM_PROMPT = `You are adjudicating the condition and stance of armies i
 TIREDNESS — physical condition of the troops:
 - Resting in home territory: significant recovery
 - Resting in neutral territory: modest recovery
+- Retreating or standing in hostile territory: no recovery; extra wear and shaken morale
 - First march: slight fatigue
 - 2–3 consecutive marches: moderate fatigue
 - 4+ consecutive marches: heavy fatigue, mention exhaustion
@@ -21,6 +22,7 @@ MORALE — spirit and will to fight:
 - Home territory rest: better morale gain than neutral territory
 - Fortifying armies: steady but not lifted morale (they are working, not relaxing)
 - Long marches without rest: morale slowly erodes
+- A retreat through hostile country is worse than falling back onto friendly seats
 - Hostile climate relative to homeland erodes morale; familiar climate heartens it
 - Morale changes should be smaller than battle outcomes — this is a peacetime adjustment
 
@@ -76,7 +78,11 @@ function fallbackTiredness(armies: TirednessRequest["armies"]): TirednessUpdate[
       : false;
 
     if (army.stanceOrder === "rest") {
-      if (army.territory === "home" && climate !== "harsh") {
+      if (army.territory === "hostile") {
+        tiredness = "Resting badly in hostile country — no true recovery";
+        morale = "Ashamed and jumpy on enemy land";
+        stance = "Looking over their shoulders";
+      } else if (army.territory === "home" && climate !== "harsh") {
         tiredness = climate === "kind"
           ? "Well-rested on familiar ground that suits them"
           : "Well-rested and in good spirits";

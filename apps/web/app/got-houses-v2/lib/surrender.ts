@@ -20,7 +20,9 @@ import {
   normalizeGarrison,
   normalizeHoldRuntime,
 } from "./hold-runtime";
+import { armyNameForCommander } from "./army-naming";
 import { headcountOf, minimumHoldingGarrison } from "./siege";
+import { isOccupyingGarrison, nearestFriendlyHold } from "./travel";
 
 /** How long an offer stays on the table before it lapses. */
 export const TERMS_LIFETIME_TURNS = 2;
@@ -305,16 +307,16 @@ export interface YieldResult {
   characters: Record<CharacterId, CharacterState>;
   pledge: CapturePledge | null;
   events: FactionEvent[];
+  armies: Army[];
 }
 
 /**
  * Hand a besieged seat over without a battle.
  *
- * The men inside leave the board either way — spared they march home and
- * disperse, taken they are prisoners — so the victor is never handed a hostile
- * host standing on the castle it just accepted. Whoever takes the seat falls
- * under exactly the same forced-garrison rule as a storming captor: an empty
- * castle they now own and owe men to.
+ * The men inside leave the walls. An occupying garrison (posted troops of the
+ * taker's enemy, not the native household) that is spared walks out to the
+ * nearest friendly seat. Native garrisons just disperse. The victor is never
+ * handed a hostile host standing on the castle they just accepted.
  */
 export function yieldHold(opts: {
   turn: number;
@@ -324,7 +326,7 @@ export function yieldHold(opts: {
   characters: Record<CharacterId, CharacterState>;
   terms: SurrenderTerms;
 }): YieldResult {
-  const { turn, holdId, armies, terms } = opts;
+  const { turn, holdId, terms } = opts;
   const hs = normalizeHoldRuntime(opts.holdStates[holdId]);
   const seed = getCastleSeed(holdId);
   const holdName = HOLDS_MAP.get(holdId)?.name ?? holdId;
@@ -335,6 +337,7 @@ export function yieldHold(opts: {
       characters: opts.characters,
       pledge: null,
       events: [],
+      armies: opts.armies,
     };
   }
 
@@ -372,6 +375,62 @@ export function yieldHold(opts: {
     (terms.leadersSpared ? walked : held).push(name);
   }
 
+  let nextArmies = [...opts.armies];
+  let walkDest: string | null = null;
+  const yielderFaction =
+    yielder === "north" || yielder === "westerlands" ? yielder : null;
+  if (
+    terms.garrisonSpared &&
+    yielderFaction &&
+    isOccupyingGarrison(hs) &&
+    men > 0
+  ) {
+    walkDest = nearestFriendlyHold(
+      holdId,
+      yielderFaction,
+      opts.holdStates,
+      nextArmies
+    );
+    if (walkDest) {
+      const lead = terms.leadersSpared
+        ? garrison.leaders[0]?.name ?? null
+        : null;
+      const walkArmy: Army = {
+        id: `walkout-${holdId}-${turn}`,
+        name: armyNameForCommander(lead, garrison.units, yielderFaction),
+        holdId: walkDest,
+        faction: yielderFaction,
+        units: garrison.units.map((u) => ({ ...u })),
+        leaders: terms.leadersSpared
+          ? garrison.leaders.map((l) => ({ ...l }))
+          : [],
+        notables: terms.leadersSpared
+          ? (garrison.notables ?? []).map((n) => ({ ...n }))
+          : [],
+        morale: "Walked out on terms; the shame of it sits badly.",
+        tiredness: "Spent from the siege and the road out.",
+        stance: "Re-forming in friendly country.",
+        activity: {
+          turnsResting: 0,
+          turnsFortiying: 0,
+          turnsMarching: 0,
+          turnsSinceMerge: null,
+          turnsSinceSplit: 0,
+        },
+      };
+      nextArmies = [...nextArmies, walkArmy];
+      if (terms.leadersSpared) {
+        for (const name of walked) {
+          const id = findCharacterIdByName(characters, name);
+          if (!id) continue;
+          const c = characters[id];
+          if (c?.kind !== "npc") continue;
+          characters[id] = { ...c, armyId: walkArmy.id, holdId: null };
+        }
+      }
+    }
+  }
+
   const holdStates = {
     ...opts.holdStates,
     [holdId]: {
@@ -395,7 +454,7 @@ export function yieldHold(opts: {
   };
 
   const takerMenHere = headcountOf(
-    armies.filter((a) => a.holdId === holdId && a.faction === taker)
+    nextArmies.filter((a) => a.holdId === holdId && a.faction === taker)
   );
   const pledge: CapturePledge | null =
     takerMenHere > 0
@@ -408,9 +467,10 @@ export function yieldHold(opts: {
         }
       : null;
 
-  const detail = `${holdName} yielded to ${taker} on terms after ${hs.siege.turns} days of investment: ${describeTerms(terms)}. ${men.toLocaleString()} defenders left the walls${held.length > 0 ? `; taken: ${held.join(", ")}` : walked.length > 0 ? `; walked free: ${walked.join(", ")}` : ""}.${
+  const destName = walkDest ? HOLDS_MAP.get(walkDest)?.name ?? walkDest : null;
+  const detail = `${holdName} yielded to ${taker} on terms after ${hs.siege.turns} turns of investment: ${describeTerms(terms)}. ${men.toLocaleString()} defenders left the walls${held.length > 0 ? `; taken: ${held.join(", ")}` : walked.length > 0 ? `; walked free: ${walked.join(", ")}` : ""}${destName ? `; the occupying host appeared at ${destName}` : ""}.${
     pledge
-      ? ` At least ${pledge.minimumMen.toLocaleString()} men must be posted before the host marches on.`
+      ? ` The walls stand empty; posting a garrison is optional.`
       : ""
   }`;
 
@@ -437,5 +497,5 @@ export function yieldHold(opts: {
     });
   }
 
-  return { holdStates, characters, pledge, events };
+  return { holdStates, characters, pledge, events, armies: nextArmies };
 }

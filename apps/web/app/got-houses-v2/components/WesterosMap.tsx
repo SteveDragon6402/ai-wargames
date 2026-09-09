@@ -384,13 +384,13 @@ function MapInner({ state, dispatch }: Props) {
               Garrison thin / at strength / reinforced
             </LegendGlyph>
             <LegendGlyph glyph="⊘4" color="#c05050">
-              Invested, day count; ! = too few to hold
+              Invested, turn count; ! = too few to hold
             </LegendGlyph>
             <LegendGlyph glyph="⚐" color="#c8941a">
               Terms on the table
             </LegendGlyph>
             <LegendGlyph glyph="⚑" color="#f0b429">
-              Taken — a garrison is owed
+              Taken — walls empty (garrison optional)
             </LegendGlyph>
             <LegendGlyph glyph="⚔" color="#d06868">
               Contested — a battle will be fought

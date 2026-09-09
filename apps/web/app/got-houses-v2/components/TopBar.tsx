@@ -2,8 +2,6 @@
 
 import Link from "next/link";
 import type { GameState, GameAction, Faction } from "../types";
-import { HOLDS_MAP } from "../data/holds";
-import { unmetPledgesFor } from "../lib/siege";
 
 interface Props {
   state: GameState;
@@ -45,9 +43,6 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
   const currentOrders = activeFaction === "north" ? north : westerlands;
   const currentSubmitted = activeFaction === "north" ? northSubmitted : westSubmitted;
   const factionColors = FACTION_COLORS[activeFaction];
-
-  // Seats taken but not yet manned block this faction's orders entirely.
-  const owedGarrisons = unmetPledgesFor(state, activeFaction);
 
   return (
     <div
@@ -246,13 +241,7 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
         orderCount={currentOrders.orders.length}
         onSubmit={() => handleSubmit(activeFaction)}
         locked={!inPlanningPhase}
-        blockedBy={
-          owedGarrisons.length > 0
-            ? `Garrison ${owedGarrisons
-                .map((p) => HOLDS_MAP.get(p.holdId)?.name ?? p.holdId)
-                .join(", ")}`
-            : null
-        }
+        blockedBy={null}
       />
 
       {/* Talk hub */}

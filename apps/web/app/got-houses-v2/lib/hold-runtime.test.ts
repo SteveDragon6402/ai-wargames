@@ -2,11 +2,13 @@ import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import {
   applyFriendlyPresenceRefill,
+  garrisonHeadcount,
   holdSpineColor,
   holdSpineOwner,
+  recoverNativeGarrisons,
+  restoreHomeHousehold,
 } from "./hold-runtime";
-import { holdRuntime } from "./test-helpers";
-import { army } from "./test-helpers";
+import { army, holdRuntime } from "./test-helpers";
 
 describe("applyFriendlyPresenceRefill", () => {
   it("does not hand a conquered garrison back to home just because a home army is present", () => {
@@ -65,5 +67,161 @@ describe("holdSpineOwner", () => {
     assert.equal(holdSpineOwner(null, "westerlands"), "westerlands");
     assert.equal(holdSpineColor(null, "north"), "#3a6ea8");
     assert.equal(holdSpineColor("westerlands", "north"), "#b03030");
+  });
+});
+
+const EMPTY_GARRISON = {
+  faction: null as null,
+  units: [] as { house: string; type: "infantry"; count: number }[],
+  leaders: [] as [],
+  notables: [] as [],
+  morale: "None",
+  tiredness: "None",
+  stance: "Vacant",
+};
+
+describe("recoverNativeGarrisons", () => {
+  it("hands an abandoned conquest back to the household and grows toward default", () => {
+    let holds = {
+      "16": holdRuntime({
+        homeFaction: "north",
+        controller: "westerlands",
+        garrison: { ...EMPTY_GARRISON },
+      }),
+    };
+    holds = recoverNativeGarrisons([], holds);
+    assert.equal(holds["16"].controller, "north");
+    assert.equal(holds["16"].garrison.faction, "north");
+    const first = garrisonHeadcount(holds["16"].garrison);
+    assert.ok(first > 0);
+    assert.ok(first < 900);
+
+    holds = recoverNativeGarrisons([], holds);
+    const second = garrisonHeadcount(holds["16"].garrison);
+    assert.ok(second > first);
+
+    for (let i = 0; i < 6; i++) holds = recoverNativeGarrisons([], holds);
+    assert.equal(garrisonHeadcount(holds["16"].garrison), 900);
+  });
+
+  it("does not grow a living occupying garrison", () => {
+    const holds = {
+      "17": holdRuntime({
+        homeFaction: "north",
+        controller: "westerlands",
+        garrison: {
+          faction: "westerlands",
+          units: [{ house: "Lannister", type: "infantry", count: 200 }],
+          leaders: [],
+          notables: [],
+          morale: "Holding",
+          tiredness: "Tired",
+          stance: "Thin on the walls",
+        },
+      }),
+    };
+    const next = recoverNativeGarrisons([], holds);
+    assert.equal(next["17"].controller, "westerlands");
+    assert.equal(next["17"].garrison.faction, "westerlands");
+    assert.equal(garrisonHeadcount(next["17"].garrison), 200);
+  });
+
+  it("does not raise a ruin", () => {
+    const holds = {
+      "08": holdRuntime({
+        homeFaction: "north",
+        controller: null,
+        garrison: { ...EMPTY_GARRISON },
+      }),
+    };
+    const next = recoverNativeGarrisons([], holds);
+    assert.equal(garrisonHeadcount(next["08"].garrison), 0);
+  });
+
+  it("does not grow while the seat is sieged or an enemy host is on the tile", () => {
+    const sieged = recoverNativeGarrisons(
+      [],
+      {
+        "16": holdRuntime({
+          homeFaction: "north",
+          controller: "north",
+          garrison: {
+            faction: "north",
+            units: [{ house: "Tully", type: "infantry", count: 100 }],
+            leaders: [],
+            notables: [],
+            morale: "Holding",
+            tiredness: "Tired",
+            stance: "Under siege",
+          },
+          siege: {
+            besiegerFaction: "westerlands",
+            turns: 2,
+            armyIds: ["w1"],
+          },
+        }),
+      }
+    );
+    assert.equal(garrisonHeadcount(sieged["16"].garrison), 100);
+
+    const enemyOnTile = recoverNativeGarrisons(
+      [army({ id: "w1", faction: "westerlands", holdId: "16" })],
+      {
+        "16": holdRuntime({
+          homeFaction: "north",
+          controller: null,
+          garrison: { ...EMPTY_GARRISON },
+        }),
+      }
+    );
+    assert.equal(enemyOnTile["16"].controller, null);
+    assert.equal(garrisonHeadcount(enemyOnTile["16"].garrison), 0);
+  });
+
+  it("does not wipe a living native garrison just to relabel the seat", () => {
+    const next = recoverNativeGarrisons(
+      [],
+      {
+        "16": holdRuntime({
+          homeFaction: "north",
+          controller: null,
+          garrison: {
+            faction: "north",
+            units: [{ house: "Tully", type: "infantry", count: 400 }],
+            leaders: [],
+            notables: [],
+            morale: "Holding",
+            tiredness: "Rested",
+            stance: "Manning the walls",
+          },
+        }),
+      }
+    );
+    assert.equal(next["16"].controller, "north");
+    assert.ok(garrisonHeadcount(next["16"].garrison) >= 400);
+  });
+});
+
+describe("restoreHomeHousehold", () => {
+  it("returns the seat to its household with empty walls", () => {
+    const next = restoreHomeHousehold(
+      "16",
+      holdRuntime({
+        homeFaction: "north",
+        controller: "westerlands",
+        garrison: {
+          faction: "westerlands",
+          units: [],
+          leaders: [],
+          notables: [],
+          morale: "None",
+          tiredness: "None",
+          stance: "Vacant",
+        },
+      })
+    );
+    assert.equal(next.controller, "north");
+    assert.equal(next.garrison.faction, "north");
+    assert.equal(garrisonHeadcount(next.garrison), 0);
   });
 });
