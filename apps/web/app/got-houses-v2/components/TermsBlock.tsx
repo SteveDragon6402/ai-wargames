@@ -11,6 +11,10 @@ import {
   openTermsAt,
   surrenderPressure,
 } from "../lib/surrender";
+import {
+  openParleyAtHold,
+  promptCastellanAboutTerms,
+} from "../lib/converse-client";
 
 interface Props {
   state: GameState;
@@ -40,6 +44,8 @@ export default function TermsBlock({ state, dispatch, holdId, faction }: Props) 
   const [spareCaptains, setSpareCaptains] = useState(true);
   const [note, setNote] = useState("");
   const [confirmYield, setConfirmYield] = useState(false);
+  const [parleyError, setParleyError] = useState<string | null>(null);
+  const [parleyBusy, setParleyBusy] = useState(false);
 
   const hs = state.holdStates?.[holdId];
   if (!hs?.siege) return null;
@@ -58,22 +64,51 @@ export default function TermsBlock({ state, dispatch, holdId, faction }: Props) 
   const mayOffer = canOfferTerms(hs, faction) && !composing;
   const pressure = surrenderPressure(holdId, hs, state.armies);
 
-  function putTerms() {
+  async function putTerms() {
     const base = defaultTermsFor(hs!, faction, state.turn);
+    const terms = {
+      ...base,
+      garrisonSpared: spareMen,
+      leadersSpared: spareCaptains,
+      note: note.trim() || base.note,
+      offeredTurn: state.turn,
+      expiresTurn: state.turn + TERMS_LIFETIME_TURNS,
+    };
     dispatch({
       type: "OFFER_SURRENDER_TERMS",
       holdId,
-      terms: {
-        ...base,
-        garrisonSpared: spareMen,
-        leadersSpared: spareCaptains,
-        note: note.trim() || base.note,
-        offeredTurn: state.turn,
-        expiresTurn: state.turn + TERMS_LIFETIME_TURNS,
-      },
+      terms,
     });
     setComposing(false);
     setNote("");
+    setParleyError(null);
+    setParleyBusy(true);
+    const patchedHoldStates = {
+      ...state.holdStates,
+      [holdId]: {
+        ...hs!,
+        siege: {
+          ...hs!.siege!,
+          terms: { ...terms, status: "offered" as const },
+        },
+      },
+    };
+    const { error, thread } = await openParleyAtHold(state, dispatch, holdId);
+    if (error || !thread) {
+      setParleyBusy(false);
+      setParleyError(error ?? "Could not open a word with the castellan.");
+      return;
+    }
+    const promptError = await promptCastellanAboutTerms({
+      state,
+      dispatch,
+      thread,
+      holdId,
+      holdStates: patchedHoldStates,
+      playerMessage: terms.note,
+    });
+    setParleyBusy(false);
+    if (promptError) setParleyError(promptError);
   }
 
   function answer(accepted: boolean) {
@@ -215,7 +250,11 @@ export default function TermsBlock({ state, dispatch, holdId, faction }: Props) 
             }}
           />
           <div style={{ display: "flex", gap: 6, marginTop: 5 }}>
-            <SmallButton label="Put terms" onClick={putTerms} accent />
+            <SmallButton
+              label={parleyBusy ? "Calling the gate…" : "Put terms"}
+              onClick={() => void putTerms()}
+              accent
+            />
             <SmallButton label="Cancel" onClick={() => setComposing(false)} />
           </div>
         </div>
@@ -272,6 +311,17 @@ export default function TermsBlock({ state, dispatch, holdId, faction }: Props) 
         <div style={{ ...MONO, fontSize: 8, color: "#a05030", marginTop: 5 }}>
           Without conditions: {besieger === "north" ? "the North" : "the Westerlands"}{" "}
           takes the walls, the garrison and its captains with them.
+        </div>
+      )}
+
+      {parleyBusy && (
+        <div style={{ ...MONO, fontSize: 8, color: "#7a6a3a", marginTop: 5 }}>
+          The castellan is being called to the walls…
+        </div>
+      )}
+      {parleyError && (
+        <div style={{ ...MONO, fontSize: 8, color: "#c05050", marginTop: 5 }}>
+          Terms stand. {parleyError}
         </div>
       )}
     </div>

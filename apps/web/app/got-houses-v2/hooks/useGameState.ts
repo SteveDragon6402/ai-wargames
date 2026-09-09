@@ -752,7 +752,13 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       // You cannot march on from a castle you have taken but not manned.
       if (unmetPledgesFor(state, action.faction).length > 0) return state;
       const nextState = setFactionOrders(state, action.faction, { submitted: true });
-      if (nextState.north.submitted && nextState.westerlands.submitted) {
+      // Two-browser rooms defer this: the host adjudicates once both locks
+      // are visible, so the guest's local copy cannot resolve a half-board.
+      if (
+        !action.deferAdjudicate &&
+        nextState.north.submitted &&
+        nextState.westerlands.submitted
+      ) {
         return gameReducer(nextState, { type: "ADJUDICATE_MOVES" });
       }
       return nextState;
@@ -2311,6 +2317,33 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         characters: removed.characters,
         holdStates: removed.holdStates,
         conversations,
+      };
+    }
+
+    case "PULL_RIVAL_ORDERS": {
+      if (state.phase !== "planning") return state;
+      const mine = action.faction;
+      return {
+        ...state,
+        north: mine === "north" ? state.north : action.north,
+        westerlands: mine === "westerlands" ? state.westerlands : action.westerlands,
+      };
+    }
+
+    case "HYDRATE_REMOTE": {
+      const remote = action.state;
+      return {
+        ...remote,
+        selectedHoldId: state.selectedHoldId,
+        selectedArmyIds: state.selectedArmyIds,
+        moveMode: state.moveMode,
+        talkPickerOpen: state.talkPickerOpen,
+        openConversationIds: state.openConversationIds,
+        focusedConversationId: state.focusedConversationId,
+        adminMode: state.adminMode,
+        activeFaction: state.activeFaction,
+        speechArmyId: state.speechArmyId,
+        garrisonPanel: state.garrisonPanel,
       };
     }
 

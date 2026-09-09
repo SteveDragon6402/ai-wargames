@@ -7,10 +7,10 @@ import {
   buildWarCouncilThread,
   enemyLordId,
   factionLordId,
+  openParleyAtHold,
   startDirectNpcTalk,
 } from "../lib/converse-client";
 import {
-  ensureGarrisonNegotiator,
   findNamedGarrisonNegotiator,
   negotiatorLabel,
 } from "../lib/castellan";
@@ -86,37 +86,14 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
 
   async function inviteNpc(toId: string) {
     setInviteError(null);
-    const err = await startDirectNpcTalk(state, dispatch, toId);
-    if (err) setInviteError(err);
+    const { error } = await startDirectNpcTalk(state, dispatch, toId);
+    if (error) setInviteError(error);
   }
 
   async function talkToCastle(holdId: string) {
     setInviteError(null);
-    const ensured = ensureGarrisonNegotiator(
-      holdId,
-      state.holdStates ?? {},
-      state.characters
-    );
-    if (!ensured) {
-      setInviteError("No negotiator available at this seat.");
-      return;
-    }
-    dispatch({
-      type: "APPLY_NEGOTIATOR_ENSURE",
-      characters: ensured.characters,
-      holdStates: ensured.holdStates,
-    });
-    const err = await startDirectNpcTalk(
-      state,
-      dispatch,
-      ensured.negotiatorId,
-      {
-        characters: ensured.characters,
-        holdStates: ensured.holdStates,
-        holdId,
-      }
-    );
-    if (err) setInviteError(err);
+    const { error } = await openParleyAtHold(state, dispatch, holdId);
+    if (error) setInviteError(error);
   }
 
   function inviteEnemyLord() {

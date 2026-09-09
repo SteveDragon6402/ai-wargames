@@ -14,11 +14,10 @@ import {
 } from "../lib/hold-runtime";
 import { minimumHoldingGarrison, minimumSiegeForce } from "../lib/siege";
 import {
-  ensureGarrisonNegotiator,
   findNamedGarrisonNegotiator,
   negotiatorLabel,
 } from "../lib/castellan";
-import { startDirectNpcTalk } from "../lib/converse-client";
+import { openParleyAtHold } from "../lib/converse-client";
 import ArmyCard from "./ArmyCard";
 import SpeechComposer from "./SpeechComposer";
 import ConversationDock from "./ConversationDock";
@@ -246,31 +245,8 @@ export default function SidePanel({ state, dispatch }: Props) {
   async function openCastleParley() {
     if (!selectedHoldId) return;
     setParleyError(null);
-    const ensured = ensureGarrisonNegotiator(
-      selectedHoldId,
-      state.holdStates ?? {},
-      state.characters
-    );
-    if (!ensured) {
-      setParleyError("No negotiator available at this seat.");
-      return;
-    }
-    dispatch({
-      type: "APPLY_NEGOTIATOR_ENSURE",
-      characters: ensured.characters,
-      holdStates: ensured.holdStates,
-    });
-    const err = await startDirectNpcTalk(
-      state,
-      dispatch,
-      ensured.negotiatorId,
-      {
-        characters: ensured.characters,
-        holdStates: ensured.holdStates,
-        holdId: selectedHoldId,
-      }
-    );
-    if (err) setParleyError(err);
+    const { error } = await openParleyAtHold(state, dispatch, selectedHoldId);
+    if (error) setParleyError(error);
   }
 
   return (

@@ -23,6 +23,7 @@ import type {
   CommanderBrief,
   NpcRuntimePatch,
   BattleContext,
+  Faction,
 } from "../types";
 import { INITIAL_GAME_STATE } from "../data/initial-state";
 import { snapshotForApi } from "../lib/converse-client";
@@ -36,12 +37,23 @@ import {
   applySurrenderDecision,
   holdsRipeForAiSurrender,
 } from "../lib/surrender";
+import { boardFingerprint, factionOrdersEqual, stateProgress } from "../lib/room-sync";
+
+export type SyncRole = "host" | "guest" | "solo";
 
 interface GameCoreProps {
   /** Override starting state (e.g. loaded from DB for room games). Defaults to INITIAL_GAME_STATE. */
   initialState?: GameState;
   /** Called with current state whenever it changes (debounced ~500 ms). Used by room games for persistence. */
   onSave?: (state: GameState) => void;
+  /**
+   * Two-player rooms: host (North) resolves the turn; guest (West) hydrates.
+   * Solo / standalone omit this and behave as before.
+   */
+  syncRole?: SyncRole;
+  viewerFaction?: Faction;
+  /** Latest room save from the poller. Ignored in solo / standalone. */
+  remoteState?: GameState | null;
 }
 
 function normalizeState(raw: GameState): GameState {
@@ -96,7 +108,15 @@ function normalizeState(raw: GameState): GameState {
   };
 }
 
-export default function GameCore({ initialState, onSave }: GameCoreProps) {
+export default function GameCore({
+  initialState,
+  onSave,
+  syncRole,
+  viewerFaction,
+  remoteState,
+}: GameCoreProps) {
+  const twoBrowser = syncRole === "host" || syncRole === "guest";
+  const isGuest = syncRole === "guest";
   const { state, dispatch } = useGameState(
     normalizeState(initialState ?? INITIAL_GAME_STATE)
   );
@@ -132,8 +152,74 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
     };
   }, [state]);
 
+  // Pull the other player's orders, or (guest) take the host's resolved board.
+  useEffect(() => {
+    if (!twoBrowser || !remoteState || !viewerFaction) return;
+
+    if (
+      state.phase === "planning" &&
+      remoteState.phase === "planning" &&
+      remoteState.turn === state.turn
+    ) {
+      const remoteRival = viewerFaction === "north" ? remoteState.westerlands : remoteState.north;
+      const localRival = viewerFaction === "north" ? state.westerlands : state.north;
+      if (factionOrdersEqual(remoteRival, localRival)) return;
+      dispatch({
+        type: "PULL_RIVAL_ORDERS",
+        faction: viewerFaction,
+        north: remoteState.north,
+        westerlands: remoteState.westerlands,
+      });
+      return;
+    }
+
+    if (!isGuest) return;
+    if (stateProgress(remoteState) < stateProgress(state)) return;
+    // Same-phase retreat: do not wipe a pick the guest has not saved yet.
+    if (
+      state.phase === "retreat" &&
+      remoteState.phase === "retreat" &&
+      remoteState.turn === state.turn
+    ) {
+      return;
+    }
+    if (boardFingerprint(remoteState) === boardFingerprint(state)) return;
+    dispatch({ type: "HYDRATE_REMOTE", state: normalizeState(remoteState) });
+  }, [
+    twoBrowser,
+    isGuest,
+    remoteState,
+    viewerFaction,
+    state.phase,
+    state.turn,
+    state.north,
+    state.westerlands,
+    dispatch,
+  ]);
+
+  // Host (and only the host) resolves once both locks are on the merged board.
+  const adjudicatedTurnRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (isGuest) return;
+    if (state.phase !== "planning") return;
+    if (!state.north.submitted || !state.westerlands.submitted) return;
+    if (!twoBrowser) return;
+    if (adjudicatedTurnRef.current === state.turn) return;
+    adjudicatedTurnRef.current = state.turn;
+    dispatch({ type: "ADJUDICATE_MOVES" });
+  }, [
+    isGuest,
+    twoBrowser,
+    state.phase,
+    state.north.submitted,
+    state.westerlands.submitted,
+    state.turn,
+    dispatch,
+  ]);
+
   // When we enter planning after resolve/retreat/rename, NPCs digest the turn that just ended
   useEffect(() => {
+    if (isGuest) return;
     const enteredPlanning =
       state.phase === "planning" && prevPhaseRef.current !== "planning";
     prevPhaseRef.current = state.phase;
@@ -169,9 +255,10 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
     void runDigest();
     // Snap frozen when entering planning
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state.phase, state.turn, dispatch]);
+  }, [state.phase, state.turn, dispatch, isGuest]);
 
   useEffect(() => {
+    if (isGuest) return;
     if (state.phase !== "resolving") {
       resolvedBatchRef.current = null;
       return;
@@ -533,7 +620,7 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
     }
 
     runBattles();
-  }, [state.phase, state.pendingBattles, state.turn, state.armies, state.turnHistory, dispatch]);
+  }, [state.phase, state.pendingBattles, state.turn, state.armies, state.turnHistory, dispatch, isGuest]);
 
   const isResolving = state.phase === "resolving";
   const isRetreat = state.phase === "retreat";
@@ -555,13 +642,61 @@ export default function GameCore({ initialState, onSave }: GameCoreProps) {
         background: "#080808",
       }}
     >
-      <TopBar state={state} dispatch={dispatch} />
+      <TopBar
+        state={state}
+        dispatch={dispatch}
+        deferAdjudicate={twoBrowser}
+      />
 
       <div style={{ display: "flex", flex: 1, minHeight: 0, flexDirection: "column" }}>
         <div style={{ display: "flex", flex: 1, minHeight: 0, position: "relative" }}>
           {/* Map — full bleed; right rail only when army selected or Talk open */}
           <div style={{ flex: 1, minWidth: 0, position: "relative" }}>
             <WesterosMap state={state} dispatch={dispatch} />
+
+            {/* Guest is locked; host is still marching the turn through the adjudicator. */}
+            {isGuest &&
+              state.phase === "planning" &&
+              state.north.submitted &&
+              state.westerlands.submitted && (
+              <div
+                style={{
+                  position: "absolute",
+                  inset: 0,
+                  background: "rgba(0,0,0,0.55)",
+                  display: "flex",
+                  flexDirection: "column",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  zIndex: 28,
+                  gap: 12,
+                }}
+              >
+                <div
+                  style={{
+                    fontFamily: "var(--font-mono), monospace",
+                    fontSize: 12,
+                    fontWeight: 700,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.28em",
+                    color: "#c8941a",
+                  }}
+                >
+                  Both sides have marched
+                </div>
+                <div
+                  style={{
+                    fontFamily: "var(--font-mono), monospace",
+                    fontSize: 9,
+                    color: "#666",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.18em",
+                  }}
+                >
+                  Waiting for the turn to resolve…
+                </div>
+              </div>
+            )}
 
             {/* Resolving overlay */}
             {isResolving && (

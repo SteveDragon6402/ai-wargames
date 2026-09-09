@@ -506,7 +506,8 @@ export function reconcilePledges(
     // Someone else took it back, or it was never ours — the pledge is moot.
     if (!hs || hs.controller !== pledge.faction) continue;
 
-    if (garrisonHeadcount(hs.garrison) >= pledge.minimumMen) {
+    const men = garrisonHeadcount(hs.garrison);
+    if (men >= pledge.minimumMen) {
       events.push({
         id: eid("ev"),
         turn,
@@ -524,6 +525,22 @@ export function reconcilePledges(
     );
     if (friendlyHere) {
       open.push(pledge);
+      continue;
+    }
+
+    // Men already on the walls keep the seat. Dropping controller here used
+    // to leave a living foreign garrison unheld, and the next home-army
+    // presence then "liberated" the castle back to its original owner.
+    if (hs.garrison.faction === pledge.faction && men > 0) {
+      events.push({
+        id: eid("ev"),
+        turn,
+        faction: pledge.faction,
+        kind: "garrison",
+        holdIds: [pledge.holdId],
+        summary: `${holdName} held thin`,
+        detail: `${holdName} is held by the men left on the walls, though fewer than the posted minimum.`,
+      });
       continue;
     }
 

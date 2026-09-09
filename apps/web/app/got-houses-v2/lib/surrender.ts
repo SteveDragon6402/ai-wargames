@@ -91,6 +91,28 @@ export function defaultTermsFor(
   };
 }
 
+/**
+ * Whether a parley line is the player putting terms, not asking about them.
+ * Used so chat offers land on the board the same way the Terms block does.
+ */
+export function playerMessageLooksLikeTermsOffer(text: string): boolean {
+  const t = text.toLowerCase().trim();
+  if (t.length < 8) return false;
+  if (/\b(what|which|whose)\b.*\bterms\b/.test(t)) return false;
+  return (
+    /\b(offer(s|ed|ing)? (you )?(terms|mercy|quarter)|put(s|ting)? terms|propose(d|s)? terms|these are (my |our )?terms)\b/.test(
+      t
+    ) ||
+    /\b(open the gates|yield the (seat|castle|hold|walls)|surrender the (seat|castle|hold)|give (up|over) the (seat|castle|hold))\b/.test(
+      t
+    ) ||
+    /\b(spare (your|the) (men|garrison|captains|people|lives)|keep your lives|you may (walk|march)|march out (alive|with)|walk (free|out) with)\b/.test(
+      t
+    ) ||
+    /\b(quarter|mercy) for (you|your|the)\b/.test(t)
+  );
+}
+
 export function describeTerms(terms: SurrenderTerms): string {
   const men = terms.garrisonSpared
     ? "the garrison marches out alive"

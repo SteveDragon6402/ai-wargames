@@ -16,7 +16,13 @@ import {
 } from "../lib/converse-client";
 import { countWords, PLAYER_CHAT_MAX_WORDS } from "../data/characters";
 import type { SurrenderDecision } from "../lib/character-tools";
-import { applySurrenderDecision } from "../lib/surrender";
+import {
+  applySurrenderDecision,
+  canOfferTerms,
+  defaultTermsFor,
+  describeTerms,
+  playerMessageLooksLikeTermsOffer,
+} from "../lib/surrender";
 
 interface Props {
   thread: ConversationThread;
@@ -188,6 +194,53 @@ export default function ChatWindow({ thread, state, dispatch, fill }: Props) {
     setText("");
     setBusy(true);
 
+    const parleyHoldId = thread.holdId ?? null;
+    const parleyHold = parleyHoldId
+      ? state.holdStates?.[parleyHoldId]
+      : undefined;
+    const puttingTerms =
+      !!parleyHoldId &&
+      canOfferTerms(parleyHold, state.activeFaction) &&
+      playerMessageLooksLikeTermsOffer(trimmed);
+
+    let holdStates = state.holdStates ?? {};
+    if (puttingTerms && parleyHoldId && parleyHold) {
+      const terms = {
+        ...defaultTermsFor(parleyHold, state.activeFaction, state.turn),
+        note: trimmed,
+      };
+      dispatch({
+        type: "OFFER_SURRENDER_TERMS",
+        holdId: parleyHoldId,
+        terms,
+      });
+      holdStates = {
+        ...holdStates,
+        [parleyHoldId]: {
+          ...parleyHold,
+          siege: {
+            ...parleyHold.siege!,
+            terms: { ...terms, status: "offered" as const },
+          },
+        },
+      };
+      dispatch({
+        type: "APPEND_MESSAGES",
+        threadId: thread.id,
+        messages: [
+          makeMessage(
+            lordId,
+            "Terms",
+            `Terms put to the gate: "${terms.note}" — under them, ${describeTerms({
+              ...terms,
+              status: "offered",
+            })}.`,
+            "system"
+          ),
+        ],
+      });
+    }
+
     const liveThread: ConversationThread = {
       ...thread,
       messages: [...thread.messages, playerMsg],
@@ -259,7 +312,7 @@ export default function ChatWindow({ thread, state, dispatch, fill }: Props) {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            ...snapshotForApi(state),
+            ...snapshotForApi({ ...state, holdStates }),
             thread: liveThread,
             npcCharacterId: npcId,
             playerMessage: trimmed,
@@ -305,7 +358,7 @@ export default function ChatWindow({ thread, state, dispatch, fill }: Props) {
           if (data.surrender) {
             const note = applySurrenderDecision(
               dispatch,
-              state,
+              { ...state, holdStates },
               data.surrender.holdId,
               data.surrender.decision
             );
@@ -622,6 +675,15 @@ export default function ChatWindow({ thread, state, dispatch, fill }: Props) {
             <span>
               {countWords(text)}/{PLAYER_CHAT_MAX_WORDS}
               {fill ? " · Enter to send" : ""}
+              {thread.holdId &&
+              canOfferTerms(
+                state.holdStates?.[thread.holdId],
+                state.activeFaction
+              )
+                ? playerMessageLooksLikeTermsOffer(text)
+                  ? " · this will be put as official terms"
+                  : " · an offer of terms here is put to the gate"
+                : ""}
             </span>
             <button
               type="button"

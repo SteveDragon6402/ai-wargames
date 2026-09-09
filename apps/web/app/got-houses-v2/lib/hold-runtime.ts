@@ -94,6 +94,15 @@ export function refillToDefault(
   const seed = getCastleSeed(holdId);
   if (!isGarrisonable(seed)) return runtime;
   if (runtime.controller !== runtime.homeFaction) return runtime;
+  // A foreign garrison left on the walls is not household levies, even if
+  // controller was wrongly flipped back to home.
+  const occupying = runtime.garrison.faction;
+  if (
+    (occupying === "north" || occupying === "westerlands") &&
+    occupying !== runtime.homeFaction
+  ) {
+    return runtime;
+  }
 
   const current = garrisonHeadcount(runtime.garrison);
   if (current >= seed.defaultGarrison) return runtime;
@@ -213,9 +222,12 @@ export function applyFriendlyPresenceRefill(
       next[holdId] = hs;
       continue;
     }
-    // Liberate empty home seat by presence
+    // Liberate only a truly empty home seat. A conquered garrison that lost
+    // its controller (failed pledge, storm leftovers) must not be relabelled
+    // as the original household just because a home army is on the tile.
     if (
       (hs.controller === null || hs.controller === "hostile") &&
+      garrisonHeadcount(hs.garrison) === 0 &&
       (hs.homeFaction === "north" || hs.homeFaction === "westerlands") &&
       here.some((a) => a.faction === hs.homeFaction)
     ) {

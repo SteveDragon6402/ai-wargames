@@ -8,6 +8,8 @@ import { unmetPledgesFor } from "../lib/siege";
 interface Props {
   state: GameState;
   dispatch: React.Dispatch<GameAction>;
+  /** Two-browser rooms: lock locally but let the host resolve once both sides land. */
+  deferAdjudicate?: boolean;
 }
 
 const FACTION_COLORS: Record<Faction, { bg: string; border: string; text: string; activeBg: string }> = {
@@ -25,7 +27,7 @@ const FACTION_COLORS: Record<Faction, { bg: string; border: string; text: string
   },
 };
 
-export default function TopBar({ state, dispatch }: Props) {
+export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
   const { turn, north, westerlands, adminMode, activeFaction, phase } = state;
   const inPlanningPhase = phase === "planning";
 
@@ -33,7 +35,7 @@ export default function TopBar({ state, dispatch }: Props) {
   const westSubmitted = westerlands.submitted;
 
   function handleSubmit(faction: Faction) {
-    dispatch({ type: "SUBMIT_FACTION", faction });
+    dispatch({ type: "SUBMIT_FACTION", faction, deferAdjudicate });
   }
 
   function handleSwitchFaction(faction: Faction) {

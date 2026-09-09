@@ -736,7 +736,7 @@ export type GameAction =
   | { type: "BEGIN_MOVE" }
   | { type: "QUEUE_MOVE"; toHoldId: string }
   | { type: "CANCEL_MOVE" }
-  | { type: "SUBMIT_FACTION"; faction: Faction }
+  | { type: "SUBMIT_FACTION"; faction: Faction; deferAdjudicate?: boolean }
   | { type: "ADJUDICATE_MOVES" }
   | { type: "BATTLES_RESOLVED"; reports: BattleReport[] }
   | { type: "SET_RETREAT"; armyId: string; toHoldId: string }
@@ -818,4 +818,19 @@ export type GameAction =
       characters: Record<CharacterId, CharacterState>;
       holdStates: Record<string, HoldRuntime>;
     }
-  | { type: "REMOVE_EPHEMERAL_CASTELLAN"; holdId: string };
+  | { type: "REMOVE_EPHEMERAL_CASTELLAN"; holdId: string }
+  | {
+      /**
+       * Take the rival's orders from the room save without touching ours.
+       * Used while both players are still planning.
+       */
+      type: "PULL_RIVAL_ORDERS";
+      faction: Faction;
+      north: FactionOrders;
+      westerlands: FactionOrders;
+    }
+  | {
+      /** Replace the board with the host's resolved state (guest client). */
+      type: "HYDRATE_REMOTE";
+      state: GameState;
+    };

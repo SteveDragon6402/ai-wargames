@@ -8,6 +8,7 @@ import {
   MIN_SIEGE_FRACTION,
   minimumHoldingGarrison,
   minimumSiegeForce,
+  reconcilePledges,
 } from "./siege";
 import { army, holdRuntime } from "./test-helpers";
 
@@ -104,5 +105,42 @@ describe("garrison floors", () => {
     const seed = getCastleSeed("16");
     assert.equal(garrisonHeadcount(hs.garrison), 200);
     assert.equal(freeCapacity("16", hs), seed.capacity - 200);
+  });
+});
+
+describe("reconcilePledges", () => {
+  it("keeps a thin occupying garrison when the field host has marched on", () => {
+    const holds = {
+      "16": holdRuntime({
+        homeFaction: "north",
+        controller: "westerlands",
+        garrison: {
+          faction: "westerlands",
+          units: [{ house: "Lannister", type: "infantry", count: 80 }],
+          leaders: [],
+          notables: [],
+          morale: "Thin",
+          tiredness: "Tired",
+          stance: "Holding",
+        },
+      }),
+    };
+    const settled = reconcilePledges(
+      3,
+      [
+        {
+          holdId: "16",
+          faction: "westerlands",
+          minimumMen: 225,
+          turn: 2,
+          cause: "walk_in",
+        },
+      ],
+      holds,
+      []
+    );
+    assert.equal(settled.holdStates["16"].controller, "westerlands");
+    assert.equal(settled.holdStates["16"].garrison.units[0]?.count, 80);
+    assert.equal(settled.pledges.length, 0);
   });
 });
