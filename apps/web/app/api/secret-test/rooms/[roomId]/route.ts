@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSessionToken } from "@/lib/session";
-import { isFactionId } from "@/app/secret-test/types";
+import { isFactionId, rivalFaction } from "@/app/secret-test/types";
+import { resolveRoomViewer } from "@/app/secret-test/lib/identity";
 import { toPlayerView } from "@/app/secret-test/lib/view";
 import { loadSecretRoom } from "@/app/secret-test/lib/store";
 
@@ -16,11 +16,11 @@ export async function GET(
     if (!loaded) return NextResponse.json({ error: "Unknown room." }, { status: 404 });
 
     const { room, roomPlayers, state } = loaded;
-    const sessionToken = await getSessionToken();
-    const viewer = sessionToken
-      ? (roomPlayers.find((p) => p.sessionToken === sessionToken) ?? null)
-      : null;
+    const viewer = await resolveRoomViewer(roomPlayers);
     const faction = viewer && isFactionId(viewer.factionId) ? viewer.factionId : null;
+    const opponent = faction
+      ? roomPlayers.find((p) => p.factionId === rivalFaction(faction))
+      : null;
 
     return NextResponse.json({
       room: {
@@ -38,7 +38,7 @@ export async function GET(
       viewer: viewer && faction
         ? { playerId: viewer.id, factionId: faction, displayName: viewer.displayName }
         : null,
-      game: state && faction ? toPlayerView(state, faction) : null,
+      game: state && faction ? toPlayerView(state, faction, opponent?.displayName) : null,
     });
   } catch (e) {
     console.error("[GET /api/secret-test/rooms/[roomId]]", e);

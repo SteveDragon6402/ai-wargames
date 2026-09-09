@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { storeRoomPlayer } from "./lib/client-player";
 
 async function safeJson(res: Response): Promise<Record<string, unknown>> {
   try {
@@ -34,6 +35,9 @@ export default function SecretTestLanding() {
       });
       const data = await safeJson(res);
       if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Failed to open a campaign");
+      if (typeof data.roomId === "string" && typeof data.playerId === "string") {
+        storeRoomPlayer(data.roomId, data.playerId);
+      }
       router.push(`/secret-test/room/${data.roomId}/lobby`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
@@ -62,6 +66,9 @@ export default function SecretTestLanding() {
       });
       const data = await safeJson(res);
       if (!res.ok) throw new Error(typeof data.error === "string" ? data.error : "Failed to join");
+      if (typeof data.roomId === "string" && typeof data.playerId === "string") {
+        storeRoomPlayer(data.roomId, data.playerId);
+      }
       router.push(`/secret-test/room/${data.roomId}/lobby`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");

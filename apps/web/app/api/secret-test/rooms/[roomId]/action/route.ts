@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { getSessionToken } from "@/lib/session";
 import { isDebateMonth, isFactionId } from "@/app/secret-test/types";
+import { resolveRoomViewer } from "@/app/secret-test/lib/identity";
 import { loadSecretRoom, saveState } from "@/app/secret-test/lib/store";
 import { bothActionsIn } from "@/app/secret-test/lib/state";
 import { validateActionText, validateDebateAnswers } from "@/app/secret-test/lib/words";
@@ -43,10 +43,7 @@ export async function POST(
     const debateErr = validateDebateAnswers(body.debateAnswers, debateNeeded);
     if (debateErr) return NextResponse.json({ error: debateErr }, { status: 400 });
 
-    const sessionToken = await getSessionToken();
-    const viewer = sessionToken
-      ? roomPlayers.find((p) => p.sessionToken === sessionToken)
-      : null;
+    const viewer = await resolveRoomViewer(roomPlayers);
     if (!viewer || !isFactionId(viewer.factionId)) {
       return NextResponse.json({ error: "Your session is not in this race." }, { status: 403 });
     }

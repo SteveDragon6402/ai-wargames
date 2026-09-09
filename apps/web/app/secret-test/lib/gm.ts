@@ -1,7 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { SEATS, STATES } from "../data/valden";
 import type { CosTranslation, FactionId, SecretTestState, Winner } from "../types";
-import { GM_MAX_TOKENS, MAX_VOTER_POLLS, SCRATCHPAD_MAX_CHARS, isDebateMonth } from "../types";
+import {
+  GM_MAX_ROUNDS,
+  GM_MAX_TOKENS,
+  LLM_TIMEOUT_MS,
+  MAX_VOTER_POLLS,
+  SCRATCHPAD_MAX_CHARS,
+  isDebateMonth,
+} from "../types";
 import { emptyTranslation } from "./state";
 import { pollVoters, type VoterSample } from "./poll";
 import { statesWon, tallyStates } from "./tally";
@@ -194,7 +201,7 @@ HISTORY:\n${formatHistory(state)}
 SCRATCHPAD:\n${state.scratchpad || "(empty)"}`;
 }
 
-interface Acc {
+export interface Acc {
   scratchpad: string;
   applied: boolean;
   moneyDelta: { red: number; blue: number };
@@ -414,18 +421,20 @@ export async function runGmTurn(
     return applyGmOutcome(state, translations, acc, opening);
   }
 
-  const client = new Anthropic({ apiKey });
+  const client = new Anthropic({ apiKey, timeout: LLM_TIMEOUT_MS, maxRetries: 0 });
   const model = process.env.MODEL_GM?.trim() || "claude-sonnet-4-6";
   const messages: Anthropic.Messages.MessageParam[] = [
     { role: "user", content: buildGmUserMessage(state, translations, names, opening) },
   ];
+  const deadline = Date.now() + LLM_TIMEOUT_MS * GM_MAX_ROUNDS;
 
   try {
-    for (let round = 0; round < 8; round++) {
+    for (let round = 0; round < GM_MAX_ROUNDS; round++) {
+      if (Date.now() > deadline - 1500) break;
       if (round > 0 && !acc.applied && !acc.winner) {
         messages.push({
           role: "user",
-          content: "Call apply_world now. After month 12, also declare_winner.",
+          content: "Call apply_world now. After month 12, also declare_winner. Do not poll.",
         });
       }
       const response = await client.messages.create({
@@ -456,10 +465,14 @@ export async function runGmTurn(
         const { result, samples } = applyTool(tu.name, input, acc);
         let content = result;
         if (samples?.length) {
-          const replies = await pollVoters(samples);
-          content = replies
-            .map((r) => `[${r.seatId} / ${r.demographic}] ${r.reply}`)
-            .join("\n");
+          if (Date.now() > deadline - 12_000) {
+            content = "Polls skipped — short on time. Judge from what you already know.";
+          } else {
+            const replies = await pollVoters(samples);
+            content = replies
+              .map((r) => `[${r.seatId} / ${r.demographic}] ${r.reply}`)
+              .join("\n");
+          }
         }
         toolResults.push({ type: "tool_result", tool_use_id: tu.id, content });
       }

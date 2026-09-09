@@ -131,6 +131,7 @@ export interface PlayerViewGame {
   myFaction: FactionId;
   briefing: string;
   cash: number;
+  opponentName: string;
   opponentRumor: string;
   issues: string[];
   recommendations: CosRecommendation[];
@@ -175,9 +176,14 @@ export const CAMPAIGN_SHORT: Record<FactionId, string> = {
 export const MAX_ACTION_WORDS = 300;
 export const MAX_ACTION_CHARS = 2400;
 export const MAX_DEBATE_WORDS = 100;
-export const MAX_BRIEFING_WORDS = 180;
+export const MAX_BRIEFING_WORDS = 200;
+export const MAX_OPENING_BRIEFING_WORDS = 320;
 export const STARTING_CASH = 4_000_000;
 export const SCRATCHPAD_MAX_CHARS = 16_000;
-export const GM_MAX_TOKENS = 8192;
-export const GM_LOCK_MS = 180_000;
+export const GM_MAX_TOKENS = 2800;
+export const GM_MAX_ROUNDS = 3;
+export const GM_LOCK_MS = 90_000;
+export const PIPELINE_BUDGET_MS = 75_000;
+export const LLM_TIMEOUT_MS = 18_000;
 export const MAX_VOTER_POLLS = 8;
+export const PLAYER_HEADER = "x-player-id";

@@ -3,7 +3,11 @@ import type { FactionId, PlayerViewGame, SecretTestState } from "../types";
 import { isFactionId, rivalFaction } from "../types";
 import { pendingText } from "./state";
 
-export function toPlayerView(state: SecretTestState, faction: string): PlayerViewGame | null {
+export function toPlayerView(
+  state: SecretTestState,
+  faction: string,
+  opponentName = "the other campaign"
+): PlayerViewGame | null {
   if (!isFactionId(faction)) return null;
   const mine: FactionId = faction;
   const other = rivalFaction(mine);
@@ -15,6 +19,7 @@ export function toPlayerView(state: SecretTestState, faction: string): PlayerVie
     myFaction: mine,
     briefing: state.briefings[mine] ?? "",
     cash: state.cash[mine] ?? 0,
+    opponentName,
     opponentRumor: state.opponentRumors[mine] ?? "",
     issues: state.issues,
     recommendations: state.recommendations[mine] ?? [],

@@ -26,7 +26,7 @@ export async function pollVoters(samples: VoterSample[]): Promise<VoterReply[]> 
       reply: "(no key) Unmoved; waiting to hear something concrete.",
     }));
   }
-  const client = new Anthropic({ apiKey: key });
+  const client = new Anthropic({ apiKey: key, timeout: 12_000, maxRetries: 0 });
   const results = await Promise.all(
     sliced.map(async (s) => {
       const seat = SEAT_BY_ID[s.seatId];

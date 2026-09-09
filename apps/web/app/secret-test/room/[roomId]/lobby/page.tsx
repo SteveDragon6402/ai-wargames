@@ -4,8 +4,8 @@ import type { CSSProperties } from "react";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { rememberViewer, roomFetch } from "../../../lib/client-player";
 import {
-  CAMPAIGN_LABEL,
   CAMPAIGN_SHORT,
   isFactionId,
   type FactionId,
@@ -32,12 +32,13 @@ export default function SecretTestLobbyPage() {
   async function refresh() {
     if (!roomId) return;
     try {
-      const res = await fetch(`/api/secret-test/rooms/${roomId}`);
+      const res = await roomFetch(roomId, `/api/secret-test/rooms/${roomId}`);
       const data = (await res.json()) as SecretTestSnapshot & { error?: string };
       if (!res.ok) {
         setError(typeof data.error === "string" ? data.error : "Unknown room.");
         return;
       }
+      rememberViewer(roomId, data.viewer?.playerId);
       setSnapshot(data);
       if (data.room.status === "playing" || data.room.status === "ended") {
         router.replace(`/secret-test/room/${roomId}/game`);
@@ -59,7 +60,7 @@ export default function SecretTestLobbyPage() {
     setStarting(true);
     setStartError("");
     try {
-      const res = await fetch(`/api/secret-test/rooms/${roomId}/start`, { method: "POST" });
+      const res = await roomFetch(roomId, `/api/secret-test/rooms/${roomId}/start`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Could not open the campaign");
       router.push(`/secret-test/room/${roomId}/game`);
@@ -188,8 +189,13 @@ export default function SecretTestLobbyPage() {
       </div>
 
       {viewer && isFactionId(viewer.factionId) && (
-        <p className="rose-serif" style={{ color: "#8a8a86", marginBottom: 20 }}>
-          You are <span style={{ color: "#efece4" }}>{viewer.displayName}</span> — {CAMPAIGN_LABEL[viewer.factionId]}
+        <p className="rose-serif" style={{ color: "#8a8a86", marginBottom: 20, textAlign: "center" }}>
+          You are <span style={{ color: "#efece4" }}>{viewer.displayName}</span>
+          {" — "}
+          <span style={{ color: viewer.factionId === "red" ? "#e07070" : "#7a9ae0", fontWeight: 600 }}>
+            YOU ARE {viewer.factionId.toUpperCase()}
+          </span>
+          . The other colour is the other campaign.
         </p>
       )}
 

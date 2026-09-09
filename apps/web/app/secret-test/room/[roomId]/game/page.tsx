@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import ValdenMap from "../../../components/ValdenMap";
+import { rememberViewer, roomFetch } from "../../../lib/client-player";
 import { formatKr } from "../../../lib/lean";
 import { wordCount } from "../../../lib/words";
 import { STATES } from "../../../data/valden";
@@ -36,12 +37,13 @@ export default function SecretTestGamePage() {
   const refresh = useCallback(async () => {
     if (!roomId) return;
     try {
-      const res = await fetch(`/api/secret-test/rooms/${roomId}`);
+      const res = await roomFetch(roomId, `/api/secret-test/rooms/${roomId}`);
       const data = (await res.json()) as SecretTestSnapshot & { error?: string };
       if (!res.ok) {
         setError(typeof data.error === "string" ? data.error : "Unknown room.");
         return;
       }
+      rememberViewer(roomId, data.viewer?.playerId);
       if (data.room.status === "lobby") {
         router.replace(`/secret-test/room/${roomId}/lobby`);
         return;
@@ -76,9 +78,12 @@ export default function SecretTestGamePage() {
     const phase = snapshot?.game?.phase;
     if (phase !== "resolving" || !roomId || resolveInFlight.current) return;
     resolveInFlight.current = true;
-    fetch(`/api/secret-test/rooms/${roomId}/resolve`, { method: "POST" })
+    const ac = new AbortController();
+    const kill = setTimeout(() => ac.abort(), 100_000);
+    roomFetch(roomId, `/api/secret-test/rooms/${roomId}/resolve`, { method: "POST", signal: ac.signal })
       .catch(() => {})
       .finally(() => {
+        clearTimeout(kill);
         resolveInFlight.current = false;
         refresh();
       });
@@ -90,7 +95,7 @@ export default function SecretTestGamePage() {
     setSendError("");
     try {
       const debateOn = isDebateMonth(snapshot.game.month) && snapshot.game.debateQuestions.length > 0;
-      const res = await fetch(`/api/secret-test/rooms/${roomId}/action`, {
+      const res = await roomFetch(roomId, `/api/secret-test/rooms/${roomId}/action`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -156,7 +161,7 @@ export default function SecretTestGamePage() {
       {resolving && (
         <div className="rose-overlay">
           <p className="rose-serif" style={{ fontSize: 20, color: "#ece8df", fontStyle: "italic" }}>
-            Staff are working the month…
+            Closing the month — usually under a minute.
           </p>
         </div>
       )}
@@ -173,10 +178,12 @@ export default function SecretTestGamePage() {
         }}
       >
         <div>
-          <div className="rose-serif" style={{ fontSize: 18, color: houseColor }}>
-            {CAMPAIGN_LABEL[house]} · {viewer.displayName}
+          <div className="rose-serif" style={{ fontSize: 22, color: houseColor, letterSpacing: "0.04em" }}>
+            YOU ARE {house.toUpperCase()}
           </div>
-          <div className="rose-label">Month {game.month} / 12</div>
+          <div className="rose-label" style={{ marginTop: 2 }}>
+            {viewer.displayName} · vs {game.opponentName} ({house === "red" ? "Blue" : "Red"}) · Month {game.month} / 12
+          </div>
         </div>
         <div style={{ textAlign: "right" }}>
           <div className="rose-serif" style={{ fontSize: 18 }}>{formatKr(game.cash)}</div>
@@ -189,7 +196,7 @@ export default function SecretTestGamePage() {
         </div>
       </header>
 
-      <ValdenMap seats={game.map} />
+      <ValdenMap seats={game.map} youAre={house} />
 
       <div className="rose-desk">
         <div>

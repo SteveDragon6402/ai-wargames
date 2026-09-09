@@ -1,7 +1,8 @@
 import { eq } from "drizzle-orm";
 import { getDb, rooms } from "@wargame/db";
 import { NextResponse } from "next/server";
-import { getSessionToken } from "@/lib/session";
+import { ensureDistinctFactions } from "@/app/secret-test/lib/factions";
+import { resolveRoomViewer } from "@/app/secret-test/lib/identity";
 import { loadSecretRoom, saveState } from "@/app/secret-test/lib/store";
 
 export async function POST(
@@ -20,14 +21,12 @@ export async function POST(
       return NextResponse.json({ error: "This race has already started." }, { status: 400 });
     }
 
-    const sessionToken = await getSessionToken();
-    const viewer = sessionToken
-      ? roomPlayers.find((p) => p.sessionToken === sessionToken)
-      : null;
+    const seated = await ensureDistinctFactions(loaded.db, roomPlayers);
+    const viewer = await resolveRoomViewer(seated);
     if (!viewer || viewer.id !== room.hostPlayerId) {
       return NextResponse.json({ error: "Only the host can open the campaign." }, { status: 403 });
     }
-    if (roomPlayers.length < 2) {
+    if (seated.length < 2) {
       return NextResponse.json({ error: "Both campaigns must be seated." }, { status: 400 });
     }
     if (!state) {

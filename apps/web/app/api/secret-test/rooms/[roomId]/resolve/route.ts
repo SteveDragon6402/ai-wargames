@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { GM_LOCK_MS } from "@/app/secret-test/types";
+import { GM_LOCK_MS, PIPELINE_BUDGET_MS } from "@/app/secret-test/types";
 import { loadSecretRoom, saveState } from "@/app/secret-test/lib/store";
 import { lockIsFresh, withLock } from "@/app/secret-test/lib/state";
 import { runMonthPipeline } from "@/app/secret-test/lib/pipeline";
+import { withTimeout } from "@/app/secret-test/lib/timeout";
 
 export const maxDuration = 120;
 
@@ -32,7 +33,11 @@ export async function POST(
     await saveState(roomId, withLock(state, true));
 
     try {
-      const next = await runMonthPipeline({ ...state, gmLock: true }, roomPlayers);
+      const next = await withTimeout(
+        runMonthPipeline({ ...state, gmLock: true }, roomPlayers),
+        PIPELINE_BUDGET_MS + 5_000,
+        "resolve-pipeline"
+      );
       await saveState(roomId, withLock(next, false));
       return NextResponse.json({ ok: true, phase: next.phase, month: next.month });
     } catch (err) {

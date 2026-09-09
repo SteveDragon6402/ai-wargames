@@ -364,3 +364,9 @@ export const STARTING_ISSUES = [
   "Fishing quotas for the Outer Skerries",
   "Whether the Gas Terminal expansion goes ahead",
 ];
+
+export const COUNTRY_RULES = `Republic of Valden — small northern federation, mixed economy, currency is the krone (kr).
+Five states, 17 constituencies. Carry a majority of seats in a state (3 of 4, or 2 of 3). A tie leaves the state split — it counts for nobody. Win three states to win the presidency.
+Havnland (capital metro, 4 seats) and Akerdal (farm belt, 4) need 3. Jernmark (mines), Lysfjord (lake + university), Skerry (coast/islands) need 2.
+Twelve months. One package a month: visit 1–2 neighbouring seats, or one speech/event, or one paid-media buy, or one fundraiser. Bigger plans get cut.
+On the map, red seats lean Red. Blue seats lean Blue. Grey is a toss-up. The colour is the campaign, not "whoever is reading this".`;
