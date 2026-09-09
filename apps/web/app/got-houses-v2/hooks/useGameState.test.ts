@@ -13,7 +13,7 @@ describe("applyCasualties", () => {
       }),
     ];
     const next = applyCasualties(start, [
-      { armyId: "n1", unitType: "infantry", house: "Stark", count: 800 },
+      { armyId: "n1", faction: "north", unitType: "infantry", house: "Stark", count: 800 },
     ]);
     assert.equal(next.length, 0);
   });
@@ -27,7 +27,7 @@ describe("applyCasualties", () => {
       }),
     ];
     applyCasualties(start, [
-      { armyId: "n1", unitType: "infantry", house: "Stark", count: 100 },
+      { armyId: "n1", faction: "north", unitType: "infantry", house: "Stark", count: 100 },
     ]);
     assert.equal(start[0].units[0].count, 500);
   });
@@ -45,7 +45,7 @@ describe("applyCasualties", () => {
       }),
     ];
     const next = applyCasualties(start, [
-      { armyId: "n1", unitType: "infantry", house: "Nobody", count: 1 },
+      { armyId: "n1", faction: "north", unitType: "infantry", house: "Nobody", count: 1 },
     ]);
     const remaining = next[0].units.reduce((s, u) => s + u.count, 0);
     assert.equal(remaining, 299);
@@ -61,7 +61,7 @@ describe("applyCasualties", () => {
       }),
     ];
     const next = applyCasualties(start, [
-      { armyId: "n1", unitType: "infantry", house: "Stark", count: 50 },
+      { armyId: "n1", faction: "north", unitType: "infantry", house: "Stark", count: 50 },
     ]);
     assert.equal(
       next.find((a) => a.id === "w1")?.units[0].count,

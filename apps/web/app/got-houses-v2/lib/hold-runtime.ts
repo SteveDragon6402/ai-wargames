@@ -266,9 +266,7 @@ export function recoverNativeGarrisons(
     }
 
     const emptyOrUnheld =
-      occupier === null ||
-      occupier === "hostile" ||
-      (occupier !== home && occupyingMen === 0);
+      occupier === null || (occupier !== home && occupyingMen === 0);
     if (emptyOrUnheld && home !== "hostile") {
       const nativeMen =
         hs.garrison.faction === home ? garrisonHeadcount(hs.garrison) : 0;

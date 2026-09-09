@@ -1,5 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
+import type { HoldRuntime } from "../types";
 import {
   applyFriendlyPresenceRefill,
   garrisonHeadcount,
@@ -82,7 +83,7 @@ const EMPTY_GARRISON = {
 
 describe("recoverNativeGarrisons", () => {
   it("hands an abandoned conquest back to the household and grows toward default", () => {
-    let holds = {
+    let holds: Record<string, HoldRuntime> = {
       "16": holdRuntime({
         homeFaction: "north",
         controller: "westerlands",
