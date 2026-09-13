@@ -12,7 +12,13 @@ import {
   isGarrisonable,
   normalizeGarrison,
 } from "../lib/hold-runtime";
-import { minimumHoldingGarrison, minimumSiegeForce } from "../lib/siege";
+import {
+  garrisonArmyId,
+  isGarrisonArmyId,
+  minimumHoldingGarrison,
+  minimumSiegeForce,
+  resolveSelectableArmy,
+} from "../lib/siege";
 import {
   findNamedGarrisonNegotiator,
   negotiatorLabel,
@@ -53,11 +59,24 @@ export default function SidePanel({ state, dispatch }: Props) {
   const trait = regionTrait(hold.region);
 
   const armiesHere = armies.filter((a) => a.holdId === selectedHoldId);
-  const northHere = armiesHere.filter((a) => a.faction === "north");
-  const westHere = armiesHere.filter((a) => a.faction === "westerlands");
+  const wallArmy = selectedHoldId
+    ? resolveSelectableArmy(
+        [],
+        state.holdStates,
+        garrisonArmyId(selectedHoldId)
+      )
+    : undefined;
+  const northHere = [
+    ...(wallArmy?.faction === "north" ? [wallArmy] : []),
+    ...armiesHere.filter((a) => a.faction === "north"),
+  ];
+  const westHere = [
+    ...(wallArmy?.faction === "westerlands" ? [wallArmy] : []),
+    ...armiesHere.filter((a) => a.faction === "westerlands"),
+  ];
 
   const selectedArmies = selectedArmyIds
-    .map((id) => armies.find((a) => a.id === id))
+    .map((id) => resolveSelectableArmy(armies, state.holdStates, id))
     .filter(Boolean) as Army[];
 
   const allSelectedSameFaction = selectedArmies.every(
@@ -89,21 +108,29 @@ export default function SidePanel({ state, dispatch }: Props) {
   const canCombine =
     selectedArmies.length >= 2 &&
     selectedArmies.every((a) => a.holdId === selectedHoldId) &&
+    selectedArmies.every((a) => !isGarrisonArmyId(a.id)) &&
     allSelectedSameFaction &&
     !isLocked;
 
   // Can split: exactly 1 selected, not locked, has at least 2 leaders or 2 unit groups
   const singleSelected = selectedArmies.length === 1 ? selectedArmies[0] : null;
+  const garrisonSelected =
+    !!singleSelected && isGarrisonArmyId(singleSelected.id);
   const canSplit =
     !!singleSelected &&
+    !garrisonSelected &&
     !isLocked &&
     (singleSelected.leaders.length >= 2 || singleSelected.units.length >= 2);
 
-  // Can change commander: any single controllable army (including appointing / clearing)
-  const canChangeCommander = !!singleSelected && !isLocked;
+  // Can change commander: any single controllable field host
+  const canChangeCommander =
+    !!singleSelected && !garrisonSelected && !isLocked;
 
-  // Can move: 1+ selected, not locked, not in move mode
-  const canMove = selectedArmies.length > 0 && !isLocked;
+  // Can move: 1+ selected field hosts, not locked, not in move mode
+  const canMove =
+    selectedArmies.length > 0 &&
+    !isLocked &&
+    selectedArmies.every((a) => !isGarrisonArmyId(a.id));
 
   // Stance orders for selected single army
   const singleArmyStanceOrder =
@@ -156,6 +183,7 @@ export default function SidePanel({ state, dispatch }: Props) {
   const canGarrison =
     garrisonable &&
     !!singleSelected &&
+    !garrisonSelected &&
     !isLocked &&
     singleSelected.holdId === selectedHoldId &&
     freeSlots > 0 &&
@@ -185,7 +213,8 @@ export default function SidePanel({ state, dispatch }: Props) {
     !!singleSelected &&
     !isLocked &&
     nonHomeOccupier &&
-    garrisonMen > 0;
+    garrisonMen > 0 &&
+    singleSelected.holdId === selectedHoldId;
   const canStorm =
     garrisonable &&
     !!singleSelected &&
@@ -525,11 +554,11 @@ export default function SidePanel({ state, dispatch }: Props) {
                 lineHeight: 1.5,
               }}
             >
-              Seat taken — post a garrison
+              Seat taken — walls empty
               <div style={{ color: "#a4762a", marginTop: 3 }}>
-                At least {openPledge.minimumMen.toLocaleString()} men must hold
-                these walls before {FACTION_LABEL[openPledge.faction]} can issue
-                orders. Once they are posted the host is free to march on.
+                Posting at least {openPledge.minimumMen.toLocaleString()} men
+                is optional. The host may still rest, fortify, speak, or
+                march.
               </div>
             </div>
           )}
@@ -581,7 +610,9 @@ export default function SidePanel({ state, dispatch }: Props) {
                       type: "OPEN_GARRISON_PANEL",
                       holdId: selectedHoldId,
                       mode: "withdraw",
-                      armyId: singleSelected?.id ?? null,
+                      armyId: garrisonSelected
+                        ? null
+                        : singleSelected?.id ?? null,
                     })
                   }
                 />
@@ -720,7 +751,9 @@ export default function SidePanel({ state, dispatch }: Props) {
                       type: "OPEN_GARRISON_PANEL",
                       holdId: selectedHoldId,
                       mode: "abandon",
-                      armyId: singleSelected!.id,
+                      armyId: garrisonSelected
+                        ? null
+                        : singleSelected!.id,
                     })
                   }
                 />
@@ -836,7 +869,7 @@ export default function SidePanel({ state, dispatch }: Props) {
 
       {/* Army lists */}
       <div style={{ flex: 1, overflowY: "auto" }}>
-        {armiesHere.length === 0 ? (
+        {northHere.length === 0 && westHere.length === 0 ? (
           <div
             style={{
               padding: "24px 14px",
@@ -866,6 +899,7 @@ export default function SidePanel({ state, dispatch }: Props) {
                       stanceOrder={stanceOrder}
                       hadSpeech={state.speechesThisTurn.includes(army.id)}
                       isLocked={state.north.submitted}
+                      onTheWalls={isGarrisonArmyId(army.id)}
                       onClick={(id, shift) =>
                         dispatch({ type: "SELECT_ARMY", armyId: id, shift })
                       }
@@ -888,6 +922,7 @@ export default function SidePanel({ state, dispatch }: Props) {
                       stanceOrder={stanceOrder}
                       hadSpeech={state.speechesThisTurn.includes(army.id)}
                       isLocked={state.westerlands.submitted}
+                      onTheWalls={isGarrisonArmyId(army.id)}
                       onClick={(id, shift) =>
                         dispatch({ type: "SELECT_ARMY", armyId: id, shift })
                       }

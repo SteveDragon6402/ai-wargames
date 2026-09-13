@@ -4,12 +4,14 @@ import { getCastleSeed } from "../data/castles";
 import { freeCapacity, garrisonHeadcount } from "./hold-runtime";
 import {
   foldSiegeIntoBattles,
+  garrisonArmyId,
   investorCheckAtHold,
   MIN_SIEGE_ABSOLUTE,
   MIN_SIEGE_FRACTION,
   minimumHoldingGarrison,
   minimumSiegeForce,
   reconcilePledges,
+  resolveSelectableArmy,
 } from "./siege";
 import { army, holdRuntime } from "./test-helpers";
 
@@ -262,5 +264,30 @@ describe("foldSiegeIntoBattles", () => {
     assert.equal(out[0].engagement, "field");
     assert.equal(out[0].wallsStand, true);
     assert.ok(!out[0].northArmies.some((a) => a.id.startsWith("garrison:")));
+  });
+});
+
+describe("resolveSelectableArmy", () => {
+  it("returns the posted garrison as a selectable host", () => {
+    const holds = {
+      "17": holdRuntime({
+        homeFaction: "north",
+        controller: "westerlands",
+        garrison: {
+          faction: "westerlands",
+          units: [{ house: "Lannister", type: "infantry", count: 300 }],
+          leaders: [{ name: "Ser Addam" }],
+          notables: [],
+          morale: "High after the storm",
+          tiredness: "Bloodied but standing",
+          stance: "Pressed to the gates — now holding the keep",
+        },
+      }),
+    };
+    const card = resolveSelectableArmy([], holds, garrisonArmyId("17"));
+    assert.equal(card?.id, "garrison:17");
+    assert.equal(card?.faction, "westerlands");
+    assert.equal(card?.morale, "High after the storm");
+    assert.equal(resolveSelectableArmy([], holds, "garrison:16"), undefined);
   });
 });

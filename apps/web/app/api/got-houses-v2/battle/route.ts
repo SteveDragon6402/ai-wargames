@@ -207,7 +207,7 @@ function buildChroniclerMessage(
     : "";
   const engagementNote =
     engagement === "storm"
-      ? `\nENGAGEMENT TYPE: STORM THE GATES — field armies assault the walls against a defending GARRISON (its army id starts with "garrison:"). The garrison fights from fortifications; treat walls, towers and gates as decisive advantages for the defenders unless numbers or leadership overwhelm them.${combinedNote}`
+      ? `\nENGAGEMENT TYPE: STORM THE GATES — field armies assault the walls against a defending GARRISON (its army id starts with "garrison:"). The garrison fights from fortifications; treat walls, towers and gates as decisive advantages for the defenders unless numbers or leadership overwhelm them. A failed storm does NOT drive the attacker from the country: they fall back to their siege camp and the investment continues. They only leave if the garrison is broken and the gates are forced, or if they are shattered as a host.${combinedNote}`
       : engagement === "sally"
         ? `\nENGAGEMENT TYPE: SALLY OUT — the defending GARRISON (plus any relieving field armies on their side) sorties against the besiegers. This may be a two-front fight if relief has marched onto the invested hold.${combinedNote}`
         : wallsNote;
@@ -281,8 +281,11 @@ protect named characters, and do not invent deaths in minor skirmishes.
 The available outcome labels are:
 ${DEFEAT_TYPES.map((d) => `- ${OUTCOME_VOCABULARY[d]}`).join("\n")}
 
-Someone must yield this hold — do not leave both sides sharing it unless both
-genuinely collapsed.`;
+${
+    engagement === "storm"
+      ? "A failed storm leaves both sides where they were: garrison on the walls, attacker in the siege camp. Do not write the attacker marching away from the investment merely because the assault failed. Only a forced gate, or a host so shattered it ceases to be an army, ends the siege."
+      : "Someone must yield this hold — do not leave both sides sharing it unless both genuinely collapsed."
+  }`;
 }
 
 // ─── Stage 2: Executor ───────────────────────────────────────────────────────
@@ -295,7 +298,7 @@ Rules:
 - Casualty counts must be whole numbers greater than zero, and can never exceed the men that army actually has.
 - An army marked HOLDS BACK must take substantially lighter losses than a committed host on the same side.
 - Only report a named figure as fallen if the report says or clearly implies they fell.
-- retreatingArmyIds must be exactly the losing side's army ids (all of them), or both sides' ids if the verdict was "Neither".
+- retreatingArmyIds must be exactly the losing side's army ids (all of them), or both sides' ids if the verdict was "Neither". Exception: a STORM that did not force the gates has an empty retreat list — the attacker remains camped and the siege continues.
 - conditionUpdates must contain one entry for every army in the battle, describing its state after the fight in one vivid sentence each. A routed army is shattered and desperate; an orderly retreat leaves it bruised but not broken; a pyrrhic winner is bloodied and wary.
 
 Call the record_outcome tool exactly once. Do not write any prose.`;

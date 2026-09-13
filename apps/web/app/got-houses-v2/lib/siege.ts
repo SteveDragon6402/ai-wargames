@@ -47,6 +47,28 @@ export function holdIdFromGarrisonArmyId(id: string): string | null {
   return id.slice("garrison:".length);
 }
 
+/** Field host, or the living garrison addressed as `garrison:{holdId}`. */
+export function resolveSelectableArmy(
+  armies: Army[],
+  holdStates: Record<string, HoldRuntime> | undefined,
+  armyId: string
+): Army | undefined {
+  const field = armies.find((a) => a.id === armyId);
+  if (field) return field;
+  const holdId = holdIdFromGarrisonArmyId(armyId);
+  if (!holdId) return undefined;
+  const hs = holdStates?.[holdId];
+  if (!hs || garrisonHeadcount(hs.garrison) <= 0) return undefined;
+  const faction =
+    hs.garrison.faction === "north" || hs.garrison.faction === "westerlands"
+      ? hs.garrison.faction
+      : hs.controller === "north" || hs.controller === "westerlands"
+        ? hs.controller
+        : null;
+  if (!faction) return undefined;
+  return garrisonAsArmy(holdId, hs, faction);
+}
+
 /** Synthetic army for battle API — garrison behind walls. */
 export function garrisonAsArmy(
   holdId: string,

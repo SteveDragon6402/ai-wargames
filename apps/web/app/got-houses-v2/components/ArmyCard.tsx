@@ -29,6 +29,8 @@ interface Props {
   /** True if this host already received a speech command this turn */
   hadSpeech?: boolean;
   isLocked: boolean;
+  /** Posted on the walls rather than a field host. */
+  onTheWalls?: boolean;
   onClick: (armyId: string, shift: boolean) => void;
 }
 
@@ -39,6 +41,7 @@ export default function ArmyCard({
   stanceOrder,
   hadSpeech,
   isLocked,
+  onTheWalls,
   onClick,
 }: Props) {
   const colors = FACTION_COLORS[army.faction];
@@ -103,6 +106,9 @@ export default function ArmyCard({
         >
           {army.name}
         </span>
+        {onTheWalls && (
+          <span style={orderBadgeStyle("#2a2a1a", "#8a7a4a")}>WALLS</span>
+        )}
         {hadSpeech && (
           <span style={orderBadgeStyle("#2a3a2a", "#6a8a6a")}>SPEECH</span>
         )}

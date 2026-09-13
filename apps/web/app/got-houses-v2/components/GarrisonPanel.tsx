@@ -37,8 +37,8 @@ export default function GarrisonPanel({ state, dispatch }: Props) {
     : null;
   const hs = state.holdStates?.[panel.holdId];
   if (!hs) return null;
-  // Deposit / abandon require a field army; withdraw may form a new host
-  if ((panel.mode === "deposit" || panel.mode === "abandon") && !army) {
+  // Deposit needs a field host. Abandon and withdraw may form a new one.
+  if (panel.mode === "deposit" && !army) {
     return null;
   }
 
@@ -129,8 +129,11 @@ function GarrisonPanelInner({
   function handleConfirm() {
     if (!canConfirm) return;
     if (mode === "abandon") {
-      if (!army) return;
-      dispatch({ type: "ABANDON_HOLD", holdId, armyId: army.id });
+      dispatch({
+        type: "ABANDON_HOLD",
+        holdId,
+        armyId: army?.id ?? `garrison:${holdId}`,
+      });
       return;
     }
     const transfer: GarrisonTransfer = {
@@ -159,8 +162,11 @@ function GarrisonPanelInner({
           <Btn
             label="Confirm abandon"
             onClick={() =>
-              army &&
-              dispatch({ type: "ABANDON_HOLD", holdId, armyId: army.id })
+              dispatch({
+                type: "ABANDON_HOLD",
+                holdId,
+                armyId: army?.id ?? `garrison:${holdId}`,
+              })
             }
             accent
           />

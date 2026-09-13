@@ -97,4 +97,22 @@ describe("validateBattleOutcome", () => {
     assert.notEqual(dropped.holdResult, "dorne");
     assert.ok(dropped.notes.some((n) => n.kind === "corrected_hold_result"));
   });
+
+  it("does not retreat a failed storm — the investor stays camped", () => {
+    const garrison = army({
+      id: "garrison:17",
+      faction: "north",
+      holdId: "17",
+    });
+    const storm = {
+      ...battle([north, garrison], [west], "17"),
+      engagement: "storm" as const,
+      garrisonHoldId: "17",
+    };
+    const failed = validateBattleOutcome(storm, { holdResult: "north" });
+    assert.deepEqual(failed.retreatingArmyIds, []);
+
+    const taken = validateBattleOutcome(storm, { holdResult: "westerlands" });
+    assert.deepEqual(taken.retreatingArmyIds, ["n1"]);
+  });
 });

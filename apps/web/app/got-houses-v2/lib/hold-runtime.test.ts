@@ -6,6 +6,7 @@ import {
   garrisonHeadcount,
   holdSpineColor,
   holdSpineOwner,
+  postedGarrisonCondition,
   recoverNativeGarrisons,
   restoreHomeHousehold,
 } from "./hold-runtime";
@@ -200,6 +201,53 @@ describe("recoverNativeGarrisons", () => {
     );
     assert.equal(next["16"].controller, "north");
     assert.ok(garrisonHeadcount(next["16"].garrison) >= 400);
+  });
+});
+
+describe("postedGarrisonCondition", () => {
+  it("inherits the host's morale when the walls are empty or broken", () => {
+    const cond = postedGarrisonCondition(
+      {
+        morale: "High after the storm",
+        tiredness: "Bloodied but standing",
+        stance: "Pressed to the gates",
+      },
+      {
+        faction: null,
+        units: [],
+        leaders: [],
+        notables: [],
+        morale: "Broken — the walls are lost",
+        tiredness: "Scattered or dead",
+        stance: "None — hold vacant",
+      }
+    );
+    assert.equal(cond.morale, "High after the storm");
+    assert.equal(cond.tiredness, "Bloodied but standing");
+    assert.match(cond.stance, /Pressed to the gates/);
+    assert.match(cond.stance, /holding the keep/);
+  });
+
+  it("keeps a living garrison's own condition when reinforcing", () => {
+    const cond = postedGarrisonCondition(
+      {
+        morale: "Fresh from the road",
+        tiredness: "Rested",
+        stance: "Marching",
+      },
+      {
+        faction: "westerlands",
+        units: [{ house: "Lannister", type: "infantry", count: 200 }],
+        leaders: [],
+        notables: [],
+        morale: "Thin but holding",
+        tiredness: "Tired",
+        stance: "Manning the walls",
+      }
+    );
+    assert.equal(cond.morale, "Thin but holding");
+    assert.equal(cond.tiredness, "Tired");
+    assert.equal(cond.stance, "Manning the walls");
   });
 });
 

@@ -90,6 +90,31 @@ export const DEFAULT_GARRISON_MORALE = "Steady behind the walls";
 export const DEFAULT_GARRISON_TIREDNESS = "Rested on garrison duty";
 export const DEFAULT_GARRISON_STANCE = "Holding the keep";
 
+/**
+ * Men posted onto empty or broken walls take the host's condition, not the
+ * fallen city's. A living garrison they are reinforcing keeps its own.
+ */
+export function postedGarrisonCondition(
+  host: { morale: string; tiredness: string; stance: string },
+  prior: HoldGarrison
+): Pick<HoldGarrison, "morale" | "tiredness" | "stance"> {
+  if (garrisonHeadcount(prior) > 0) {
+    return {
+      morale: prior.morale,
+      tiredness: prior.tiredness,
+      stance: prior.stance,
+    };
+  }
+  const stance = host.stance.trim();
+  return {
+    morale: host.morale,
+    tiredness: host.tiredness,
+    stance: stance
+      ? `${stance.replace(/[.\s]+$/, "")} — now holding the keep`
+      : DEFAULT_GARRISON_STANCE,
+  };
+}
+
 export function buildDefaultGarrison(
   holdId: string,
   faction: Faction | "hostile",

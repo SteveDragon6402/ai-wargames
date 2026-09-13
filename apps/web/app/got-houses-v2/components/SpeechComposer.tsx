@@ -20,9 +20,11 @@ export default function SpeechComposer({ army, state, dispatch }: Props) {
   const inPlanning = state.phase === "planning";
   if (!inPlanning) return null;
 
-  const commander = Object.values(state.characters).find(
-    (c) => c.kind === "npc" && c.alive && c.armyId === army.id && c.role === "commander"
-  );
+  const commander = Object.values(state.characters).find((c) => {
+    if (c.kind !== "npc" || !c.alive || c.role !== "commander") return false;
+    if (c.armyId === army.id) return true;
+    return !c.armyId && c.holdId === army.holdId;
+  });
 
   async function deliver() {
     if (already || busy) return;

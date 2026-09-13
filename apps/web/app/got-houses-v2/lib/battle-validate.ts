@@ -373,9 +373,23 @@ function validateOutcome(
   }
 
   // Synthetic garrison armies never retreat — they hold or they die.
+  let retreatingArmyIds = expected.filter((id) => !id.startsWith("garrison:"));
+  // A failed storm leaves the investor in camp. The walls held; nobody yields the tile.
+  if ((battle.engagement ?? "field") === "storm") {
+    const garrisonOnNorth = battle.northArmies.some((a) =>
+      a.id.startsWith("garrison:")
+    );
+    const garrisonOnWest = battle.westArmies.some((a) =>
+      a.id.startsWith("garrison:")
+    );
+    const taken =
+      (garrisonOnNorth && holdResult === "westerlands") ||
+      (garrisonOnWest && holdResult === "north");
+    if (!taken) retreatingArmyIds = [];
+  }
   return {
     holdResult,
-    retreatingArmyIds: expected.filter((id) => !id.startsWith("garrison:")),
+    retreatingArmyIds,
   };
 }
 

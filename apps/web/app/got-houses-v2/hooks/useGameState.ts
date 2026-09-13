@@ -49,6 +49,7 @@ import {
   isFriendlyTo,
   mergeUnits,
   normalizeGarrison,
+  postedGarrisonCondition,
   recoverNativeGarrisons,
   refillToDefault,
   subtractUnits,
@@ -64,6 +65,7 @@ import {
   minimumHoldingGarrison,
   reconcilePledges,
   reconcileSieges,
+  resolveSelectableArmy,
   tickSieges,
 } from "../lib/siege";
 import {
@@ -581,6 +583,37 @@ function applyFallen(armies: Army[], fallen: FallenFigure[]): Army[] {
 }
 
 /**
+ * After a battle, who must leave the tile.
+ *
+ * A failed storm is not a lost field. The investor is beaten off the walls
+ * and stays in camp; the siege continues. Only forcing the gates drives the
+ * other side away.
+ */
+export function retreatingArmyIdsForReport(
+  battle: BattleContext,
+  holdResult: "north" | "westerlands" | "abandoned"
+): string[] {
+  const northIds = battle.northArmies.map((a) => a.id);
+  const westIds = battle.westArmies.map((a) => a.id);
+  const retreating = (
+    holdResult === "north"
+      ? westIds
+      : holdResult === "westerlands"
+        ? northIds
+        : [...northIds, ...westIds]
+  ).filter((id) => !isGarrisonArmyId(id));
+
+  if ((battle.engagement ?? "field") !== "storm") return retreating;
+
+  const garrisonOnNorth = battle.northArmies.some((a) => isGarrisonArmyId(a.id));
+  const garrisonOnWest = battle.westArmies.some((a) => isGarrisonArmyId(a.id));
+  const taken =
+    (garrisonOnNorth && holdResult === "westerlands") ||
+    (garrisonOnWest && holdResult === "north");
+  return taken ? retreating : [];
+}
+
+/**
  * Build retreat entries. Filters out:
  *  1. The last hold the enemy army came from (lastHoldId)
  *  2. Any hold currently occupied by an enemy army
@@ -666,9 +699,14 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case "SELECT_ARMY": {
-      const armyFaction = state.armies.find((a) => a.id === action.armyId)?.faction;
-      if (!state.adminMode && armyFaction !== state.activeFaction) return state;
-      if (armyFaction && getFactionOrders(state, armyFaction).submitted) return state;
+      const army = resolveSelectableArmy(
+        state.armies,
+        state.holdStates,
+        action.armyId
+      );
+      if (!army) return state;
+      if (!state.adminMode && army.faction !== state.activeFaction) return state;
+      if (getFactionOrders(state, army.faction).submitted) return state;
 
       let next: string[];
       if (action.shift) {
@@ -678,11 +716,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       } else {
         next = [action.armyId];
       }
-      const army = state.armies.find((a) => a.id === action.armyId);
       return {
         ...state,
         selectedArmyIds: next,
-        selectedHoldId: army?.holdId ?? state.selectedHoldId,
+        selectedHoldId: army.holdId ?? state.selectedHoldId,
         moveMode: { active: false, validTargets: [] },
         talkPickerOpen: false,
       };
@@ -773,7 +810,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case "SET_STANCE_ORDER": {
-      const army = state.armies.find((a) => a.id === action.armyId);
+      const army = resolveSelectableArmy(
+        state.armies,
+        state.holdStates,
+        action.armyId
+      );
       if (!army) return state;
 
       const faction = army.faction;
@@ -977,7 +1018,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         phase: "resolving",
         armies: updatedArmies,
         characters: castellanSync.characters,
-        holdStates: castellanSync.holdStates,
+        holdStates: applyGarrisonStanceOrders(
+          castellanSync.holdStates,
+          state.north.stanceOrders,
+          state.westerlands.stanceOrders
+        ),
         north: {
           orders: [],
           stanceOrders: {},
@@ -1081,21 +1126,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         const battle = state.pendingBattles.find((b) => b.holdId === report.holdId);
         if (!battle) return report;
 
-        const northIds = battle.northArmies.map((a) => a.id);
-        const westIds = battle.westArmies.map((a) => a.id);
-        let retreating = [...report.retreatingArmyIds];
-
-        if (report.holdResult === "north") {
-          for (const id of westIds) if (!retreating.includes(id)) retreating.push(id);
-          retreating = retreating.filter((id) => !northIds.includes(id));
-        } else if (report.holdResult === "westerlands") {
-          for (const id of northIds) if (!retreating.includes(id)) retreating.push(id);
-          retreating = retreating.filter((id) => !westIds.includes(id));
-        } else {
-          retreating = [...northIds, ...westIds];
-        }
-        retreating = retreating.filter((id) => !isGarrisonArmyId(id));
-        return { ...report, retreatingArmyIds: retreating };
+        return {
+          ...report,
+          retreatingArmyIds: retreatingArmyIdsForReport(battle, report.holdResult),
+        };
       });
 
       const allConditionUpdates = correctedReports.flatMap((r) => r.conditionUpdates ?? []);
@@ -1908,8 +1942,25 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case "UPDATE_TIREDNESS": {
+      const holdStates = { ...(state.holdStates ?? {}) };
+      for (const update of action.updates) {
+        const holdId = holdIdFromGarrisonArmyId(update.armyId);
+        if (!holdId) continue;
+        const hs = holdStates[holdId];
+        if (!hs || garrisonHeadcount(hs.garrison) <= 0) continue;
+        holdStates[holdId] = {
+          ...hs,
+          garrison: {
+            ...hs.garrison,
+            tiredness: update.tiredness,
+            ...(update.morale ? { morale: update.morale } : {}),
+            ...(update.stance ? { stance: update.stance } : {}),
+          },
+        };
+      }
       return {
         ...state,
+        holdStates,
         armies: state.armies.map((army) => {
           const update = action.updates.find((u) => u.armyId === army.id);
           if (!update) return army;
@@ -2067,20 +2118,45 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case "APPLY_SPEECH": {
       const { armyId, speech, reaction, condition, impliedOrder, commanderPatch } =
         action;
-      const army = state.armies.find((a) => a.id === armyId);
+      const army = resolveSelectableArmy(
+        state.armies,
+        state.holdStates,
+        armyId
+      );
       const faction = army?.faction;
       if (!faction || !army) return state;
 
-      const armies = state.armies.map((a) =>
-        a.id === armyId
-          ? {
-              ...a,
-              morale: condition.morale,
-              tiredness: condition.tiredness,
-              ...(condition.stance ? { stance: condition.stance } : {}),
-            }
-          : a
-      );
+      const garrisonHoldId = holdIdFromGarrisonArmyId(armyId);
+      const holdStates = garrisonHoldId
+        ? {
+            ...(state.holdStates ?? {}),
+            [garrisonHoldId]: {
+              ...state.holdStates![garrisonHoldId],
+              skipUpdates: false,
+              garrison: {
+                ...state.holdStates![garrisonHoldId].garrison,
+                morale: condition.morale,
+                tiredness: condition.tiredness,
+                ...(condition.stance
+                  ? { stance: condition.stance }
+                  : {}),
+              },
+            },
+          }
+        : state.holdStates;
+
+      const armies = garrisonHoldId
+        ? state.armies
+        : state.armies.map((a) =>
+            a.id === armyId
+              ? {
+                  ...a,
+                  morale: condition.morale,
+                  tiredness: condition.tiredness,
+                  ...(condition.stance ? { stance: condition.stance } : {}),
+                }
+              : a
+          );
 
       // Clear queued move — speech is what this army is doing this turn
       const clearOrders = (orders: typeof state.north) => ({
@@ -2111,6 +2187,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const base = {
         ...state,
         armies,
+        holdStates,
         north,
         westerlands,
         speechesThisTurn: [...state.speechesThisTurn, armyId],
@@ -2488,6 +2565,38 @@ function gameReducer(state: GameState, action: GameAction): GameState {
   }
 }
 
+function applyGarrisonStanceOrders(
+  holdStates: Record<string, HoldRuntime>,
+  northStance: Record<string, "rest" | "fortify">,
+  westStance: Record<string, "rest" | "fortify">
+): Record<string, HoldRuntime> {
+  const next = { ...holdStates };
+  for (const [id, order] of [
+    ...Object.entries(northStance),
+    ...Object.entries(westStance),
+  ]) {
+    const holdId = holdIdFromGarrisonArmyId(id);
+    if (!holdId) continue;
+    const hs = next[holdId];
+    if (!hs || garrisonHeadcount(hs.garrison) <= 0) continue;
+    const g = normalizeGarrison(hs.garrison);
+    next[holdId] = {
+      ...hs,
+      skipUpdates: false,
+      garrison: {
+        ...g,
+        tiredness:
+          order === "rest" ? "Resting on garrison duty" : g.tiredness,
+        stance:
+          order === "fortify"
+            ? "Strengthening the works"
+            : "At ease behind the walls",
+      },
+    };
+  }
+  return next;
+}
+
 function applyGarrisonConditionUpdates(
   state: GameState,
   updates: GarrisonConditionUpdate[]
@@ -2566,12 +2675,16 @@ function applyGarrisonTransfer(
       transfer.notableNames.includes(n.name)
     );
 
+    const posted = postedGarrisonCondition(army, hs.garrison);
     garrison = {
       ...garrison,
       faction: army.faction,
       units: mergeUnits(garrison.units, transfer.units),
       leaders: [...garrison.leaders, ...peeledLeaders],
       notables: [...(garrison.notables ?? []), ...peeledNotables],
+      morale: posted.morale,
+      tiredness: posted.tiredness,
+      stance: posted.stance,
     };
 
     // Claim or reinforce. There is deliberately no "liberate a defended seat"
@@ -2597,9 +2710,9 @@ function applyGarrisonTransfer(
           units: transfer.units.map((u) => ({ ...u })),
           leaders: peeledLeaders,
           notables: peeledNotables,
-          morale: army.morale,
-          tiredness: army.tiredness,
-          stance: "Holding the keep",
+          morale: posted.morale,
+          tiredness: posted.tiredness,
+          stance: posted.stance,
         }),
         siege: null,
         supplies: "Claimed and manned.",
@@ -2690,7 +2803,9 @@ function applyGarrisonTransfer(
       garrisonPanel: null,
       selectedArmyIds: armies.some((a) => a.id === army.id)
         ? [army.id]
-        : [],
+        : garrisonHeadcount(settled.holdStates[transfer.holdId]?.garrison) > 0
+          ? [garrisonArmyId(transfer.holdId)]
+          : [],
       factionEvents: [...state.factionEvents, ...events, ...settled.events].slice(-400),
     };
   }
@@ -2829,21 +2944,59 @@ function applyAbandonHold(
 ): GameState {
   const seed = getCastleSeed(holdId);
   if (!isGarrisonable(seed)) return state;
-  const army = state.armies.find((a) => a.id === armyId);
-  if (!army || army.holdId !== holdId) return state;
   const hs = state.holdStates?.[holdId];
   if (!hs) return state;
+
+  const fromWalls = isGarrisonArmyId(armyId);
+  const army = fromWalls
+    ? null
+    : state.armies.find((a) => a.id === armyId);
+  if (!fromWalls && (!army || army.holdId !== holdId)) return state;
+
+  const faction: Faction | null =
+    army?.faction ??
+    (hs.controller === "north" || hs.controller === "westerlands"
+      ? hs.controller
+      : hs.garrison.faction === "north" || hs.garrison.faction === "westerlands"
+        ? hs.garrison.faction
+        : null);
+  if (!faction) return state;
   // Only non-home occupier may fully abandon
-  if (hs.controller !== army.faction) return state;
-  if (hs.homeFaction === army.faction) return state;
+  if (hs.controller !== faction) return state;
+  if (hs.homeFaction === faction) return state;
 
   const men = garrisonHeadcount(hs.garrison);
-  const updatedArmy: Army = {
-    ...army,
-    units: mergeUnits(army.units, hs.garrison.units),
-    leaders: [...army.leaders, ...hs.garrison.leaders],
-    notables: [...(army.notables ?? []), ...(hs.garrison.notables ?? [])],
-  };
+  const host: Army = army
+    ? {
+        ...army,
+        units: mergeUnits(army.units, hs.garrison.units),
+        leaders: [...army.leaders, ...hs.garrison.leaders],
+        notables: [...(army.notables ?? []), ...(hs.garrison.notables ?? [])],
+      }
+    : {
+        id: crypto.randomUUID(),
+        name: armyNameForCommander(
+          hs.garrison.leaders[0]?.name ?? null,
+          hs.garrison.units,
+          faction
+        ),
+        holdId,
+        faction,
+        units: hs.garrison.units.map((u) => ({ ...u })),
+        leaders: [...hs.garrison.leaders],
+        notables: [...(hs.garrison.notables ?? [])],
+        morale: hs.garrison.morale,
+        tiredness: hs.garrison.tiredness,
+        stance: "Forming outside the gates",
+        activity: {
+          turnsResting: 0,
+          turnsFortiying: 0,
+          turnsMarching: 0,
+          turnsSinceMerge: null,
+          turnsSinceSplit: 0,
+        },
+        movesSinceRest: 0,
+      };
 
   let characters = { ...state.characters };
   for (const fig of [...hs.garrison.leaders, ...(hs.garrison.notables ?? [])]) {
@@ -2853,7 +3006,7 @@ function applyAbandonHold(
     if (!c) continue;
     characters[cid] = {
       ...c,
-      armyId: army.id,
+      armyId: host.id,
       ...(c.kind === "npc" ? { holdId: null } : {}),
     };
   }
@@ -2888,20 +3041,25 @@ function applyAbandonHold(
   const event: FactionEvent = {
     id: `ev-abandon-${holdId}-${Date.now()}`,
     turn: state.turn,
-    faction: army.faction,
+    faction,
     kind: "abandon",
     holdIds: [holdId],
-    armyId: army.id,
+    armyId: host.id,
     summary: `Abandoned ${holdName}`,
-    detail: `${army.name} abandoned ${holdName} (${men} men withdrawn); home refilled to default.`,
+    detail: `${host.name} abandoned ${holdName} (${men} men withdrawn); home refilled to default.`,
   };
+
+  const armies = army
+    ? state.armies.map((a) => (a.id === army.id ? host : a))
+    : [...state.armies, host];
 
   return {
     ...state,
-    armies: state.armies.map((a) => (a.id === armyId ? updatedArmy : a)),
+    armies,
     characters,
     holdStates: { ...state.holdStates, [holdId]: nextHs },
     garrisonPanel: null,
+    selectedArmyIds: [host.id],
     factionEvents: [...state.factionEvents, event].slice(-400),
   };
 }

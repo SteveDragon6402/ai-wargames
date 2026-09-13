@@ -1,6 +1,10 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { applyCasualties, buildRetreats } from "./useGameState";
+import {
+  applyCasualties,
+  buildRetreats,
+  retreatingArmyIdsForReport,
+} from "./useGameState";
 import { army, battle } from "../lib/test-helpers";
 
 describe("applyCasualties", () => {
@@ -102,5 +106,43 @@ describe("buildRetreats", () => {
       [battle([north], [westA], "03")]
     );
     assert.equal(retreats[0].validTargets.length, 0);
+  });
+});
+
+describe("retreatingArmyIdsForReport", () => {
+  const north = army({ id: "n1", faction: "north", holdId: "17" });
+  const west = army({ id: "w1", faction: "westerlands", holdId: "17" });
+  const garrison = army({
+    id: "garrison:17",
+    faction: "north",
+    holdId: "17",
+  });
+
+  it("does not drive a failed storm off the tile", () => {
+    const ctx = {
+      ...battle([north, garrison], [west], "17"),
+      engagement: "storm" as const,
+      garrisonHoldId: "17",
+    };
+    assert.deepEqual(retreatingArmyIdsForReport(ctx, "north"), []);
+    assert.deepEqual(retreatingArmyIdsForReport(ctx, "abandoned"), []);
+  });
+
+  it("still sends the defender's field host away when the gates are forced", () => {
+    const relief = army({ id: "n2", faction: "north", holdId: "17" });
+    const ctx = {
+      ...battle([north, garrison, relief], [west], "17"),
+      engagement: "storm" as const,
+      garrisonHoldId: "17",
+    };
+    assert.deepEqual(retreatingArmyIdsForReport(ctx, "westerlands"), [
+      "n1",
+      "n2",
+    ]);
+  });
+
+  it("still forces a field defeat off the tile", () => {
+    const ctx = battle([north], [west], "17");
+    assert.deepEqual(retreatingArmyIdsForReport(ctx, "westerlands"), ["n1"]);
   });
 });

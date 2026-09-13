@@ -55,15 +55,29 @@ export function buildFallbackReport(
     ? ` The ground told against nobody in particular — ${hold.ground.split(";")[0].trim()}.`
     : "";
 
-  const retreatingArmyIds = (
-    holdResult === "north"
-      ? battle.westArmies
-      : holdResult === "westerlands"
-        ? battle.northArmies
-        : [...battle.northArmies, ...battle.westArmies]
-  )
-    .map((a) => a.id)
-    .filter((id) => !id.startsWith("garrison:"));
+  const garrisonOnNorth = battle.northArmies.some((a) =>
+    a.id.startsWith("garrison:")
+  );
+  const garrisonOnWest = battle.westArmies.some((a) =>
+    a.id.startsWith("garrison:")
+  );
+  const stormHeld =
+    (battle.engagement ?? "field") === "storm" &&
+    !(
+      (garrisonOnNorth && holdResult === "westerlands") ||
+      (garrisonOnWest && holdResult === "north")
+    );
+  const retreatingArmyIds = stormHeld
+    ? []
+    : (
+        holdResult === "north"
+          ? battle.westArmies
+          : holdResult === "westerlands"
+            ? battle.northArmies
+            : [...battle.northArmies, ...battle.westArmies]
+      )
+        .map((a) => a.id)
+        .filter((id) => !id.startsWith("garrison:"));
 
   return {
     defeatType: battle.lastStand ? "last_stand" : "structured_withdrawal",
