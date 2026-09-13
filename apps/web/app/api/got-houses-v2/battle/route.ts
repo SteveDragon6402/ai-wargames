@@ -141,7 +141,9 @@ function armyBlock(
 
     const approach = battle.armyApproaches?.[army.id];
     const approachLine = approach
-      ? `Approach: marched from ${approach.fromHoldName} — ${approach.route}`
+      ? `Approach: marched from ${approach.fromHoldName} — ${approach.route}${
+          approach.forage ? `\n    Forage on the road: ${approach.forage}` : ""
+        }`
       : "Approach: already present at this hold (defending / held position)";
 
   const regionFit = hold ? regionSoftFor(hold.region, army.faction) : "Unknown country";
@@ -192,6 +194,9 @@ function buildChroniclerMessage(
     (hold
       ? `${hold.name} (${hold.region} — seat of House ${hold.house}, held by ${hold.lord})`
       : `Hold ${battle.holdId}`);
+  const forageLine = battle.forage
+    ? `\nForage at the field: ${battle.forage}`
+    : "";
   const trait = hold ? regionTrait(hold.region) : null;
 
   const lastStandNote = battle.lastStand
@@ -239,7 +244,7 @@ function buildChroniclerMessage(
       : "";
 
   return `BATTLE LOCATION: ${locationLine}
-Hold ground: ${hold?.ground ?? "unknown"}
+Hold ground: ${hold?.ground ?? "unknown"}${forageLine}
 ${trait ? `Region — ${trait.name}: ${trait.fightSoft}` : ""}
 
 FORCE SUMMARY (computed exactly — do not recalculate):

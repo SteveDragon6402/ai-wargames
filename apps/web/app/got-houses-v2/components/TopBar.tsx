@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import type { GameState, GameAction, Faction } from "../types";
+import { victoryProgress, VICTORY_TURN_LIMIT, WEST_RIVERLANDS_NEEDED, NORTH_PRIZE_HOLD_TURNS } from "../lib/victory";
 
 interface Props {
   state: GameState;
@@ -28,6 +30,8 @@ const FACTION_COLORS: Record<Faction, { bg: string; border: string; text: string
 export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
   const { turn, north, westerlands, adminMode, activeFaction, phase } = state;
   const inPlanningPhase = phase === "planning";
+  const [endsOpen, setEndsOpen] = useState(false);
+  const progress = victoryProgress(state);
 
   const northSubmitted = north.submitted;
   const westSubmitted = westerlands.submitted;
@@ -112,7 +116,7 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
             letterSpacing: "0.1em",
           }}
         >
-          Turn {turn}
+          Turn {turn} / {VICTORY_TURN_LIMIT}
         </span>
       </div>
 
@@ -278,6 +282,68 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
             : ""}
         </button>
       )}
+
+      <div style={{ position: "relative", marginLeft: 8 }}>
+        <button
+          type="button"
+          onClick={() => setEndsOpen((v) => !v)}
+          style={{
+            fontFamily: "var(--font-mono), monospace",
+            fontSize: 9,
+            color: state.outcome || endsOpen ? "#c8941a" : "#555",
+            background: state.outcome || endsOpen ? "#1a1200" : "transparent",
+            border: `1px solid ${state.outcome || endsOpen ? "#3a2a00" : "#222"}`,
+            padding: "4px 10px",
+            cursor: "pointer",
+            textTransform: "uppercase",
+            letterSpacing: "0.1em",
+          }}
+        >
+          Ends
+        </button>
+        {endsOpen && (
+          <div
+            style={{
+              position: "absolute",
+              top: "calc(100% + 8px)",
+              right: 0,
+              width: 320,
+              zIndex: 50,
+              background: "#0c0c0c",
+              border: "1px solid #2a2a2a",
+              padding: "12px 14px",
+              fontFamily: "var(--font-mono), monospace",
+              fontSize: 10,
+              color: "#888",
+              lineHeight: 1.55,
+            }}
+          >
+            <div style={{ color: "#c8941a", letterSpacing: "0.14em", textTransform: "uppercase", fontSize: 8, marginBottom: 8 }}>
+              How the war ends
+            </div>
+            <div>Robb wins on turn {VICTORY_TURN_LIMIT} if the war is still open. Now turn {progress.turn}.</div>
+            <div style={{ marginTop: 6 }}>
+              Robb wins if he takes King&apos;s Landing or Casterly Rock and holds it {NORTH_PRIZE_HOLD_TURNS} turns.
+              {progress.northPrize
+                ? ` Holding ${progress.northPrize.name} (${progress.northPrize.turnsHeld}/${NORTH_PRIZE_HOLD_TURNS}).`
+                : " Neither seat is his yet."}
+            </div>
+            <div style={{ marginTop: 6 }}>
+              Tywin wins if he holds {WEST_RIVERLANDS_NEEDED} riverland seats including Riverrun and the Twins.
+              {" "}
+              {progress.westRiverlands.count}/{WEST_RIVERLANDS_NEEDED}
+              {progress.westRiverlands.hasRiverrun ? " · Riverrun" : " · no Riverrun"}
+              {progress.westRiverlands.hasTwins ? " · Twins" : " · no Twins"}.
+            </div>
+            <div style={{ marginTop: 6 }}>
+              If one side has no army left, the other wins. North {progress.northMen.toLocaleString()} · West {progress.westMen.toLocaleString()}.
+            </div>
+            <div style={{ marginTop: 6 }}>
+              If Robb dies, Tywin wins. {progress.robbAlive ? "Robb lives." : "Robb is dead."}
+            </div>
+          </div>
+        )}
+      </div>
 
       {/* Battle Log toggle */}
         <button

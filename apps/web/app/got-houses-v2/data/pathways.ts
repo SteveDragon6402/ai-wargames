@@ -235,7 +235,7 @@ export const PATHWAYS: Pathway[] = [
   },
 ];
 
-function pathwayKey(a: string, b: string): string {
+export function pathwayKey(a: string, b: string): string {
   return [a, b].sort().join("|");
 }
 

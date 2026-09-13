@@ -11,7 +11,12 @@ export type Faction = "north" | "westerlands";
 
 export type UnitType = "cavalry" | "infantry" | "archers";
 
-export type GamePhase = "planning" | "resolving" | "retreat" | "rename_commanders";
+export type GamePhase =
+  | "planning"
+  | "resolving"
+  | "retreat"
+  | "rename_commanders"
+  | "ended";
 
 export interface Hold {
   id: string;
@@ -30,6 +35,11 @@ export interface Hold {
    * Adjudicator-only — never shown to players.
    */
   ground: string;
+  /**
+   * Natural forage of the country around the seat.
+   * Runtime depletion lives on GameState.forage; this is the seed line.
+   */
+  forage?: string;
 }
 
 /**
@@ -42,6 +52,26 @@ export interface Pathway {
   route: string;
   /** Crossing made by ship rather than road (Blackwater Bay to Dragonstone). */
   sea?: boolean;
+  /** Natural forage along this road or crossing. */
+  forage?: string;
+}
+
+/** 0 = seed line; 4 = stripped bare. */
+export type ForageStep = 0 | 1 | 2 | 3 | 4;
+
+/** Living forage at one hold or pathway. */
+export interface ForageSpot {
+  /** Seed sentence — the country as it was. */
+  base: string;
+  /** How many graze steps have been taken. Hidden — only `line` is shown. */
+  step: ForageStep;
+  /** Current one-liner. */
+  line: string;
+}
+
+export interface ForageState {
+  holds: Record<string, ForageSpot>;
+  paths: Record<string, ForageSpot>;
 }
 
 /** How an army arrived at a battle hold this turn (if it marched in). */
@@ -49,6 +79,7 @@ export interface ArmyApproach {
   fromHoldId: string;
   fromHoldName: string;
   route: string;
+  forage?: string;
 }
 
 export interface ArmyUnit {
@@ -410,6 +441,8 @@ export interface BattleContext {
   combinedAssault?: boolean;
   /** Who holds the seat right now — not the house that built it. */
   seatLine?: string;
+  /** Living forage around the field this turn. */
+  forage?: string;
 }
 
 export interface RetreatEntry {
@@ -454,6 +487,10 @@ export interface TirednessArmyContext {
   holdName: string;
   /** Soft ground at the army's current hold — adjudicator only */
   holdGround: string;
+  /** Living forage at the army's current hold */
+  holdForage?: string;
+  /** Living forage along the road just marched, if any */
+  marchForage?: string;
   /** Soft homeland character for this army's faction — adjudicator only */
   homeland: string;
   /** Soft region character for marching here — adjudicator only */
@@ -468,6 +505,7 @@ export interface TirednessArmyContext {
     fromHoldName: string;
     toHoldName: string;
     route: string;
+    forage?: string;
   };
   /** Full activity history — fed verbatim to AI */
   activity: ArmyActivity;
@@ -691,6 +729,26 @@ export interface CapturePledge {
   cause: "storm" | "walk_in" | "surrender";
 }
 
+export type VictoryReason =
+  | "time"
+  | "kings_landing"
+  | "casterly_rock"
+  | "riverlands"
+  | "army_destroyed"
+  | "robb_dead";
+
+export interface GameOutcome {
+  winner: Faction;
+  reason: VictoryReason;
+  text: string;
+}
+
+/** How long the North has held King's Landing or Casterly Rock. */
+export interface NorthPrizeStreak {
+  holdId: string;
+  turnsHeld: number;
+}
+
 /* ── Game state ───────────────────────────────────────────────── */
 
 export interface GameState {
@@ -749,6 +807,8 @@ export interface GameState {
   adviceLog: AdviceRecord[];
   /** Per-hold castle/ruin runtime (controller, garrison, siege) */
   holdStates: Record<string, HoldRuntime>;
+  /** Living forage at seats and on the roads between them. */
+  forage?: ForageState;
   /** Garrison peel panel (null = closed) */
   garrisonPanel: GarrisonPanelState | null;
   /**
@@ -756,6 +816,10 @@ export interface GameState {
    * Their hosts paint red on the map.
    */
   turnedHouses?: string[];
+  /** Set when the war is over. */
+  outcome?: GameOutcome | null;
+  /** Consecutive resolved turns the North has held KL or the Rock. */
+  northPrize?: NorthPrizeStreak | null;
 }
 
 export type GameAction =

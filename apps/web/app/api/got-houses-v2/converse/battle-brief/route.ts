@@ -10,6 +10,7 @@ import type {
   CommanderBrief,
   ConversationThread,
   FactionEvent,
+  ForageState,
   HoldRuntime,
   NpcAgentState,
   NpcRuntimePatch,
@@ -35,6 +36,7 @@ interface BriefBody {
   conversations: ConversationThread[];
   commanderIds: CharacterId[];
   holdStates?: Record<string, HoldRuntime>;
+  forage?: ForageState;
   factionEvents?: FactionEvent[];
   adviceLog?: AdviceRecord[];
 }
@@ -95,6 +97,7 @@ ${role === "notable" ? "You do not command this host. Your judgment is counsel a
         battleReports: body.battleReports,
         conversations: body.conversations,
         holdStates: body.holdStates,
+        forage: body.forage,
         factionEvents: body.factionEvents,
         adviceLog: body.adviceLog,
         battleJudgment: null,
@@ -106,6 +109,7 @@ ${role === "notable" ? "You do not command this host. Your judgment is counsel a
         system,
         userMessage: `Battle at ${hold?.name ?? body.battle.holdId}.
 Ground: ${hold?.ground ?? "unknown"}
+Forage: ${body.battle.forage ?? "unknown"}
 Private mood: ${(c as NpcAgentState).mood}
 You ride with: ${army.name} [id ${armyId}], House ${house}.
 ${fog.ownSide}

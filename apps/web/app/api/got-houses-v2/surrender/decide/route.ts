@@ -8,6 +8,7 @@ import type {
   CharacterState,
   ConversationThread,
   FactionEvent,
+  ForageState,
   HoldRuntime,
 } from "@/app/got-houses-v2/types";
 import {
@@ -31,6 +32,7 @@ interface DecideBody {
   battleReports: BattleReport[];
   conversations: ConversationThread[];
   holdStates: Record<string, HoldRuntime>;
+  forage?: ForageState;
   factionEvents?: FactionEvent[];
   adviceLog?: AdviceRecord[];
   turn: number;
@@ -133,6 +135,7 @@ async function decideForHold(
     factionEvents: body.factionEvents,
     adviceLog: body.adviceLog,
     holdStates: body.holdStates,
+    forage: body.forage,
     surrender,
   };
 

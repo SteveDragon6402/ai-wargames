@@ -27,6 +27,7 @@ import type {
   GarrisonConditionUpdate,
   CapturePledge,
   FactionOrders,
+  ForageState,
   UnitType,
 } from "../types";
 import { INITIAL_GAME_STATE } from "../data/initial-state";
@@ -81,7 +82,15 @@ import {
   yieldHold,
 } from "../lib/surrender";
 import { describeSeat, retreatCountryKind } from "../lib/travel";
+import {
+  applyArmyForage,
+  forageAtHold,
+  forageCampsFromArmies,
+  forageMovesFromOrders,
+  forageOnPath,
+} from "../lib/forage";
 import { deathRipple, mergeRipple } from "../lib/death-ripple";
+import { evaluateVictory, robbDeadOutcome } from "../lib/victory";
 
 /** Appoint lead commander (or clear). Promotes notables into leaders and syncs NPC roles. */
 function appointLeadCommander(
@@ -283,7 +292,14 @@ function advanceToPlanning(
   patch: Partial<GameState>
 ): GameState {
   const newTurn = state.turn + 1;
-  return {
+  const holdStates = lapseExpiredTerms(
+    recoverNativeGarrisons(
+      patch.armies ?? state.armies,
+      (patch.holdStates ?? state.holdStates) ?? {}
+    ),
+    newTurn
+  );
+  const next: GameState = {
     ...state,
     ...patch,
     turn: newTurn,
@@ -294,16 +310,26 @@ function advanceToPlanning(
     ),
     speechesThisTurn: [],
     speechArmyId: null,
-    // Last-stand bookkeeping is per-turn only.
     lastStandHoldIds: [],
-    holdStates: lapseExpiredTerms(
-      recoverNativeGarrisons(
-        patch.armies ?? state.armies,
-        (patch.holdStates ?? state.holdStates) ?? {}
-      ),
-      newTurn
-    ),
+    holdStates,
   };
+  const verdict = evaluateVictory({
+    finishedTurn: state.turn,
+    armies: next.armies,
+    holdStates: next.holdStates,
+    characters: next.characters,
+    northPrize: state.northPrize ?? null,
+  });
+  if (verdict.outcome) {
+    return {
+      ...next,
+      turn: state.turn,
+      phase: "ended",
+      outcome: verdict.outcome,
+      northPrize: verdict.northPrize,
+    };
+  }
+  return { ...next, northPrize: verdict.northPrize, outcome: next.outcome ?? null };
 }
 
 /**
@@ -428,7 +454,8 @@ function detectBattles(
   armies: Army[],
   allOrders: MoveOrder[],
   armyOrdersMap: Record<string, "march" | "rest" | "fortify">,
-  holdStates: Record<string, HoldRuntime>
+  holdStates: Record<string, HoldRuntime>,
+  forage?: ForageState
 ): BattleContext[] {
   const byHold = new Map<string, Army[]>();
   for (const army of armies) {
@@ -459,6 +486,7 @@ function detectBattles(
         fromHoldId: order.fromHoldId,
         fromHoldName: fromHold?.name ?? order.fromHoldId,
         route: getPathwayRoute(order.fromHoldId, order.toHoldId),
+        forage: forageOnPath(forage, order.fromHoldId, order.toHoldId),
       };
     }
 
@@ -473,6 +501,7 @@ function detectBattles(
       engagement: "field",
       wallsStand: garrisonHeadcount(holdStates[holdId]?.garrison) > 0,
       seatLine: describeSeat(HOLDS_MAP.get(holdId), holdStates[holdId]),
+      forage: forageAtHold(forage, holdId),
     });
   }
   return battles;
@@ -844,6 +873,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case "SUBMIT_FACTION": {
+      if (state.phase === "ended" || state.outcome) return state;
       const nextState = setFactionOrders(state, action.faction, { submitted: true });
       // Two-browser rooms defer this: the host adjudicates once both locks
       // are visible, so the guest's local copy cannot resolve a half-board.
@@ -858,6 +888,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case "ADJUDICATE_MOVES": {
+      if (state.phase === "ended" || state.outcome) return state;
       const allOrders: MoveOrder[] = [
         ...state.north.orders,
         ...state.westerlands.orders,
@@ -912,11 +943,19 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         })),
       };
 
+      const forage = applyArmyForage(
+        state.forage,
+        forageMovesFromOrders(allOrders, state.armies),
+        forageCampsFromArmies(state.armies, movedArmyIds),
+        state.turn
+      );
+
       const pendingField = detectBattles(
         updatedArmies,
         allOrders,
         armyOrdersMap,
-        state.holdStates ?? {}
+        state.holdStates ?? {},
+        forage
       );
 
       const stormArmyIds = [
@@ -964,7 +1003,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         armyOrdersMap
       );
 
-      const pendingBattles = siegeBattles;
+      const pendingBattles = siegeBattles.map((b) => ({
+        ...b,
+        forage: b.forage ?? forageAtHold(forage, b.holdId),
+      }));
 
       const orderEvents = eventsFromResolvedOrders(
         state.turn,
@@ -1023,6 +1065,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           state.north.stanceOrders,
           state.westerlands.stanceOrders
         ),
+        forage,
         north: {
           orders: [],
           stanceOrders: {},
@@ -1334,6 +1377,21 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         allConditionUpdates,
         deathRipple(fallenThisFight, state.characters, updatedArmies)
       );
+
+      if (characters["robb-stark"] && !characters["robb-stark"].alive) {
+        return {
+          ...state,
+          phase: "ended",
+          outcome: robbDeadOutcome(),
+          armies: updatedArmies,
+          characters,
+          holdStates,
+          pendingBattles: [],
+          battleReports: [...state.battleReports, ...correctedReports],
+          retreats: [],
+          pendingRenames: [],
+        };
+      }
 
       // Apply post-battle condition updates (morale, tiredness, stance)
       if (rippled.length > 0) {
@@ -1739,12 +1797,20 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         ...retreatCapture.events,
       ].slice(-400);
 
+      const forage = applyArmyForage(
+        state.forage,
+        forageMovesFromOrders(retreatOrders, state.armies),
+        [],
+        state.turn,
+        { recover: false }
+      );
       // Opposing armies that retreated into the same hold fight immediately
       const clashBattles = detectBattles(
         updatedArmies,
         retreatOrders,
         armyOrdersMap,
-        siegeSync.holdStates
+        siegeSync.holdStates,
+        forage
       );
       if (clashBattles.length > 0) {
         return {
@@ -1757,6 +1823,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           retreats: [],
           capturePledges,
           factionEvents,
+          forage,
         };
       }
 
@@ -1771,6 +1838,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         armies: updatedArmies,
         characters: castellanSync.characters,
         holdStates: settled.holdStates,
+        forage,
         retreats: [],
         capturePledges: settled.pledges,
         factionEvents: [...factionEvents, ...settled.events].slice(-400),

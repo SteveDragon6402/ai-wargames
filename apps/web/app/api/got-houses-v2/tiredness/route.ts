@@ -13,6 +13,7 @@ TIREDNESS — physical condition of the troops:
 - 4+ consecutive marches: heavy fatigue, mention exhaustion
 - Cavalry-heavy armies tire faster on the march
 - Hold ground matters: swamp, bare hill country, and storm-lashed coast make rest worse; fertile mild seats and good lodging make rest better
+- Forage matters: if the hold or the road is picked over or stripped bare, the host cannot live off the country — rest recovers little, marches cost more, and hunger shows in tiredness and morale. Plenty to take means a camped host eats well.
 - March route matters: bog causeways, hill passes, river fords, and sea crossings tire more than an easy kingsroad or a well-farmed river lane
 - Region character matters: the four regions treat armies very differently. Read "Region character" and "Region fit" and let them shape the outcome — the vast frozen North grinds down anyone not bred for it, the Riverlands are easy going but string a column out at every crossing, the Westerlands are slow stony hill roads, the Crownlands are short well-roaded marches with almost no attrition
 - Homeland vs country: weigh the army's homeland character against the hold ground, the region and the march route. Northmen recover well in cold and wear down in the close warm south; Westermen know hills and mild west-coast country and struggle most in deep snow or endless fen
@@ -71,6 +72,8 @@ function fallbackTiredness(armies: TirednessRequest["armies"]): TirednessUpdate[
     let morale = army.currentMorale;
     let stance = army.currentStance;
     const climate = climateHarshness(army);
+    const forageText = `${army.holdForage ?? ""} ${army.marchForage ?? army.marchRoute?.forage ?? ""}`.toLowerCase();
+    const forageBare = /stripped bare|nothing left/.test(forageText);
     const hardRoute = army.marchRoute
       ? /swamp|bog|pass|mountain|sea|fever|neck|ford|crossing/.test(
           army.marchRoute.route.toLowerCase()
@@ -82,6 +85,10 @@ function fallbackTiredness(armies: TirednessRequest["armies"]): TirednessUpdate[
         tiredness = "Resting badly in hostile country — no true recovery";
         morale = "Ashamed and jumpy on enemy land";
         stance = "Looking over their shoulders";
+      } else if (forageBare) {
+        tiredness = "Resting hungry — the country has nothing left to give";
+        morale = "Pinched and short-tempered; the forage is gone";
+        stance = "Watching the empty fields";
       } else if (army.territory === "home" && climate !== "harsh") {
         tiredness = climate === "kind"
           ? "Well-rested on familiar ground that suits them"
@@ -106,7 +113,11 @@ function fallbackTiredness(armies: TirednessRequest["armies"]): TirednessUpdate[
         ? "Hardened and entrenched — they know this ground"
         : "Defensive posture taking shape";
     } else {
-      if (army.movesSinceRest >= 4 || (hardRoute && climate === "harsh")) {
+      if (forageBare && army.movesSinceRest >= 2) {
+        tiredness = "Hungry and worn — the road and country have nothing left to take";
+        morale = "Pinched — empty fields make a long march worse";
+        stance = "Alert still, but the men are living on what they carried";
+      } else if (army.movesSinceRest >= 4 || (hardRoute && climate === "harsh")) {
         tiredness = hardRoute
           ? "Exhausted by a brutal road and country that drains them"
           : "Exhausted and footsore from the long march";
@@ -179,12 +190,17 @@ export async function POST(req: NextRequest) {
           : "";
 
         const marchSection = army.marchRoute
-          ? `\nMarch this turn: ${army.marchRoute.fromHoldName} → ${army.marchRoute.toHoldName}\nRoute: ${army.marchRoute.route}`
+          ? `\nMarch this turn: ${army.marchRoute.fromHoldName} → ${army.marchRoute.toHoldName}\nRoute: ${army.marchRoute.route}${
+              army.marchRoute.forage || army.marchForage
+                ? `\nRoad forage: ${army.marchRoute.forage ?? army.marchForage}`
+                : ""
+            }`
           : "\nMarch this turn: none (held position)";
 
         return `Army: ${army.name} [id: "${army.armyId}"]
 Location: ${army.holdName} (${army.territory} territory)
 Hold ground: ${army.holdGround}
+Hold forage: ${army.holdForage ?? "unknown"}
 Region character: ${army.regionMarch}
 Region fit: ${army.regionFit}
 Homeland: ${army.homeland}

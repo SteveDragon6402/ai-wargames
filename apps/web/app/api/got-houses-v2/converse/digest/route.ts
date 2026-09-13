@@ -7,6 +7,7 @@ import type {
   CharacterState,
   Faction,
   FactionEvent,
+  ForageState,
   NpcAgentState,
   NpcRuntimePatch,
 } from "@/app/got-houses-v2/types";
@@ -27,6 +28,7 @@ interface DigestBody {
   armies: Army[];
   factionEvents: FactionEvent[];
   adviceLog: AdviceRecord[];
+  forage?: ForageState;
   /** Optional: limit which factions digest (default both) */
   factions?: Faction[];
 }
@@ -102,6 +104,7 @@ export async function POST(req: NextRequest) {
           turn,
           factionEvents: body.factionEvents,
           adviceLog: body.adviceLog,
+          forage: body.forage,
         };
 
         const result = await runCharacterToolLoop({

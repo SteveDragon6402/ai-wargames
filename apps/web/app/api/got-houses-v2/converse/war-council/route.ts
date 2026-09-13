@@ -8,6 +8,8 @@ import type {
   CharacterState,
   ConversationThread,
   FactionEvent,
+  ForageState,
+  HoldRuntime,
   NpcAgentState,
   NpcRuntimePatch,
 } from "@/app/got-houses-v2/types";
@@ -29,6 +31,8 @@ interface WarCouncilBody {
   turn?: number;
   factionEvents?: FactionEvent[];
   adviceLog?: AdviceRecord[];
+  holdStates?: Record<string, HoldRuntime>;
+  forage?: ForageState;
 }
 
 export async function POST(req: NextRequest) {
@@ -81,6 +85,8 @@ export async function POST(req: NextRequest) {
         inviteFromId: body.thread.inviteFrom,
         factionEvents: body.factionEvents,
         adviceLog: body.adviceLog,
+        holdStates: body.holdStates,
+        forage: body.forage,
       };
 
       // One commander failing must not silence the whole table: each is tried

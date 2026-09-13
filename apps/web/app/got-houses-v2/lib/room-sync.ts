@@ -12,6 +12,8 @@ function phaseRank(phase: GamePhase): number {
       return 2;
     case "rename_commanders":
       return 3;
+    case "ended":
+      return 4;
     default:
       return 0;
   }

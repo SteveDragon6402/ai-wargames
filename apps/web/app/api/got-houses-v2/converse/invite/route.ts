@@ -8,6 +8,7 @@ import type {
   CharacterState,
   ConversationThread,
   FactionEvent,
+  ForageState,
   HoldRuntime,
   InviteMemory,
   NpcAgentState,
@@ -29,6 +30,7 @@ interface InviteBody {
   factionEvents?: FactionEvent[];
   adviceLog?: AdviceRecord[];
   holdStates?: Record<string, HoldRuntime>;
+  forage?: ForageState;
 }
 
 /**
@@ -79,6 +81,7 @@ export async function POST(req: NextRequest) {
       factionEvents: body.factionEvents,
       adviceLog: body.adviceLog,
       holdStates: body.holdStates,
+      forage: body.forage,
     };
 
     const client = new Anthropic({ apiKey });

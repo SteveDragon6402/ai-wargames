@@ -23,6 +23,7 @@ import {
   findNamedGarrisonNegotiator,
   negotiatorLabel,
 } from "../lib/castellan";
+import { forageAtHold, forageOnPath } from "../lib/forage";
 import { openParleyAtHold } from "../lib/converse-client";
 import ArmyCard from "./ArmyCard";
 import SpeechComposer from "./SpeechComposer";
@@ -372,9 +373,27 @@ export default function SidePanel({ state, dispatch }: Props) {
             letterSpacing: "0.1em",
           }}
         >
-          Links: {hold.links.map((id) => HOLDS_MAP.get(id)?.name ?? id).join(", ")}
+          Roads
         </div>
-        {/* Region character — the only terrain signal the player ever sees. */}
+        <div
+          style={{
+            fontFamily: "var(--font-mono), monospace",
+            fontSize: 9,
+            color: "#555",
+            lineHeight: 1.45,
+            marginTop: 3,
+          }}
+        >
+          {hold.links.map((id) => {
+            const name = HOLDS_MAP.get(id)?.name ?? id;
+            return (
+              <div key={id}>
+                {name} — {forageOnPath(state.forage, hold.id, id)}
+              </div>
+            );
+          })}
+        </div>
+        {/* Region character, plus the living forage line. */}
         <div
           style={{
             marginTop: 8,
@@ -403,6 +422,29 @@ export default function SidePanel({ state, dispatch }: Props) {
             }}
           >
             {trait.blurb}
+          </div>
+          <div
+            style={{
+              fontFamily: "var(--font-mono), monospace",
+              fontSize: 8,
+              color: "#555",
+              textTransform: "uppercase",
+              letterSpacing: "0.12em",
+              marginTop: 8,
+              marginBottom: 3,
+            }}
+          >
+            Forage
+          </div>
+          <div
+            style={{
+              fontFamily: "var(--font-mono), monospace",
+              fontSize: 9,
+              color: "#6a6a6a",
+              lineHeight: 1.5,
+            }}
+          >
+            {forageAtHold(state.forage, hold.id)}
           </div>
         </div>
       </div>

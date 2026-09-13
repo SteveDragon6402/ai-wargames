@@ -53,6 +53,7 @@ export function snapshotForApi(state: GameState) {
     factionEvents: state.factionEvents,
     adviceLog: state.adviceLog,
     holdStates: state.holdStates,
+    forage: state.forage,
   };
 }
 

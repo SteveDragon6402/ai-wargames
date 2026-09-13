@@ -8,6 +8,7 @@ import type {
   CharacterState,
   ConversationThread,
   FactionEvent,
+  ForageState,
   HoldRuntime,
   NpcAgentState,
 } from "@/app/got-houses-v2/types";
@@ -34,6 +35,7 @@ interface MessageBody {
   factionEvents?: FactionEvent[];
   adviceLog?: AdviceRecord[];
   holdStates?: Record<string, HoldRuntime>;
+  forage?: ForageState;
 }
 
 export async function POST(req: NextRequest) {
@@ -109,6 +111,7 @@ export async function POST(req: NextRequest) {
       factionEvents: body.factionEvents,
       adviceLog: body.adviceLog,
       holdStates: body.holdStates,
+      forage: body.forage,
       surrender: surrenderCtx,
     };
 

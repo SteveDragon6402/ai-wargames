@@ -7,6 +7,7 @@ import type {
   CharacterState,
   ConversationThread,
   FactionEvent,
+  ForageState,
   Hold,
   HoldRuntime,
   NpcAgentState,
@@ -23,6 +24,7 @@ import {
 import { HOLDS, HOLDS_MAP } from "../data/holds";
 import { getCastleSeed } from "../data/castles";
 import { searchAdvice, searchFactionEvents } from "./faction-events";
+import { forageAtHold, forageOnPath } from "./forage";
 import { garrisonHeadcount } from "./hold-runtime";
 import { describeSeat, turnsBetween } from "./travel";
 
@@ -42,6 +44,8 @@ export interface CharacterToolContext {
   adviceLog?: AdviceRecord[];
   /** Castle garrison / siege runtime */
   holdStates?: Record<string, HoldRuntime>;
+  /** Living forage at seats and on the roads */
+  forage?: ForageState;
   /**
    * Set when this NPC is being asked to answer for a besieged seat. Carries the
    * terms on the table plus a soft read of the position, and collects whatever
@@ -554,7 +558,7 @@ export const CHARACTER_TOOL_DEFS: Anthropic.Messages.Tool[] = [
   {
     name: "inspect_hold",
     description:
-      "Look closely at one hold: seat, region, neighbours, field hosts, garrison, stores, food days, and siege if any.",
+      "Look closely at one hold: seat, region, neighbours, forage, field hosts, garrison, stores, food days, and siege if any.",
     input_schema: {
       type: "object",
       properties: {
@@ -859,7 +863,7 @@ export function executeCharacterTool(
           hs.controller !== hs.homeFaction
             ? ` — occupied, not House ${h.house}`
             : "";
-        return `${h.name} (${h.region}, built by House ${h.house}, ${who}${occupied}) — 1 turn to: ${links}`;
+        return `${h.name} (${h.region}, built by House ${h.house}, ${who}${occupied}) — forage: ${forageAtHold(ctx.forage, h.id)} — 1 turn to: ${links}`;
       });
       return { result: lines.join("\n") };
     }
@@ -868,9 +872,12 @@ export function executeCharacterTool(
       const hold = findHoldByName(String(input.holdName ?? ""));
       if (!hold) return { result: "No such hold that you know." };
       const here = ctx.armies.filter((a) => a.holdId === hold.id);
-      const links = hold.links
-        .map((id) => HOLDS_MAP.get(id)?.name ?? id)
-        .join(", ");
+      const roads = hold.links
+        .map((id) => {
+          const name = HOLDS_MAP.get(id)?.name ?? id;
+          return `${name} — ${forageOnPath(ctx.forage, hold.id, id)}`;
+        })
+        .join("\n");
       const forces =
         here.length === 0
           ? "No known hosts camped here."
@@ -879,8 +886,10 @@ export function executeCharacterTool(
       const castle = formatCastleBlock(hold.id, hs);
       return {
         result: `${describeSeat(hold, hs)}
-Neighbours (1 turn each): ${links}
 Ground: ${hold.ground}
+Forage: ${forageAtHold(ctx.forage, hold.id)}
+Roads (1 turn each):
+${roads}
 Forces present:
 ${forces}
 ${castle}`,
@@ -942,7 +951,8 @@ ${castle}`,
       const hold = HOLDS_MAP.get(holdId);
       const hs = ctx.holdStates?.[holdId];
       return {
-        result: formatCastleBlock(holdId, hs, hold?.name ?? holdId),
+        result: `${formatCastleBlock(holdId, hs, hold?.name ?? holdId)}
+Country forage: ${forageAtHold(ctx.forage, holdId)}`,
       };
     }
 

@@ -1,6 +1,7 @@
 import type { Army, ArmyActivity, GameState } from "../types";
 import { buildInitialCharacters } from "./characters";
 import { buildInitialHoldStates } from "../lib/hold-runtime";
+import { buildInitialForage } from "../lib/forage";
 import { reconcileSieges } from "../lib/siege";
 import { syncCastellansWithSieges } from "../lib/castellan";
 
@@ -216,6 +217,9 @@ export const INITIAL_GAME_STATE: GameState = {
   factionEvents: OPENING.factionEvents,
   adviceLog: [],
   holdStates: OPENING.holdStates,
+  forage: buildInitialForage(),
   garrisonPanel: null,
   turnedHouses: [],
+  outcome: null,
+  northPrize: null,
 };

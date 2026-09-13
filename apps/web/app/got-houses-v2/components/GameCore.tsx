@@ -10,10 +10,12 @@ import BattleSummaries from "./BattleSummaries";
 import SplitPanel from "./SplitPanel";
 import GarrisonPanel from "./GarrisonPanel";
 import CommanderRenamePanel from "./CommanderRenamePanel";
+import VictoryOverlay from "./VictoryOverlay";
 import { HOLDS, HOLDS_MAP } from "../data/holds";
 import { FACTION_HOMELAND } from "../data/homeland";
 import { regionSoftFor, regionTrait } from "../data/regions";
 import { getPathwayRoute } from "../data/pathways";
+import { forageAtHold, forageOnPath, normalizeForage } from "../lib/forage";
 import type {
   BattleReport,
   TirednessRequest,
@@ -84,6 +86,9 @@ function normalizeState(raw: GameState): GameState {
     adviceLog: raw.adviceLog ?? [],
     lastStandHoldIds: raw.lastStandHoldIds ?? [],
     capturePledges: raw.capturePledges ?? [],
+    forage: normalizeForage(raw.forage),
+    outcome: raw.outcome ?? null,
+    northPrize: raw.northPrize ?? null,
     holdStates: Object.fromEntries(
       Object.entries(raw.holdStates ?? INITIAL_GAME_STATE.holdStates).map(
         ([id, hs]) => [id, normalizeHoldRuntime(hs)]
@@ -316,6 +321,7 @@ export default function GameCore({
                     fromHoldName: fromHold.name,
                     toHoldName: hold.name,
                     route: getPathwayRoute(fromHold.id, hold.id),
+                    forage: forageOnPath(state.forage, fromHold.id, hold.id),
                   }
                 : undefined;
 
@@ -333,6 +339,10 @@ export default function GameCore({
               territory,
               holdName: hold?.name ?? "Unknown",
               holdGround: hold?.ground ?? "Unknown ground",
+              holdForage: hold
+                ? forageAtHold(state.forage, hold.id)
+                : undefined,
+              ...(marchRoute?.forage ? { marchForage: marchRoute.forage } : {}),
               homeland: FACTION_HOMELAND[army.faction],
               regionMarch: hold
                 ? regionTrait(hold.region).marchSoft
@@ -396,6 +406,7 @@ export default function GameCore({
                     battleReports: state.battleReports,
                     conversations: state.conversations,
                     holdStates: state.holdStates ?? {},
+                    forage: state.forage,
                     factionEvents: state.factionEvents,
                     adviceLog: state.adviceLog,
                     turn: state.turn,
@@ -759,6 +770,7 @@ export default function GameCore({
 
             {/* Retreat overlay */}
             {isRetreat && <RetreatPanel state={state} dispatch={dispatch} />}
+            {state.outcome && <VictoryOverlay outcome={state.outcome} />}
           </div>
 
           {/* Side panel */}
