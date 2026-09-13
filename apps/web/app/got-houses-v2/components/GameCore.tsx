@@ -38,6 +38,7 @@ import { buildFallbackReport } from "../lib/battle-fallback";
 import type { SurrenderDecision } from "../lib/character-tools";
 import {
   applySurrenderDecision,
+  defendingSideOf,
   holdsRipeForAiSurrender,
 } from "../lib/surrender";
 import { boardFingerprint, factionOrdersEqual, stateProgress } from "../lib/room-sync";
@@ -175,6 +176,12 @@ export default function GameCore({
     normalizeState(initialState ?? INITIAL_GAME_STATE)
   );
 
+  useEffect(() => {
+    if (twoBrowser && state.adminMode) {
+      dispatch({ type: "TOGGLE_ADMIN" });
+    }
+  }, [twoBrowser, state.adminMode, dispatch]);
+
   /**
    * Which battle batch we have already dispatched to the adjudicator.
    *
@@ -270,14 +277,33 @@ export default function GameCore({
     if (!state.north.submitted || !state.westerlands.submitted) return;
     if (!twoBrowser) return;
     if (adjudicatedTurnRef.current === state.turn) return;
+    // Last look at the poller so a West storm/sally is on the board before
+    // we fold engagements — otherwise a North sally at the same seat wins.
+    if (remoteState && viewerFaction) {
+      const remoteRival =
+        viewerFaction === "north" ? remoteState.westerlands : remoteState.north;
+      const localRival =
+        viewerFaction === "north" ? state.westerlands : state.north;
+      if (!factionOrdersEqual(remoteRival, localRival)) {
+        dispatch({
+          type: "PULL_RIVAL_ORDERS",
+          faction: viewerFaction,
+          north: remoteState.north,
+          westerlands: remoteState.westerlands,
+        });
+        return;
+      }
+    }
     adjudicatedTurnRef.current = state.turn;
     dispatch({ type: "ADJUDICATE_MOVES" });
   }, [
     isGuest,
     twoBrowser,
     state.phase,
-    state.north.submitted,
-    state.westerlands.submitted,
+    state.north,
+    state.westerlands,
+    remoteState,
+    viewerFaction,
     state.turn,
     dispatch,
   ]);
@@ -442,7 +468,15 @@ export default function GameCore({
         const surrenderCandidates = holdsRipeForAiSurrender(
           state.holdStates ?? {},
           state.armies
-        );
+        ).filter((id) => {
+          // Two-browser: each house answers its own walls. Do not let the
+          // host's castellan pass write terms for the other player.
+          if (!twoBrowser) return true;
+          const hs = state.holdStates?.[id];
+          if (!hs) return false;
+          const side = defendingSideOf(hs);
+          return side !== "north" && side !== "westerlands";
+        });
 
         console.log(`→ Tiredness for ${tirednessRequest.armies.length} armies`);
         console.log(`→ Garrison condition for ${garrisonBatch.length} holds`);
@@ -754,7 +788,7 @@ export default function GameCore({
     }
 
     runBattles();
-  }, [state.phase, state.pendingBattles, state.turn, state.armies, state.turnHistory, dispatch, isGuest]);
+  }, [state.phase, state.pendingBattles, state.turn, state.armies, state.turnHistory, dispatch, isGuest, twoBrowser]);
 
   const isResolving = state.phase === "resolving";
   const isRetreat = state.phase === "retreat";
@@ -781,6 +815,7 @@ export default function GameCore({
         state={state}
         dispatch={dispatch}
         deferAdjudicate={twoBrowser}
+        twoBrowser={twoBrowser}
       />
 
       <div style={{ display: "flex", flex: 1, minHeight: 0, flexDirection: "column" }}>

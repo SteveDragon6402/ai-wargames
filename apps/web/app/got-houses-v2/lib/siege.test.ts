@@ -265,6 +265,41 @@ describe("foldSiegeIntoBattles", () => {
     assert.equal(out[0].wallsStand, true);
     assert.ok(!out[0].northArmies.some((a) => a.id.startsWith("garrison:")));
   });
+
+  it("keeps a siege-only storm as a storm even if the defender also sallied", () => {
+    const holdId = "17";
+    const west = army({ id: "army-tywin", faction: "westerlands", holdId });
+    const hs = holdRuntime({
+      homeFaction: "north",
+      controller: "north",
+      garrison: {
+        faction: "north",
+        units: [{ house: "Frey", type: "infantry", count: 800 }],
+        leaders: [{ name: "Walder Frey" }],
+        notables: [],
+        morale: "Holding",
+        tiredness: "Tired",
+        stance: "On the walls",
+      },
+      siege: {
+        besiegerFaction: "westerlands",
+        armyIds: ["army-tywin"],
+        turns: 2,
+        terms: null,
+      },
+    });
+    const out = foldSiegeIntoBattles(
+      [],
+      [west],
+      { [holdId]: hs },
+      ["army-tywin"],
+      [holdId],
+      {}
+    );
+    assert.equal(out.length, 1);
+    assert.equal(out[0].engagement, "storm");
+    assert.equal(out[0].combinedAssault, true);
+  });
 });
 
 describe("resolveSelectableArmy", () => {

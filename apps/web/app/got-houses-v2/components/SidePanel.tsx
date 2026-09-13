@@ -103,7 +103,8 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
   const isLocked = factionOrders?.submitted ?? false;
 
   const controllableArmies = armiesHere.filter((a) => {
-    if (!adminMode && a.faction !== activeFaction) return false;
+    if (viewerFaction ? a.faction !== viewerFaction : !adminMode && a.faction !== activeFaction)
+      return false;
     const orders = a.faction === "north" ? state.north : state.westerlands;
     return !orders.submitted;
   });
@@ -159,7 +160,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
     ? freeCapacity(selectedHoldId, holdRuntime)
     : 0;
 
-  const myFaction = adminMode ? activeFaction : viewerFaction ?? activeFaction;
+  const myFaction = viewerFaction ?? activeFaction;
   const friendlyHold =
     !!holdRuntime && isFriendlyTo(holdRuntime, myFaction);
   const nonHomeOccupier =
@@ -923,6 +924,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                       type: "SET_STORM_ORDER",
                       armyId: singleSelected!.id,
                       active: !stormActive,
+                      asFaction: myFaction,
                     })
                   }
                 />
@@ -975,6 +977,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                 type: "SET_SALLY_ORDER",
                 holdId: selectedHoldId,
                 active: !sallyActive,
+                asFaction: myFaction,
               })
             }
             accent
@@ -1099,7 +1102,8 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
 
       {singleSelected &&
         state.speechArmyId === singleSelected.id &&
-        (adminMode || singleSelected.faction === activeFaction) && (
+        (singleSelected.faction === myFaction ||
+          (!viewerFaction && adminMode)) && (
           <div
             style={{
               flexShrink: 0,

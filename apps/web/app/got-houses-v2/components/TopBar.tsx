@@ -11,6 +11,8 @@ interface Props {
   dispatch: React.Dispatch<GameAction>;
   /** Two-browser rooms: lock locally but let the host resolve once both sides land. */
   deferAdjudicate?: boolean;
+  /** Hide admin dual-control — each browser is one house. */
+  twoBrowser?: boolean;
 }
 
 const FACTION_COLORS: Record<Faction, { bg: string; border: string; text: string; activeBg: string }> = {
@@ -28,8 +30,14 @@ const FACTION_COLORS: Record<Faction, { bg: string; border: string; text: string
   },
 };
 
-export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
+export default function TopBar({
+  state,
+  dispatch,
+  deferAdjudicate,
+  twoBrowser,
+}: Props) {
   const { turn, north, westerlands, adminMode, activeFaction, phase } = state;
+  const showAdmin = adminMode && !twoBrowser;
   const inPlanningPhase = phase === "planning";
   const [endsOpen, setEndsOpen] = useState(false);
   const progress = victoryProgress(state);
@@ -121,8 +129,8 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
         </span>
       </div>
 
-      {/* Faction tabs (admin mode) */}
-      {adminMode && (
+      {/* Faction tabs (admin / solo only) */}
+      {showAdmin && (
         <div
           style={{
             display: "flex",
@@ -190,7 +198,7 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
       )}
 
       {/* Non-admin faction indicator */}
-      {!adminMode && (
+      {!showAdmin && (
         <div
           style={{
             display: "flex",
@@ -376,7 +384,8 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
         ⚔ Battles{(state.battleReports ?? []).length > 0 ? ` (${state.battleReports.length})` : ""}
       </button>
 
-      {/* Admin toggle */}
+      {/* Admin toggle — solo / standalone only */}
+      {!twoBrowser && (
       <button
         type="button"
         onClick={() => dispatch({ type: "TOGGLE_ADMIN" })}
@@ -404,6 +413,7 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
       >
         Admin {adminMode ? "✓" : ""}
       </button>
+      )}
     </div>
   );
 }

@@ -2924,6 +2924,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case "SET_STORM_ORDER": {
       const army = state.armies.find((a) => a.id === action.armyId);
       if (!army) return state;
+      if (action.asFaction && army.faction !== action.asFaction) return state;
       if (action.active) {
         // There must be a live siege of ours here to storm.
         const hs = state.holdStates?.[army.holdId];
@@ -2963,6 +2964,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               ? hs.homeFaction
               : null;
       if (!faction) return state;
+      if (action.asFaction && faction !== action.asFaction) return state;
       if (hs.siege.besiegerFaction === faction) return state;
       const key = faction === "north" ? "north" : "westerlands";
       const fo = state[key];

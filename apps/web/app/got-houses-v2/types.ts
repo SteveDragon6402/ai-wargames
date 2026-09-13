@@ -1184,8 +1184,8 @@ export type GameAction =
   | { type: "CLOSE_GARRISON_PANEL" }
   | { type: "GARRISON_TRANSFER"; transfer: GarrisonTransfer }
   | { type: "ABANDON_HOLD"; holdId: string; armyId: string }
-  | { type: "SET_STORM_ORDER"; armyId: string; active: boolean }
-  | { type: "SET_SALLY_ORDER"; holdId: string; active: boolean }
+  | { type: "SET_STORM_ORDER"; armyId: string; active: boolean; asFaction?: Faction }
+  | { type: "SET_SALLY_ORDER"; holdId: string; active: boolean; asFaction?: Faction }
   | {
       /** Besieger puts terms to the garrison, or a garrison sues for terms. */
       type: "OFFER_SURRENDER_TERMS";
