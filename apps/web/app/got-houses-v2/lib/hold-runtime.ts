@@ -10,6 +10,9 @@ import {
   homeFactionForRegion,
   type CastleSeed,
 } from "../data/castles";
+import { normalizeTerms } from "./terms";
+import { effectiveCastleSeed } from "./raze";
+import { castellanSeedForHold, garrisonRosterForHold } from "../data/castellans";
 
 export function isGarrisonable(seed: CastleSeed): boolean {
   return seed.siteKind === "castle" || seed.siteKind === "ruin";
@@ -159,7 +162,9 @@ export function refillToDefault(
   holdId: string,
   runtime: HoldRuntime
 ): HoldRuntime {
-  const seed = getCastleSeed(holdId);
+  // The effective seed, so a burned seat raises nobody: its default garrison
+  // is zero and the check below then declines to refill it.
+  const seed = effectiveCastleSeed(holdId, runtime);
   if (!isGarrisonable(seed)) return runtime;
   if (runtime.controller !== runtime.homeFaction) return runtime;
   // A foreign garrison left on the walls is not household levies, even if
@@ -219,7 +224,7 @@ export function restoreHomeHousehold(
   runtime: HoldRuntime
 ): HoldRuntime {
   const home = runtime.homeFaction;
-  const seed = getCastleSeed(holdId);
+  const seed = effectiveCastleSeed(holdId, runtime);
   const empty = buildDefaultGarrison(holdId, home, 0);
   return {
     ...runtime,
@@ -248,9 +253,15 @@ export function recoverNativeGarrisons(
 ): Record<string, HoldRuntime> {
   const next = { ...holdStates };
   for (const holdId of Object.keys(next)) {
-    const seed = getCastleSeed(holdId);
-    if (!isGarrisonable(seed)) continue;
     let hs = normalizeHoldRuntime(next[holdId]);
+    const seed = effectiveCastleSeed(holdId, hs);
+    if (!isGarrisonable(seed)) continue;
+    // A burned seat has no household left to come back, however long it sits
+    // quiet. It stays a ruin for the rest of the war.
+    if (hs.razed) {
+      next[holdId] = hs;
+      continue;
+    }
     if (hs.siege) {
       next[holdId] = hs;
       continue;
@@ -373,15 +384,26 @@ export function buildInitialHoldStates(): Record<string, HoldRuntime> {
         postSiegeTurnsLeft: 0,
         scar: null,
         skipUpdates: true,
+        castellanId: castellanSeedForHold(h.id)?.id ?? null,
+        razed: false,
+        razeInProgress: null,
       };
       continue;
     }
 
     const g = buildDefaultGarrison(h.id, home, seed.defaultGarrison);
+    // Every seat with a household has someone who answers for it, named and
+    // permanent, so there is a person behind the gate from turn one.
+    const roster = garrisonRosterForHold(h.id);
+    const castellan = castellanSeedForHold(h.id);
     out[h.id] = {
       homeFaction: home,
       controller,
-      garrison: g,
+      garrison: {
+        ...g,
+        leaders: [...g.leaders, ...roster.leaders],
+        notables: [...g.notables, ...roster.notables],
+      },
       supplies:
         seed.siteKind === "ruin"
           ? "Ruined walls; empty until manned."
@@ -392,6 +414,9 @@ export function buildInitialHoldStates(): Record<string, HoldRuntime> {
       postSiegeTurnsLeft: 0,
       scar: null,
       skipUpdates: true,
+      castellanId: castellan?.id ?? null,
+      razed: false,
+      razeInProgress: null,
     };
   }
   return out;
@@ -399,11 +424,24 @@ export function buildInitialHoldStates(): Record<string, HoldRuntime> {
 
 /** Normalize hold runtime from older saves. */
 export function normalizeHoldRuntime(hs: HoldRuntime): HoldRuntime {
+  // Saved games carry the old two-boolean terms shape, so migrate any offer
+  // sitting on a siege as the board is hydrated.
+  const siege = hs.siege
+    ? {
+        ...hs.siege,
+        terms: normalizeTerms(hs.siege.terms),
+        termsOfferedCount: hs.siege.termsOfferedCount ?? 0,
+        termsRefusedCount: hs.siege.termsRefusedCount ?? 0,
+      }
+    : null;
   return {
     ...hs,
     garrison: normalizeGarrison(hs.garrison),
     skipUpdates: hs.skipUpdates ?? true,
     castellanId: hs.castellanId ?? null,
+    siege,
+    razed: hs.razed ?? false,
+    razeInProgress: hs.razeInProgress ?? null,
   };
 }
 
@@ -417,9 +455,9 @@ export function applyFriendlyPresenceRefill(
 ): Record<string, HoldRuntime> {
   const next = { ...holdStates };
   for (const holdId of Object.keys(next)) {
-    const seed = getCastleSeed(holdId);
-    if (!isGarrisonable(seed)) continue;
     let hs = normalizeHoldRuntime(next[holdId]);
+    const seed = effectiveCastleSeed(holdId, hs);
+    if (!isGarrisonable(seed)) continue;
     const here = armies.filter((a) => a.holdId === holdId);
     if (here.length === 0) {
       next[holdId] = hs;
@@ -467,7 +505,8 @@ export function applyFriendlyPresenceRefill(
 }
 
 export function freeCapacity(holdId: string, runtime: HoldRuntime): number {
-  const seed = getCastleSeed(holdId);
+  // Broken walls hold half as many men.
+  const seed = effectiveCastleSeed(holdId, runtime);
   if (!isGarrisonable(seed)) return 0;
   return Math.max(0, seed.capacity - garrisonHeadcount(runtime.garrison));
 }

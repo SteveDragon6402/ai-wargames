@@ -25,8 +25,10 @@ import {
 import {
   buildEmbodiedSystemPrompt,
   runCharacterToolLoop,
+  situationLines,
   type CharacterToolContext,
 } from "@/app/got-houses-v2/lib/character-tools";
+import type { Deed, PrisonerGroup, TurnHistory } from "@/app/got-houses-v2/types";
 
 interface BriefBody {
   battle: BattleContext;
@@ -39,6 +41,9 @@ interface BriefBody {
   forage?: ForageState;
   factionEvents?: FactionEvent[];
   adviceLog?: AdviceRecord[];
+  prisoners?: PrisonerGroup[];
+  deeds?: Deed[];
+  turnHistory?: TurnHistory[];
 }
 
 export async function POST(req: NextRequest) {
@@ -73,9 +78,18 @@ export async function POST(req: NextRequest) {
         return;
       }
 
+      const extras = situationLines({
+        prisoners: body.prisoners,
+        deeds: body.deeds,
+        characters: body.characters,
+        armies: body.armies,
+        faction: c.faction,
+      });
       const embodied = buildEmbodiedSystemPrompt(
         id,
-        "Battle is imminent. Form your private judgment. This is NOT spoken to a player — use tools if you need memory, then call record_battle_judgment."
+        "Battle is imminent. Form your private judgment. This is NOT spoken to a player — use tools if you need memory, then call record_battle_judgment.",
+        body.characters,
+        extras
       );
       if (!embodied) return;
 
@@ -100,6 +114,9 @@ ${role === "notable" ? "You do not command this host. Your judgment is counsel a
         forage: body.forage,
         factionEvents: body.factionEvents,
         adviceLog: body.adviceLog,
+        prisoners: body.prisoners,
+        deeds: body.deeds,
+        turnHistory: body.turnHistory,
         battleJudgment: null,
       };
 

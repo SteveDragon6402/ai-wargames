@@ -44,11 +44,23 @@ export function factionStrength(
   return n;
 }
 
+/**
+ * A burned seat is worth nothing to anybody.
+ *
+ * Razing King's Landing or Riverrun denies the prize to both sides rather than
+ * handing it to the arsonist, so razed holds drop out of every count below.
+ */
+export function countsForVictory(hs: HoldRuntime | undefined): boolean {
+  return !!hs && !hs.razed;
+}
+
 export function westRiverlandsHeld(
   holdStates: Record<string, HoldRuntime>
 ): string[] {
   return RIVERLANDS_HOLD_IDS.filter(
-    (id) => holdStates[id]?.controller === "westerlands"
+    (id) =>
+      holdStates[id]?.controller === "westerlands" &&
+      countsForVictory(holdStates[id])
   );
 }
 
@@ -57,7 +69,9 @@ export function northPrizeHold(
   prefer?: string | null
 ): string | null {
   const holds = [KINGS_LANDING_ID, CASTERLY_ROCK_ID].filter(
-    (id) => holdStates[id]?.controller === "north"
+    (id) =>
+      holdStates[id]?.controller === "north" &&
+      countsForVictory(holdStates[id])
   );
   if (holds.length === 0) return null;
   if (prefer && holds.includes(prefer)) return prefer;

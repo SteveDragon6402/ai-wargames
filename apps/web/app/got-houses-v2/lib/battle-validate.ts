@@ -4,12 +4,15 @@ import type {
   ArmyUnit,
   BattleContext,
   Casualty,
+  CharacterState,
   DefeatType,
   FallenFigure,
   Faction,
   UnitType,
   ValidationNote,
 } from "../types";
+import { factionLordId, findCharacterIdByName } from "../data/characters";
+import { chanceFor } from "./rng";
 
 /**
  * Stage 3 of battle resolution: weak, purely deterministic validation of what
@@ -38,6 +41,7 @@ export interface ExecutorOutput {
   holdResult?: string;
   casualties?: unknown;
   fallen?: unknown;
+  captured?: unknown;
   retreatingArmyIds?: unknown;
   conditionUpdates?: unknown;
 }
@@ -47,6 +51,7 @@ export interface ValidatedOutcome {
   holdResult: Faction | "abandoned";
   casualties: Casualty[];
   fallen: FallenFigure[];
+  captured: FallenFigure[];
   retreatingArmyIds: string[];
   conditionUpdates: ArmyConditionUpdate[];
   notes: ValidationNote[];
@@ -328,6 +333,50 @@ function validateFallen(
   return out;
 }
 
+/** A named figure must actually be in this battle to be taken in it. */
+function validateCaptured(
+  battle: BattleContext,
+  raw: unknown,
+  notes: ValidationNote[],
+  alreadyFallen: Set<string>
+): FallenFigure[] {
+  if (!Array.isArray(raw)) return [];
+  const armies = participants(battle);
+  const out: FallenFigure[] = [];
+  const seen = new Set<string>();
+
+  for (const row of raw as FallenFigure[]) {
+    if (!row || typeof row !== "object") continue;
+    const name = String(row.name ?? "").trim();
+    if (!name || alreadyFallen.has(name) || seen.has(name)) continue;
+
+    let hostId: string | null = null;
+    let isLeader = false;
+    for (const [id, army] of armies) {
+      if (army.leaders.some((l) => l.name === name)) {
+        hostId = id;
+        isLeader = true;
+        break;
+      }
+      if (army.notables?.some((n) => n.name === name)) {
+        hostId = id;
+        isLeader = false;
+        break;
+      }
+    }
+    if (!hostId) {
+      notes.push({
+        kind: "dropped_unknown_captured",
+        detail: `"${name}" reported captured but is not present in this battle`,
+      });
+      continue;
+    }
+    seen.add(name);
+    out.push({ armyId: hostId, name, isLeader });
+  }
+  return out;
+}
+
 /**
  * Reconcile holdResult and retreatingArmyIds so they cannot contradict.
  * The loser's armies all retreat; the winner's never do.
@@ -435,6 +484,12 @@ export function validateBattleOutcome(
 
   const casualties = validateCasualties(battle, raw.casualties, notes);
   const fallen = validateFallen(battle, raw.fallen, notes);
+  const captured = validateCaptured(
+    battle,
+    raw.captured,
+    notes,
+    new Set(fallen.map((f) => f.name))
+  );
   const { holdResult, retreatingArmyIds } = validateOutcome(
     battle,
     raw.holdResult,
@@ -454,8 +509,63 @@ export function validateBattleOutcome(
     holdResult,
     casualties,
     fallen,
+    captured,
     retreatingArmyIds,
     conditionUpdates,
     notes,
   };
+}
+
+const CAPTURE_CHANCE = {
+  lord: 0.7,
+  commander: 0.55,
+  notable: 0.3,
+} as const;
+
+/**
+ * Models ignore "take them alive". This converts a share of reported deaths
+ * into captures, keyed so both clients agree. Player lords are exempt — Robb
+ * dying still ends the war.
+ */
+export function convertDeathsToCaptures(
+  fallen: FallenFigure[],
+  captured: FallenFigure[],
+  characters: Record<string, CharacterState>,
+  turn: number,
+  holdId: string
+): { fallen: FallenFigure[]; captured: FallenFigure[]; notes: ValidationNote[] } {
+  const taken = new Set(captured.map((c) => c.name));
+  const stillFallen: FallenFigure[] = [];
+  const nowCaptured = [...captured];
+  const notes: ValidationNote[] = [];
+
+  for (const f of fallen) {
+    if (taken.has(f.name)) continue;
+    const id = findCharacterIdByName(characters, f.name);
+    const c = id ? characters[id] : undefined;
+    if (!c) {
+      stillFallen.push(f);
+      continue;
+    }
+    if (c.role === "lord" || c.id === factionLordId(c.faction)) {
+      stillFallen.push(f);
+      continue;
+    }
+    const weight =
+      c.role === "commander" || f.isLeader ? "commander" : "notable";
+    const chance = CAPTURE_CHANCE[weight];
+    const key = `${turn}:${holdId}:${f.name}`;
+    if (chanceFor(key, chance)) {
+      nowCaptured.push(f);
+      taken.add(f.name);
+      notes.push({
+        kind: "converted_death_to_capture",
+        detail: `${f.name} was taken alive rather than slain.`,
+      });
+    } else {
+      stillFallen.push(f);
+    }
+  }
+
+  return { fallen: stillFallen, captured: nowCaptured, notes };
 }

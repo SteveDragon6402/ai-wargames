@@ -54,6 +54,9 @@ export function snapshotForApi(state: GameState) {
     adviceLog: state.adviceLog,
     holdStates: state.holdStates,
     forage: state.forage,
+    prisoners: state.prisoners,
+    deeds: state.deeds,
+    turnHistory: state.turnHistory,
   };
 }
 

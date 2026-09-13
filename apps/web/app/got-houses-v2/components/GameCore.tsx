@@ -11,6 +11,8 @@ import SplitPanel from "./SplitPanel";
 import GarrisonPanel from "./GarrisonPanel";
 import CommanderRenamePanel from "./CommanderRenamePanel";
 import VictoryOverlay from "./VictoryOverlay";
+import TurnBriefing from "./TurnBriefing";
+import SeatFatePanel from "./SeatFatePanel";
 import { HOLDS, HOLDS_MAP } from "../data/holds";
 import { FACTION_HOMELAND } from "../data/homeland";
 import { regionSoftFor, regionTrait } from "../data/regions";
@@ -44,6 +46,7 @@ import {
   applyBriefsToBattle,
   collectBattleCharacterIds,
 } from "../lib/battle-briefs";
+import { describePrisonerBurden } from "../lib/prisoners";
 
 export type SyncRole = "host" | "guest" | "solo";
 
@@ -89,6 +92,28 @@ function normalizeState(raw: GameState): GameState {
     forage: normalizeForage(raw.forage),
     outcome: raw.outcome ?? null,
     northPrize: raw.northPrize ?? null,
+    prisoners: raw.prisoners ?? [],
+    pendingChoices: raw.pendingChoices ?? [],
+    travellers: raw.travellers ?? [],
+    deeds: raw.deeds ?? [],
+    seatFatePanelId: raw.seatFatePanelId ?? null,
+    briefingOpen: raw.briefingOpen ?? false,
+    briefingShownFor: raw.briefingShownFor ?? null,
+    briefingShownTurn: raw.briefingShownTurn ?? null,
+    turnHistory: (raw.turnHistory ?? []).map((h) => ({
+      turn: h.turn,
+      // Pre-ledger saves stored only a moved flag, with no from/to.
+      armyMoves: (h.armyMoves ?? []).map((m) => ({
+        armyId: m.armyId,
+        armyName: m.armyName ?? m.armyId,
+        faction: m.faction ?? "north",
+        moved: m.moved,
+        fromHoldId: m.fromHoldId ?? "",
+        toHoldId: m.toHoldId ?? "",
+        order: m.order ?? (m.moved ? "march" : "rest"),
+        men: m.men ?? 0,
+      })),
+    })),
     holdStates: Object.fromEntries(
       Object.entries(raw.holdStates ?? INITIAL_GAME_STATE.holdStates).map(
         ([id, hs]) => [id, normalizeHoldRuntime(hs)]
@@ -106,6 +131,7 @@ function normalizeState(raw: GameState): GameState {
       stanceOrders: raw.north?.stanceOrders ?? {},
       stormArmyIds: raw.north?.stormArmyIds ?? [],
       sallyHoldIds: raw.north?.sallyHoldIds ?? [],
+      razeOrders: raw.north?.razeOrders ?? [],
       submitted: raw.north?.submitted ?? false,
     },
     westerlands: {
@@ -113,6 +139,7 @@ function normalizeState(raw: GameState): GameState {
       stanceOrders: raw.westerlands?.stanceOrders ?? {},
       stormArmyIds: raw.westerlands?.stormArmyIds ?? [],
       sallyHoldIds: raw.westerlands?.sallyHoldIds ?? [],
+      razeOrders: raw.westerlands?.razeOrders ?? [],
       submitted: raw.westerlands?.submitted ?? false,
     },
   };
@@ -288,6 +315,14 @@ export default function GameCore({
     if (tirednessUpdatedRef.current !== state.turn) {
       tirednessUpdatedRef.current = state.turn;
 
+      // Empty field: settle the turn now. Soft conditions can land after.
+      // Waiting on the tiredness call used to leave a room stuck in resolving
+      // when the API failed and never dispatched.
+      if (state.pendingBattles.length === 0) {
+        resolvedBatchRef.current = batchKey;
+        dispatch({ type: "BATTLES_RESOLVED", reports: [] });
+      }
+
       async function updateSoftConditions() {
         console.group(`%c⚡ Soft conditions — turn ${state.turn}`, "color:#4a9eff;font-weight:bold");
 
@@ -356,6 +391,15 @@ export default function GameCore({
               // Pass pre-merge conditions so the tiredness API can describe
               // the heterogeneous state of a freshly merged army.
               ...(army.mergedFrom ? { mergedFrom: army.mergedFrom } : {}),
+              ...(describePrisonerBurden(state.prisoners, army.id, state.characters)
+                ? {
+                    prisonerEscort: describePrisonerBurden(
+                      state.prisoners,
+                      army.id,
+                      state.characters
+                    )!,
+                  }
+                : {}),
             };
           }),
         };
@@ -377,9 +421,13 @@ export default function GameCore({
         if (surrenderCandidates.length > 0) {
           console.log(`→ Terms decision for ${surrenderCandidates.length} besieged seats`);
         }
+        const needingRefuge = (state.travellers ?? []).filter((t) => t.needsDestination);
+        if (needingRefuge.length > 0) {
+          console.log(`→ Refuge choice for ${needingRefuge.length} freed men`);
+        }
 
         try {
-          const [tiredRes, garRes, surrRes] = await Promise.all([
+          const [tiredRes, garRes, surrRes, destRes] = await Promise.all([
             fetch("/api/got-houses-v2/tiredness", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
@@ -409,6 +457,25 @@ export default function GameCore({
                     forage: state.forage,
                     factionEvents: state.factionEvents,
                     adviceLog: state.adviceLog,
+                    prisoners: state.prisoners,
+                    deeds: state.deeds,
+                    turnHistory: state.turnHistory,
+                    turn: state.turn,
+                  }),
+                })
+              : Promise.resolve(null),
+            needingRefuge.length > 0
+              ? fetch("/api/got-houses-v2/release/destination", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({
+                    travellers: needingRefuge,
+                    characters: state.characters,
+                    armies: state.armies,
+                    battleReports: state.battleReports,
+                    holdStates: state.holdStates ?? {},
+                    prisoners: state.prisoners,
+                    deeds: state.deeds,
                     turn: state.turn,
                   }),
                 })
@@ -421,6 +488,7 @@ export default function GameCore({
             dispatch({ type: "UPDATE_TIREDNESS", updates });
           } else {
             console.warn("⚠ Tiredness API failed, continuing with current values");
+            dispatch({ type: "UPDATE_TIREDNESS", updates: [] });
           }
 
           if (garRes?.ok) {
@@ -476,6 +544,26 @@ export default function GameCore({
             }
           } else if (surrRes && !surrRes.ok) {
             console.warn("⚠ Terms decision API failed");
+          }
+
+          if (destRes?.ok) {
+            const data = (await destRes.json()) as {
+              choices?: {
+                characterId: string;
+                destHoldId: string;
+                arrivesTurn: number;
+              }[];
+            };
+            for (const c of data.choices ?? []) {
+              dispatch({
+                type: "SET_TRAVELLER_DESTINATION",
+                characterId: c.characterId,
+                destHoldId: c.destHoldId,
+                arrivesTurn: c.arrivesTurn,
+              });
+            }
+          } else if (destRes && !destRes.ok) {
+            console.warn("⚠ Refuge destination API failed");
           }
         } catch (err) {
           console.error("✗ Soft condition update error:", err);
@@ -771,6 +859,14 @@ export default function GameCore({
             {/* Retreat overlay */}
             {isRetreat && <RetreatPanel state={state} dispatch={dispatch} />}
             {state.outcome && <VictoryOverlay outcome={state.outcome} />}
+            {state.phase === "planning" && (
+              <TurnBriefing
+                state={state}
+                dispatch={dispatch}
+                faction={state.activeFaction}
+              />
+            )}
+            <SeatFatePanel state={state} dispatch={dispatch} />
           </div>
 
           {/* Side panel */}

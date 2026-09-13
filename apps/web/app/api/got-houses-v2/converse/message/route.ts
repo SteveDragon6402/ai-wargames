@@ -9,14 +9,19 @@ import type {
   ConversationThread,
   FactionEvent,
   ForageState,
+  Deed,
   HoldRuntime,
   NpcAgentState,
+  PrisonerGroup,
+  TurnHistory,
 } from "@/app/got-houses-v2/types";
 import {
   buildEmbodiedSystemPrompt,
   runCharacterToolLoop,
+  situationLines,
   type CharacterToolContext,
 } from "@/app/got-houses-v2/lib/character-tools";
+import { reputationSummary } from "@/app/got-houses-v2/lib/deeds";
 import {
   describeTerms,
   openTermsAt,
@@ -36,6 +41,9 @@ interface MessageBody {
   adviceLog?: AdviceRecord[];
   holdStates?: Record<string, HoldRuntime>;
   forage?: ForageState;
+  prisoners?: PrisonerGroup[];
+  deeds?: Deed[];
+  turnHistory?: TurnHistory[];
 }
 
 export async function POST(req: NextRequest) {
@@ -56,7 +64,14 @@ export async function POST(req: NextRequest) {
     const openTerms = openTermsAt(parleyHold);
     const pressure =
       parleyHoldId && parleyHold
-        ? surrenderPressure(parleyHoldId, parleyHold, body.armies)
+        ? surrenderPressure(
+            parleyHoldId,
+            parleyHold,
+            body.armies,
+            parleyHold.siege
+              ? reputationSummary(body.deeds, parleyHold.siege.besiegerFaction)
+              : undefined
+          )
         : null;
     const surrenderCtx =
       parleyHoldId && parleyHold?.siege
@@ -70,6 +85,13 @@ export async function POST(req: NextRequest) {
           }
         : undefined;
 
+    const extras = situationLines({
+      prisoners: body.prisoners,
+      deeds: body.deeds,
+      characters: body.characters,
+      armies: body.armies,
+      faction: npc.faction,
+    });
     const system = buildEmbodiedSystemPrompt(
       npc.id,
       npc.role === "castellan" || surrenderCtx
@@ -79,7 +101,8 @@ export async function POST(req: NextRequest) {
               : ""
           } You cannot leave or end the talk.`
         : "Private conversation. Someone is speaking to you. Stay and answer only with the words you say aloud. You cannot leave or end the talk.",
-      body.characters
+      body.characters,
+      extras
     );
     if (!system) {
       return NextResponse.json({ error: "No system prompt" }, { status: 400 });
@@ -112,6 +135,9 @@ export async function POST(req: NextRequest) {
       adviceLog: body.adviceLog,
       holdStates: body.holdStates,
       forage: body.forage,
+      prisoners: body.prisoners,
+      deeds: body.deeds,
+      turnHistory: body.turnHistory,
       surrender: surrenderCtx,
     };
 

@@ -5,6 +5,7 @@ import type {
   NpcAgentState,
   PlayerLordState,
 } from "../types";
+import { CASTELLAN_SEEDS, castellanFaction } from "./castellans";
 
 export const NOTEPAD_MAX_CHARS = 800;
 export const PLAYER_CHAT_MAX_WORDS = 40;
@@ -33,10 +34,13 @@ export interface NpcAgentSeed {
   id: CharacterId;
   name: string;
   faction: Faction;
-  role: "commander" | "notable";
+  role: "commander" | "notable" | "castellan";
   background: string;
   systemPrompt: string;
-  armyId: string;
+  /** Rides with this host. Mutually exclusive with holdId. */
+  armyId?: string;
+  /** Posted behind these walls — castellans and garrison notables. */
+  holdId?: string;
   /** Default mood one-liner */
   mood: string;
   /** Beasts cannot negotiate / take castellan charge */
@@ -257,17 +261,7 @@ export const CHARACTER_SEEDS: CharacterSeed[] = [
   },
 
   // ── Westerlands notables ───────────────────────────────────────────────
-  {
-    kind: "npc",
-    id: "kevan-lannister",
-    name: "Ser Kevan Lannister",
-    faction: "westerlands",
-    role: "notable",
-    armyId: "army-tywin",
-    mood: "Steady lieutenant, loyal to Tywin's plan",
-    background: "Tywin's brother; reliable infantry commander.",
-    systemPrompt: `You are Ser Kevan Lannister. Calm, loyal, competent. You echo Tywin's discipline without his cruelty. Keep replies punchy (under 60 words).`,
-  },
+  // Ser Kevan is not with the host — he holds Casterly Rock. See data/castellans.ts.
   {
     kind: "npc",
     id: "addam-marbrand",
@@ -325,8 +319,32 @@ export const CHARACTER_SEEDS: CharacterSeed[] = [
   },
 ];
 
+/**
+ * Castellans are ordinary seeded characters, not runtime scaffolding, so they
+ * flow through `getSystemPrompt`, `getBackground` and `buildEmbodiedSystemPrompt`
+ * with no special casing. They are posted to a hold rather than a host.
+ */
+const CASTELLAN_CHARACTER_SEEDS: CharacterSeed[] = CASTELLAN_SEEDS.map(
+  (seed) => ({
+    kind: "npc" as const,
+    id: seed.id,
+    name: seed.name,
+    faction: castellanFaction(seed),
+    role: seed.role,
+    holdId: seed.holdId,
+    mood: seed.mood,
+    background: seed.background,
+    systemPrompt: seed.systemPrompt,
+  })
+);
+
+export const ALL_CHARACTER_SEEDS: CharacterSeed[] = [
+  ...CHARACTER_SEEDS,
+  ...CASTELLAN_CHARACTER_SEEDS,
+];
+
 export const CHARACTER_SEED_MAP = new Map(
-  CHARACTER_SEEDS.map((s) => [s.id, s])
+  ALL_CHARACTER_SEEDS.map((s) => [s.id, s])
 );
 
 export function getSystemPrompt(id: CharacterId): string | null {
@@ -348,7 +366,7 @@ export function enemyLordId(faction: Faction): CharacterId {
 
 export function buildInitialCharacters(): Record<CharacterId, CharacterState> {
   const out: Record<CharacterId, CharacterState> = {};
-  for (const seed of CHARACTER_SEEDS) {
+  for (const seed of ALL_CHARACTER_SEEDS) {
     if (seed.kind === "player") {
       const p: PlayerLordState = {
         kind: "player",
@@ -369,8 +387,8 @@ export function buildInitialCharacters(): Record<CharacterId, CharacterState> {
         faction: seed.faction,
         role: seed.role,
         species: seed.species ?? "human",
-        armyId: seed.armyId,
-        holdId: null,
+        armyId: seed.armyId ?? null,
+        holdId: seed.holdId ?? null,
         alive: true,
         notepad: "",
         mood: seed.mood,

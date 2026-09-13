@@ -7,13 +7,16 @@ import type {
   CharacterState,
   Faction,
   FactionEvent,
+  Deed,
   ForageState,
   NpcAgentState,
   NpcRuntimePatch,
+  PrisonerGroup,
 } from "@/app/got-houses-v2/types";
 import {
   buildEmbodiedSystemPrompt,
   runCharacterToolLoop,
+  situationLines,
   type CharacterToolContext,
 } from "@/app/got-houses-v2/lib/character-tools";
 import {
@@ -29,6 +32,8 @@ interface DigestBody {
   factionEvents: FactionEvent[];
   adviceLog: AdviceRecord[];
   forage?: ForageState;
+  prisoners?: PrisonerGroup[];
+  deeds?: Deed[];
   /** Optional: limit which factions digest (default both) */
   factions?: Faction[];
 }
@@ -82,9 +87,18 @@ export async function POST(req: NextRequest) {
       );
 
       for (const npc of npcs) {
+        const extras = situationLines({
+          prisoners: body.prisoners,
+          deeds: body.deeds,
+          characters: body.characters,
+          armies: body.armies,
+          faction: npc.faction,
+        });
         const system = buildEmbodiedSystemPrompt(
           npc.id,
-          "Turn just ended. Private reflection only — update notepad/mood via tools. Do not speak aloud to anyone."
+          "Turn just ended. Private reflection only — update notepad/mood via tools. Do not speak aloud to anyone.",
+          body.characters,
+          extras
         );
         if (!system) continue;
 
@@ -105,6 +119,8 @@ export async function POST(req: NextRequest) {
           factionEvents: body.factionEvents,
           adviceLog: body.adviceLog,
           forage: body.forage,
+          prisoners: body.prisoners,
+          deeds: body.deeds,
         };
 
         const result = await runCharacterToolLoop({

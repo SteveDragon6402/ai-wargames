@@ -167,6 +167,11 @@ export interface FactionOrders {
   stormArmyIds: string[];
   /** Holds whose garrison is ordered to sally out — cleared on resolve */
   sallyHoldIds: string[];
+  /**
+   * Seats ordered torn down this turn — cleared on resolve. Razing is the
+   * host's whole action: an army with a raze order cannot march.
+   */
+  razeOrders?: { armyId: string; holdId: string }[];
   submitted: boolean;
 }
 
@@ -186,20 +191,40 @@ export interface HoldGarrison {
   stance: string;
 }
 
+/** What becomes of men taken at a seat. Ordered by severity. */
+export type PersonFate = "let_go" | "prisoner" | "execute";
+
+/** What becomes of the seat itself. Ordered by severity. */
+export type TownFate = "occupy" | "raze";
+
+/** The three axes of a bargain, promised during terms and chosen after. */
+export interface SeatFates {
+  garrison: PersonFate;
+  leaders: PersonFate;
+  town: TownFate;
+}
+
 /**
  * Terms on the table at a besieged seat.
  *
  * Kept on the siege rather than in transient UI state so an offer survives a
  * save, a reload, and the turn boundary, and so both the castellan agent and
  * the map can read it.
+ *
+ * These are a PROMISE, not an outcome. The taker chooses what actually happens
+ * after the gates open, which is how a man breaks his word.
  */
 export interface SurrenderTerms {
   /** Who put these terms on the table. */
   offeredBy: Faction;
-  /** Garrison marches out alive instead of being taken. */
-  garrisonSpared: boolean;
-  /** Castellan and named defenders walk free rather than being held. */
-  leadersSpared: boolean;
+  /** What is promised for the rank and file. */
+  garrison: PersonFate;
+  /** What is promised for the castellan and named defenders. */
+  leaders: PersonFate;
+  /** What is promised for the seat itself. */
+  town: TownFate;
+  /** Prisoners the offering side promises to hand back as part of the bargain. */
+  releasePrisonerIds?: string[];
   /** Soft flavour — what was actually said. Shown to the other side. */
   note: string;
   /** Turn the offer was made. */
@@ -217,6 +242,10 @@ export interface HoldSiegeState {
   armyIds: string[];
   /** Terms currently on the table, if any. */
   terms?: SurrenderTerms | null;
+  /** How many offers have been put across this whole siege — deed context. */
+  termsOfferedCount?: number;
+  /** How many were refused or left to lapse — deed context. */
+  termsRefusedCount?: number;
 }
 
 export interface HoldRuntime {
@@ -240,6 +269,13 @@ export interface HoldRuntime {
   skipUpdates: boolean;
   /** Ephemeral castellan character id while under siege / for talk */
   castellanId?: CharacterId | null;
+  /**
+   * Put to the torch. Still occupiable ground, but the walls are broken, the
+   * household never returns, and the seat counts for nobody's victory.
+   */
+  razed?: boolean;
+  /** A host is spending its turn tearing the place down. */
+  razeInProgress?: { faction: Faction; startedTurn: number } | null;
 }
 
 export type GarrisonPanelMode = "deposit" | "withdraw" | "abandon";
@@ -364,13 +400,15 @@ export interface ValidationNote {
     | "redistributed_unit_type"
     | "redistribution_remainder"
     | "dropped_unknown_fallen"
+    | "dropped_unknown_captured"
+    | "converted_death_to_capture"
     | "corrected_hold_result"
     | "corrected_retreats"
     | "dropped_unknown_condition";
   detail: string;
 }
 
-/** Player-facing explanation of the inputs that drove the verdict. */
+/** The inputs that drove the verdict. Shown to the player and queryable by NPCs. */
 export interface BattleFactors {
   forceRatio: string;
   northPosture: string;
@@ -382,6 +420,70 @@ export interface BattleFactors {
   commanderMoods: string[];
 }
 
+/** One army as it stood going into a fight, and what was left of it after. */
+export interface BattleParticipant {
+  armyId: string;
+  armyName: string;
+  faction: Faction;
+  commander: string | null;
+  notables: string[];
+  menBefore: number;
+  menAfter: number;
+  moraleBefore: string;
+  tirednessBefore: string;
+  stanceBefore: string;
+  /** Where this army marched from, or null if it was already there. */
+  fromHoldId: string | null;
+  order: "march" | "rest" | "fortify" | null;
+  commitment: "commit" | "hold_back" | null;
+  wasGarrison: boolean;
+}
+
+/** What became of captives caught up in a battle. */
+export interface BattlePrisonerRecord {
+  groupId: string;
+  /** Whose men they are. */
+  faction: Faction;
+  men: number;
+  characterNames: string[];
+  /** escorted_in = dragged into the battle; taken_here = captured in it. */
+  role: "escorted_in" | "taken_here";
+  outcome: "held" | "released" | "executed" | "liberated" | "undecided";
+  decidedTurn: number | null;
+  deedId: string | null;
+}
+
+/** How the fight was set up — the circumstances, for later judgement. */
+export interface BattleSetup {
+  engagement: BattleEngagement;
+  lastStand: boolean;
+  wallsStood: boolean;
+  combinedAssault: boolean;
+  ground: string;
+  region: string;
+  forage: string;
+  seatLine: string;
+  approaches: Record<string, ArmyApproach>;
+}
+
+/** What changed on the board because of the fight. */
+export interface BattleAftermath {
+  seatChanged: {
+    from: Faction | "hostile" | null;
+    to: Faction | "hostile" | null;
+  } | null;
+  destroyedArmyIds: string[];
+  /** Where each beaten army actually went — back-filled after COMMIT_RETREATS. */
+  retreatedTo: Record<string, string | null>;
+}
+
+/**
+ * A battle as history, not just a verdict.
+ *
+ * Not write-once: `aftermath.retreatedTo` lands after COMMIT_RETREATS, and
+ * `prisoners[].outcome` lands whenever the player finally decides — possibly
+ * several turns later.
+ */
 export interface BattleReport {
   id: string;
   turn: number;
@@ -392,15 +494,27 @@ export interface BattleReport {
   narrative: string;
   /** Freeform three-line Haiku summary for the battle screen header */
   shortSummary: string;
+  /** Under 12 words — the line that shows in the turn briefing. */
+  headline?: string;
   /** Set when the Haiku summary pass was incomplete or failed — battle still resolved */
   summaryError?: string;
   holdResult: Faction | "abandoned";
+  /** Who won the fight, which is not always who ended up holding the seat. */
+  victor?: Faction | "none";
   casualties: Casualty[];
   fallen: FallenFigure[];
+  /** Named men taken alive, beside the fallen. */
+  captured?: FallenFigure[];
   retreatingArmyIds: string[];
+  /** Who was there and in what state — snapshotted before casualties land. */
+  participants?: BattleParticipant[];
+  /** Captives in the fight and what became of them. */
+  prisoners?: BattlePrisonerRecord[];
+  setup?: BattleSetup;
+  aftermath?: BattleAftermath;
   /** Qualitative morale + tiredness + stance after the battle for each involved army */
   conditionUpdates?: ArmyConditionUpdate[];
-  /** Inputs that drove the verdict — shown to the player, not fed back in */
+  /** Inputs that drove the verdict — shown to the player and queryable by NPCs */
   factors?: BattleFactors;
   /** Corrections Stage 3 applied to the executor's output */
   validation?: ValidationNote[];
@@ -443,6 +557,11 @@ export interface BattleContext {
   seatLine?: string;
   /** Living forage around the field this turn. */
   forage?: string;
+  /**
+   * Captives being dragged into this fight, per army id. The chronicler works
+   * out for itself what a column shepherding prisoners is worth.
+   */
+  prisonerBurden?: Record<string, string>;
 }
 
 export interface RetreatEntry {
@@ -454,9 +573,22 @@ export interface RetreatEntry {
   chosenHoldId: string | null;
 }
 
+/** One host's movement in one turn. */
+export interface ArmyMoveRecord {
+  armyId: string;
+  armyName: string;
+  faction: Faction;
+  moved: boolean;
+  fromHoldId: string;
+  toHoldId: string;
+  order: "march" | "rest" | "fortify";
+  men: number;
+}
+
+/** The march ledger — queryable, subject to fog of war. */
 export interface TurnHistory {
   turn: number;
-  armyMoves: { armyId: string; moved: boolean }[];
+  armyMoves: ArmyMoveRecord[];
 }
 
 /* ── Tiredness types ──────────────────────────────────────────── */
@@ -516,6 +648,8 @@ export interface TirednessArmyContext {
    * of each source army. Used to produce a heterogeneous condition description.
    */
   mergedFrom?: MergeSourceRecord[];
+  /** Captives this host is dragging — told to the tiredness model, no formula. */
+  prisonerEscort?: string;
 }
 
 /* ── Split types ─────────────────────────────────────────────── */
@@ -586,8 +720,9 @@ export interface NpcAgentState {
   runtimeBackground?: string;
   runtimeSystemPrompt?: string;
   /**
-   * Taken when a seat fell on terms that did not spare its defenders. Alive,
-   * but out of play until traded or freed.
+   * Held prisoner. Alive and findable — `who_is` and the prisoner roster both
+   * report where he is being kept — but out of play until freed or killed.
+   * The owning `PrisonerGroup` is the source of truth for where he sits.
    */
   captive?: boolean;
 }
@@ -729,6 +864,147 @@ export interface CapturePledge {
   cause: "storm" | "walk_in" | "surrender";
 }
 
+/* ── Prisoners ────────────────────────────────────────────────── */
+
+/** Where a body of captives is being kept. */
+export type PrisonerLocation =
+  | { kind: "army"; armyId: string }
+  | { kind: "hold"; holdId: string };
+
+/**
+ * Men held captive — a card in its own right, never merged into a host.
+ *
+ * A group attached to an army rides along with it and takes its position from
+ * the escort, so there is no separate movement to resolve. Prisoners have no
+ * combat value; their weight on a march and in a battle is left to the
+ * adjudicating models, which are simply told the captives are there.
+ */
+export interface PrisonerGroup {
+  id: string;
+  /** Who holds them. */
+  captorFaction: Faction;
+  /** Whose men they are. */
+  faction: Faction;
+  location: PrisonerLocation;
+  units: ArmyUnit[];
+  characterIds: CharacterId[];
+  takenAtHoldId: string;
+  takenTurn: number;
+  origin: "siege" | "battle";
+  /** Battle this group came out of, when it came from a battle. */
+  battleId?: string | null;
+}
+
+/* ── Pending choices ─────────────────────────────────────────── */
+
+/**
+ * A decision the player owes before they can submit orders again.
+ *
+ * Taking a seat or winning a fight is not the end of it: somebody has to say
+ * what becomes of the men and the walls. The choice can be made the moment it
+ * arises or left until later in the turn, but not carried into the next one.
+ */
+export interface PendingChoice {
+  id: string;
+  faction: Faction;
+  turn: number;
+  kind: "seat_fate" | "battle_prisoners";
+  holdId: string;
+  battleId?: string;
+  /** What was promised in terms. Null when the seat was stormed, not bargained. */
+  promised: SeatFates | null;
+  /** Under 12 words — what happened, for the briefing. */
+  headline: string;
+  /** Rank and file awaiting a fate. */
+  garrisonUnits: ArmyUnit[];
+  /** Named men awaiting a fate. */
+  captiveCharacterIds: CharacterId[];
+  /** Hosts standing here that could carry captives off. */
+  escortArmyIds: string[];
+}
+
+/** A released leader making his way home. */
+export interface Traveller {
+  characterId: CharacterId;
+  fromHoldId: string;
+  destHoldId: string;
+  /** Turn he walks through the gate — distance in spaces from where he was freed. */
+  arrivesTurn: number;
+  /** Still waiting on the freed man to pick (or confirm) a refuge. */
+  needsDestination?: boolean;
+}
+
+/* ── The deed ledger ─────────────────────────────────────────── */
+
+export type DeedKind =
+  | "terms_offered"
+  | "terms_accepted"
+  | "terms_rejected"
+  | "garrison_let_go"
+  | "garrison_imprisoned"
+  | "garrison_executed"
+  | "leaders_let_go"
+  | "leaders_imprisoned"
+  | "leaders_executed"
+  | "town_occupied"
+  | "town_razed"
+  | "town_stormed"
+  | "prisoners_taken"
+  | "prisoners_released"
+  | "prisoners_executed"
+  | "prisoners_liberated";
+
+/** The circumstances of a deed — enough to judge it, not merely name it. */
+export interface DeedCircumstances {
+  siegeTurns: number | null;
+  timesTermsOffered: number;
+  timesTermsRefused: number;
+  surrendered: boolean;
+  /** Yielded almost at once, rather than after a long investment. */
+  surrenderedQuickly: boolean;
+  stormed: boolean;
+  starving: boolean;
+  garrisonMen: number | null;
+  besiegerMen: number | null;
+  promised: SeatFates | null;
+  chosen: SeatFates | null;
+  brokeWord: boolean;
+}
+
+/**
+ * A consequential act, permanently recorded and known to everyone.
+ *
+ * Unlike `FactionEvent`, which is private to the faction that did it, deeds are
+ * common knowledge: any character on either side can look them up and judge
+ * you. Breaking your word carries no mechanical penalty — it simply goes on the
+ * record, and castellans read the record before they decide whether to trust
+ * your next offer.
+ *
+ * Battles are not deeds. A battle is a fact of the war; what you chose to do
+ * afterwards is the deed, and it carries `battleId` back to the fight.
+ */
+export interface Deed {
+  id: string;
+  turn: number;
+  kind: DeedKind;
+  /** Who did it. */
+  actorFaction: Faction;
+  /** Who it was done to. */
+  victimFaction: Faction | null;
+  holdId: string | null;
+  /** Ids and names both: ephemeral characters get deleted, names must survive. */
+  characterIds: CharacterId[];
+  characterNames: string[];
+  menAffected: number;
+  circumstances: DeedCircumstances;
+  /** One line, for logs and lists. */
+  summary: string;
+  /** A full paragraph an NPC can read and react to. */
+  detail: string;
+  /** The fight this came out of, when it came out of a fight. */
+  battleId?: string | null;
+}
+
 export type VictoryReason =
   | "time"
   | "kings_landing"
@@ -820,6 +1096,22 @@ export interface GameState {
   outcome?: GameOutcome | null;
   /** Consecutive resolved turns the North has held KL or the Rock. */
   northPrize?: NorthPrizeStreak | null;
+  /** Bodies of captives held by either side. */
+  prisoners?: PrisonerGroup[];
+  /** Fates owed before orders can be submitted again. */
+  pendingChoices?: PendingChoice[];
+  /** Released leaders still on the road home. */
+  travellers?: Traveller[];
+  /** The public war record. Everyone can read it; everyone judges you by it. */
+  deeds?: Deed[];
+  /** Seat whose fate panel is open (null = closed). */
+  seatFatePanelId?: string | null;
+  /** Whether the turn-start briefing is showing. */
+  briefingOpen?: boolean;
+  /** Faction the briefing was last shown for — reopens on a solo faction switch. */
+  briefingShownFor?: Faction | null;
+  /** Turn the briefing was last dismissed on. */
+  briefingShownTurn?: number | null;
 }
 
 export type GameAction =
@@ -920,6 +1212,39 @@ export type GameAction =
       holdStates: Record<string, HoldRuntime>;
     }
   | { type: "REMOVE_EPHEMERAL_CASTELLAN"; holdId: string }
+  | { type: "SET_RAZE_ORDER"; armyId: string; holdId: string; active: boolean }
+  | {
+      /**
+       * Settle what becomes of a taken seat, or of captives from a fight.
+       * Compared against whatever was promised, then written to the ledger.
+       */
+      type: "RESOLVE_PENDING_CHOICE";
+      choiceId: string;
+      fates: SeatFates;
+      /** Where imprisoned men go: with a host, or left behind the walls. */
+      prisonerDestination?: PrisonerLocation | null;
+    }
+  | { type: "OPEN_SEAT_FATE_PANEL"; choiceId: string | null }
+  | { type: "SET_BRIEFING_OPEN"; open: boolean }
+  | {
+      /** Let a body of captives go, or put them to the sword. */
+      type: "DISPOSE_PRISONERS";
+      groupId: string;
+      action: "release" | "execute";
+    }
+  | {
+      /** Move captives between a host and the walls they are standing at. */
+      type: "MOVE_PRISONERS";
+      groupId: string;
+      to: PrisonerLocation;
+    }
+  | {
+      /** A freed leader has told us where he means to go. */
+      type: "SET_TRAVELLER_DESTINATION";
+      characterId: CharacterId;
+      destHoldId: string;
+      arrivesTurn: number;
+    }
   | {
       /**
        * Take the rival's orders from the room save without touching ours.

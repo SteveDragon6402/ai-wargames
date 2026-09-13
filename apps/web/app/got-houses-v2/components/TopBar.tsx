@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import type { GameState, GameAction, Faction } from "../types";
 import { victoryProgress, VICTORY_TURN_LIMIT, WEST_RIVERLANDS_NEEDED, NORTH_PRIZE_HOLD_TURNS } from "../lib/victory";
+import { blockingMessage } from "../lib/pending-choices";
 
 interface Props {
   state: GameState;
@@ -245,7 +246,7 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
         orderCount={currentOrders.orders.length}
         onSubmit={() => handleSubmit(activeFaction)}
         locked={!inPlanningPhase}
-        blockedBy={null}
+        blockedBy={blockingMessage(state.pendingChoices, activeFaction)}
       />
 
       {/* Talk hub */}

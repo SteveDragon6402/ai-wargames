@@ -15,6 +15,7 @@ import type {
   Hold,
   ArmyConditionUpdate,
   SplitConfig,
+  CharacterId,
   CharacterState,
   NpcAgentState,
   NpcRuntimePatch,
@@ -29,6 +30,13 @@ import type {
   FactionOrders,
   ForageState,
   UnitType,
+  TurnHistory,
+  PendingChoice,
+  PrisonerGroup,
+  PrisonerLocation,
+  SeatFates,
+  Traveller,
+  Deed,
 } from "../types";
 import { INITIAL_GAME_STATE } from "../data/initial-state";
 import { HOLDS_MAP } from "../data/holds";
@@ -84,13 +92,58 @@ import {
 import { describeSeat, retreatCountryKind } from "../lib/travel";
 import {
   applyArmyForage,
+  armyMen,
   forageAtHold,
   forageCampsFromArmies,
   forageMovesFromOrders,
   forageOnPath,
 } from "../lib/forage";
-import { deathRipple, mergeRipple } from "../lib/death-ripple";
+import { captureRipple, deathRipple, mergeRipple } from "../lib/death-ripple";
 import { evaluateVictory, robbDeadOutcome } from "../lib/victory";
+import { convertDeathsToCaptures } from "../lib/battle-validate";
+import {
+  emptyCircumstances,
+  recordDeed,
+  recordDeeds,
+} from "../lib/deeds";
+import { fatesOf } from "../lib/terms";
+import {
+  applyPendingChoice,
+  blockingChoicesFor,
+  buildBattlePrisonersChoice,
+  buildSeatFateChoice,
+  disposePrisonerGroup,
+  namedDefendersOf,
+  type BoardSlice,
+} from "../lib/pending-choices";
+import {
+  createPrisonerGroup,
+  describePrisonerBurden,
+  groundOrphanedGroups,
+  liberatePrisoners,
+  markCaptive,
+  movePrisoners,
+  prisonersAt,
+  prisonersWith,
+  reassignEscortedPrisoners,
+} from "../lib/prisoners";
+import { tickTravellers } from "../lib/release";
+import {
+  applyRaze,
+  armiesCommittedToRazing,
+  canRaze,
+  beginRaze,
+  stripForageAtHold,
+} from "../lib/raze";
+import {
+  backfillRetreats,
+  emptyAftermath,
+  escortedPrisonerRecords,
+  inferVictor,
+  snapshotParticipants,
+  snapshotSetup,
+  takenPrisonerRecord,
+} from "../lib/battle-records";
 
 /** Appoint lead commander (or clear). Promotes notables into leaders and syncs NPC roles. */
 function appointLeadCommander(
@@ -299,6 +352,13 @@ function advanceToPlanning(
     ),
     newTurn
   );
+  const ticked = tickTravellers(
+    patch.travellers ?? state.travellers,
+    newTurn,
+    holdStates,
+    patch.armies ?? state.armies,
+    patch.characters ?? state.characters
+  );
   const next: GameState = {
     ...state,
     ...patch,
@@ -312,6 +372,11 @@ function advanceToPlanning(
     speechArmyId: null,
     lastStandHoldIds: [],
     holdStates,
+    travellers: ticked.travellers,
+    characters: ticked.characters,
+    briefingOpen: true,
+    briefingShownFor: null,
+    briefingShownTurn: null,
   };
   const verdict = evaluateVictory({
     finishedTurn: state.turn,
@@ -355,6 +420,136 @@ function lapseExpiredTerms(
     }
   }
   return changed ? next : holdStates;
+}
+
+function boardOf(state: GameState): BoardSlice {
+  return {
+    turn: state.turn,
+    armies: state.armies,
+    holdStates: state.holdStates ?? {},
+    characters: state.characters,
+    prisoners: state.prisoners ?? [],
+    travellers: state.travellers ?? [],
+    deeds: state.deeds ?? [],
+    forage: state.forage,
+    battleReports: state.battleReports,
+    pendingChoices: state.pendingChoices ?? [],
+  };
+}
+
+function withBoard(
+  state: GameState,
+  board: BoardSlice,
+  extra: Partial<GameState> = {}
+): GameState {
+  return {
+    ...state,
+    armies: board.armies,
+    holdStates: board.holdStates,
+    characters: board.characters,
+    prisoners: board.prisoners,
+    travellers: board.travellers,
+    deeds: board.deeds,
+    forage: board.forage,
+    battleReports: board.battleReports,
+    pendingChoices: board.pendingChoices,
+    ...extra,
+  };
+}
+
+function liberateHoldsOnBoard(
+  board: BoardSlice,
+  holdIds: string[],
+  liberator: Faction,
+  joinArmyId: string | null
+): BoardSlice {
+  let next = board;
+  for (const holdId of holdIds) {
+    const groups = prisonersAt(next.prisoners, holdId);
+    if (groups.length === 0) continue;
+    const out = liberatePrisoners(
+      next.prisoners,
+      groups.map((g) => g.id),
+      liberator,
+      next.characters,
+      joinArmyId
+    );
+    if (out.liberated.length === 0) continue;
+    const recorded = recordDeeds(
+      next.deeds,
+      out.liberated.map((g) => ({
+        turn: board.turn,
+        kind: "prisoners_liberated" as const,
+        actorFaction: liberator,
+        victimFaction: g.captorFaction,
+        holdId,
+        characterIds: g.characterIds,
+        characterNames: g.characterIds.map((id) => next.characters[id]?.name ?? id),
+        menAffected: g.units.reduce((s, u) => s + u.count, 0),
+        circumstances: emptyCircumstances({ stormed: true }),
+      }))
+    );
+    let armies = next.armies;
+    if (joinArmyId && out.freedUnits.length > 0) {
+      armies = armies.map((a) =>
+        a.id === joinArmyId ? { ...a, units: mergeUnits(a.units, out.freedUnits) } : a
+      );
+    }
+    next = {
+      ...next,
+      prisoners: out.prisoners,
+      characters: out.characters,
+      deeds: recorded.deeds,
+      armies,
+    };
+  }
+  return next;
+}
+
+function finishRazes(state: GameState): GameState {
+  let holdStates = { ...(state.holdStates ?? {}) };
+  let forage = state.forage;
+  let deeds = state.deeds ?? [];
+  const events: FactionEvent[] = [];
+  for (const [holdId, hs] of Object.entries(holdStates)) {
+    if (!hs.razeInProgress) continue;
+    const nextHs = applyRaze(holdId, hs, hs.razeInProgress.faction);
+    holdStates[holdId] = nextHs;
+    forage = stripForageAtHold(forage, holdId);
+    const holdName = HOLDS_MAP.get(holdId)?.name ?? holdId;
+    const rec = recordDeed(deeds, {
+      turn: state.turn,
+      kind: "town_razed",
+      actorFaction: hs.razeInProgress.faction,
+      victimFaction:
+        hs.homeFaction === "north" || hs.homeFaction === "westerlands"
+          ? hs.homeFaction
+          : null,
+      holdId,
+      characterIds: [],
+      characterNames: [],
+      menAffected: 0,
+      circumstances: emptyCircumstances({ stormed: false }),
+      summary: `${holdName} put to the torch`,
+    });
+    deeds = rec.deeds;
+    events.push({
+      id: `ev-raze-${holdId}-${state.turn}`,
+      turn: state.turn,
+      faction: hs.razeInProgress.faction,
+      kind: "other",
+      holdIds: [holdId],
+      summary: `${holdName} razed`,
+      detail: rec.deed.detail,
+    });
+  }
+  return {
+    ...state,
+    holdStates,
+    forage,
+    deeds,
+    factionEvents: [...(state.factionEvents ?? []), ...events],
+  };
 }
 
 function getAdjacentHolds(holdId: string): string[] {
@@ -455,7 +650,9 @@ function detectBattles(
   allOrders: MoveOrder[],
   armyOrdersMap: Record<string, "march" | "rest" | "fortify">,
   holdStates: Record<string, HoldRuntime>,
-  forage?: ForageState
+  forage?: ForageState,
+  prisoners?: PrisonerGroup[],
+  characters?: Record<CharacterId, CharacterState>
 ): BattleContext[] {
   const byHold = new Map<string, Army[]>();
   for (const army of armies) {
@@ -490,6 +687,14 @@ function detectBattles(
       };
     }
 
+    const prisonerBurden: Record<string, string> = {};
+    if (prisoners && characters) {
+      for (const a of armiesHere) {
+        const line = describePrisonerBurden(prisoners, a.id, characters);
+        if (line) prisonerBurden[a.id] = line;
+      }
+    }
+
     battles.push({
       holdId,
       northArmies: northHere,
@@ -502,9 +707,31 @@ function detectBattles(
       wallsStand: garrisonHeadcount(holdStates[holdId]?.garrison) > 0,
       seatLine: describeSeat(HOLDS_MAP.get(holdId), holdStates[holdId]),
       forage: forageAtHold(forage, holdId),
+      ...(Object.keys(prisonerBurden).length > 0 ? { prisonerBurden } : {}),
     });
   }
   return battles;
+}
+
+function attachPrisonerBurden(
+  battles: BattleContext[],
+  prisoners: PrisonerGroup[] | undefined,
+  characters: Record<CharacterId, CharacterState>
+): BattleContext[] {
+  if (!prisoners?.length) return battles;
+  return battles.map((b) => {
+    const prisonerBurden: Record<string, string> = {
+      ...(b.prisonerBurden ?? {}),
+    };
+    for (const a of [...b.northArmies, ...b.westArmies, ...(b.rogueArmies ?? [])]) {
+      if (prisonerBurden[a.id]) continue;
+      const line = describePrisonerBurden(prisoners, a.id, characters);
+      if (line) prisonerBurden[a.id] = line;
+    }
+    return Object.keys(prisonerBurden).length > 0
+      ? { ...b, prisonerBurden }
+      : b;
+  });
 }
 
 /**
@@ -874,6 +1101,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
     case "SUBMIT_FACTION": {
       if (state.phase === "ended" || state.outcome) return state;
+      if (blockingChoicesFor(state.pendingChoices, action.faction).length > 0) {
+        return state;
+      }
       const nextState = setFactionOrders(state, action.faction, { submitted: true });
       // Two-browser rooms defer this: the host adjudicates once both locks
       // are visible, so the guest's local copy cannot resolve a half-board.
@@ -889,10 +1119,25 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
     case "ADJUDICATE_MOVES": {
       if (state.phase === "ended" || state.outcome) return state;
+      const razing = new Set([
+        ...armiesCommittedToRazing(state.north.razeOrders),
+        ...armiesCommittedToRazing(state.westerlands.razeOrders),
+        ...Object.values(state.holdStates ?? {})
+          .filter((hs) => hs.razeInProgress)
+          .flatMap((hs) =>
+            state.armies
+              .filter((a) => a.holdId && hs.razeInProgress && a.faction === hs.razeInProgress.faction)
+              .filter((a) => {
+                const hid = Object.entries(state.holdStates ?? {}).find(([, h]) => h === hs)?.[0];
+                return hid ? a.holdId === hid : false;
+              })
+              .map((a) => a.id)
+          ),
+      ]);
       const allOrders: MoveOrder[] = [
         ...state.north.orders,
         ...state.westerlands.orders,
-      ];
+      ].filter((o) => !razing.has(o.armyId));
 
       const movedArmyIds = new Set(allOrders.map((o) => o.armyId));
 
@@ -935,12 +1180,23 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         };
       });
 
-      const newTurnHistory = {
+      // The march ledger: where every host actually went, not just whether it
+      // moved. Read back by the march_history tool, subject to fog of war.
+      const newTurnHistory: TurnHistory = {
         turn: state.turn,
-        armyMoves: state.armies.map((army) => ({
-          armyId: army.id,
-          moved: movedArmyIds.has(army.id),
-        })),
+        armyMoves: state.armies.map((army) => {
+          const order = allOrders.find((o) => o.armyId === army.id);
+          return {
+            armyId: army.id,
+            armyName: army.name,
+            faction: army.faction,
+            moved: !!order,
+            fromHoldId: army.holdId,
+            toHoldId: order?.toHoldId ?? army.holdId,
+            order: armyOrdersMap[army.id] ?? "rest",
+            men: armyMen(army),
+          };
+        }),
       };
 
       const forage = applyArmyForage(
@@ -955,7 +1211,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         allOrders,
         armyOrdersMap,
         state.holdStates ?? {},
-        forage
+        forage,
+        state.prisoners,
+        state.characters
       );
 
       const stormArmyIds = [
@@ -1003,10 +1261,14 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         armyOrdersMap
       );
 
-      const pendingBattles = siegeBattles.map((b) => ({
-        ...b,
-        forage: b.forage ?? forageAtHold(forage, b.holdId),
-      }));
+      const pendingBattles = attachPrisonerBurden(
+        siegeBattles.map((b) => ({
+          ...b,
+          forage: b.forage ?? forageAtHold(forage, b.holdId),
+        })),
+        state.prisoners,
+        state.characters
+      );
 
       const orderEvents = eventsFromResolvedOrders(
         state.turn,
@@ -1055,7 +1317,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         });
       }
 
-      return {
+      let resolved: GameState = {
         ...state,
         phase: "resolving",
         armies: updatedArmies,
@@ -1071,6 +1333,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           stanceOrders: {},
           stormArmyIds: [],
           sallyHoldIds: [],
+          razeOrders: [],
           submitted: false,
         },
         westerlands: {
@@ -1078,6 +1341,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           stanceOrders: {},
           stormArmyIds: [],
           sallyHoldIds: [],
+          razeOrders: [],
           submitted: false,
         },
         selectedHoldId: null,
@@ -1099,6 +1363,18 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ...siegeOrderEvents,
         ].slice(-400),
       };
+      resolved = finishRazes(resolved);
+      if (marchCapture.pledges.length > 0) {
+        let board = boardOf(resolved);
+        for (const p of marchCapture.pledges) {
+          const join =
+            resolved.armies.find((a) => a.holdId === p.holdId && a.faction === p.faction)?.id ??
+            null;
+          board = liberateHoldsOnBoard(board, [p.holdId], p.faction, join);
+        }
+        resolved = withBoard(resolved, board);
+      }
+      return resolved;
     }
 
     case "APPLY_BATTLE_BRIEFS": {
@@ -1160,17 +1436,68 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         const allowed = participantsFor(r);
         return allowed ? r.casualties.filter((c) => allowed.has(c.armyId)) : [];
       });
-      const allFallen = reports.flatMap((r) => {
+      const allFallenRaw = reports.flatMap((r) => {
         const allowed = participantsFor(r);
         return allowed ? r.fallen.filter((f) => allowed.has(f.armyId)) : [];
       });
+      const convertedByReport = reports.map((r) =>
+        convertDeathsToCaptures(
+          r.fallen ?? [],
+          r.captured ?? [],
+          state.characters,
+          state.turn,
+          r.holdId
+        )
+      );
+      const allFallen = convertedByReport.flatMap((c, i) => {
+        const allowed = participantsFor(reports[i]);
+        return allowed ? c.fallen.filter((f) => allowed.has(f.armyId)) : [];
+      });
+      const allCaptured = convertedByReport.flatMap((c, i) => {
+        const allowed = participantsFor(reports[i]);
+        return allowed ? c.captured.filter((f) => allowed.has(f.armyId)) : [];
+      });
+      void allFallenRaw;
 
-      const correctedReports = reports.map((report) => {
+      const correctedReports = reports.map((report, i) => {
         const battle = state.pendingBattles.find((b) => b.holdId === report.holdId);
-        if (!battle) return report;
-
+        const conv = convertedByReport[i];
+        const captured = conv?.captured ?? report.captured ?? [];
+        const fallen = conv?.fallen ?? report.fallen ?? [];
+        const notes = [
+          ...(report.validation ?? []),
+          ...(conv?.notes ?? []),
+        ];
+        if (!battle) {
+          return { ...report, fallen, captured, validation: notes };
+        }
+        const preArmies = [
+          ...battle.northArmies,
+          ...battle.westArmies,
+          ...(battle.rogueArmies ?? []),
+        ];
+        const controllerBefore = state.holdStates?.[report.holdId]?.controller ?? null;
         return {
           ...report,
+          fallen,
+          captured,
+          validation: notes,
+          victor: inferVictor(report.holdResult, report.defeatType),
+          participants: snapshotParticipants(battle, state.armies),
+          setup: snapshotSetup(battle, state.holdStates ?? {}),
+          prisoners: [
+            ...escortedPrisonerRecords(
+              state.prisoners,
+              preArmies.map((a) => a.id)
+            ),
+          ],
+          aftermath: emptyAftermath(
+            report.holdResult !== "abandoned" &&
+              report.holdResult !== controllerBefore
+              ? { from: controllerBefore, to: report.holdResult }
+              : null,
+            []
+          ),
           retreatingArmyIds: retreatingArmyIdsForReport(battle, report.holdResult),
         };
       });
@@ -1180,6 +1507,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       // Apply casualties and fallen figures
       let updatedArmies = applyCasualties(state.armies, allCasualties);
       updatedArmies = applyFallen(updatedArmies, allFallen);
+      updatedArmies = applyFallen(updatedArmies, allCaptured);
 
       // Apply garrison casualties / control flips for siege engagements
       let holdStates: Record<string, HoldRuntime> = {
@@ -1188,6 +1516,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const siegeOutcomeEvents: FactionEvent[] = [];
       const extraFallen: FallenFigure[] = [];
       let conversations = state.conversations;
+      const newChoices: PendingChoice[] = [];
 
       for (const report of correctedReports) {
         const battle = state.pendingBattles.find((b) => b.holdId === report.holdId);
@@ -1226,15 +1555,31 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         if (eng === "storm") {
           const besieger = hs.siege?.besiegerFaction;
           if (besieger && report.holdResult === besieger) {
-            extraFallen.push(
-              ...postedGarrisonFallen(holdId, { ...hs, garrison }, state.characters)
+            const stormIds = namedDefendersOf(
+              holdId,
+              { [holdId]: { ...hs, garrison } },
+              state.characters
+            );
+            newChoices.push(
+              buildSeatFateChoice({
+                turn: state.turn,
+                holdId,
+                faction: besieger,
+                promised: null,
+                garrisonUnits: garrison.units,
+                captiveCharacterIds: stormIds,
+                escortArmyIds: state.armies
+                  .filter((a) => a.holdId === holdId && a.faction === besieger)
+                  .map((a) => a.id),
+                stormed: true,
+              })
             );
             conversations = closeParleysAtHold(
               conversations,
               holdId,
               "The walls have fallen; there is no garrison left to parley with."
             );
-            // Walls taken — everyone still inside dies. Capture comes later.
+            // Walls taken — the garrison and its captains await a fate.
             garrison = normalizeGarrison({
               faction: null,
               units: [],
@@ -1373,9 +1718,17 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         };
       }
 
+      const capturedIds = allCaptured
+        .map((f) => findCharacterIdByName(characters, f.name))
+        .filter((id): id is string => !!id);
+      characters = markCaptive(characters, capturedIds);
+
       const rippled = mergeRipple(
-        allConditionUpdates,
-        deathRipple(fallenThisFight, state.characters, updatedArmies)
+        mergeRipple(
+          allConditionUpdates,
+          deathRipple(fallenThisFight, state.characters, updatedArmies)
+        ),
+        captureRipple(allCaptured, state.characters, updatedArmies)
       );
 
       if (characters["robb-stark"] && !characters["robb-stark"].alive) {
@@ -1428,7 +1781,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       // Determine which armies need a commander rename:
       // Any army that had at least one isLeader fallen figure
       const armiesWithFallenLeaders = new Set(
-        fallenThisFight.filter((f) => f.isLeader).map((f) => f.armyId)
+        [
+          ...fallenThisFight.filter((f) => f.isLeader),
+          ...allCaptured.filter((f) => f.isLeader),
+        ].map((f) => f.armyId)
       );
       // Only include armies that still exist (weren't destroyed)
       const pendingRenames = updatedArmies
@@ -1491,6 +1847,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           lastStand: true,
         });
       }
+      const lastStandWithBurden = attachPrisonerBurden(
+        lastStandBattles,
+        state.prisoners,
+        state.characters
+      );
 
       if (destroyedArmyIds.size > 0) {
         updatedArmies = updatedArmies.filter((a) => !destroyedArmyIds.has(a.id));
@@ -1543,6 +1904,169 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       );
       holdStates = afterBattleCapture.holdStates;
 
+      let prisoners = state.prisoners ?? [];
+      let board = boardOf({
+        ...state,
+        armies: updatedArmies,
+        holdStates,
+        characters,
+        prisoners,
+        battleReports: newBattleReports,
+      });
+      for (const p of afterBattleCapture.pledges) {
+        const join =
+          updatedArmies.find((a) => a.holdId === p.holdId && a.faction === p.faction)
+            ?.id ?? null;
+        board = liberateHoldsOnBoard(board, [p.holdId], p.faction, join);
+      }
+
+      for (let i = 0; i < correctedReports.length; i++) {
+        const report = correctedReports[i];
+        const capturedHere = convertedByReport[i]?.captured ?? [];
+        const victor =
+          report.victor === "north" || report.victor === "westerlands"
+            ? report.victor
+            : report.holdResult === "north" || report.holdResult === "westerlands"
+              ? report.holdResult
+              : null;
+        if (!victor) continue;
+        const escort =
+          updatedArmies.find((a) => a.holdId === report.holdId && a.faction === victor)
+            ?.id ?? null;
+        const ids = capturedHere
+          .map((f) => findCharacterIdByName(board.characters, f.name))
+          .filter((id): id is string => !!id);
+        const group = ids.length
+          ? createPrisonerGroup({
+          captorFaction: victor,
+          faction:
+            board.characters[ids[0] ?? ""]?.faction === "north" ||
+            board.characters[ids[0] ?? ""]?.faction === "westerlands"
+              ? board.characters[ids[0]!].faction
+              : victor === "north"
+                ? "westerlands"
+                : "north",
+          location: escort
+            ? { kind: "army", armyId: escort }
+            : { kind: "hold", holdId: report.holdId },
+          characterIds: ids,
+          takenAtHoldId: report.holdId,
+          takenTurn: state.turn,
+          origin: "battle",
+          battleId: report.id,
+        })
+          : null;
+        if (group) {
+          board = {
+            ...board,
+            prisoners: [...board.prisoners, group],
+            characters: markCaptive(board.characters, ids),
+            battleReports: board.battleReports.map((r) =>
+              r.id === report.id
+                ? {
+                    ...r,
+                    prisoners: [
+                      ...(r.prisoners ?? []),
+                      takenPrisonerRecord(
+                        group,
+                        ids.map((id) => board.characters[id]?.name ?? id)
+                      ),
+                    ],
+                  }
+                : r
+            ),
+          };
+          newChoices.push(
+            buildBattlePrisonersChoice({
+              turn: state.turn,
+              holdId: report.holdId,
+              faction: victor,
+              battleId: report.id,
+              garrisonUnits: [],
+              captiveCharacterIds: ids,
+              escortArmyIds: escort ? [escort] : [],
+            })
+          );
+        }
+
+        // Escorting army that lost: its captives of the victor's side go free;
+        // the rest change hands.
+        const losers = (report.retreatingArmyIds ?? []).concat(
+          [...destroyedArmyIds]
+        );
+        for (const armyId of losers) {
+          const withThem = prisonersWith(board.prisoners, armyId);
+          const lib = liberatePrisoners(
+            board.prisoners,
+            withThem.map((g) => g.id),
+            victor,
+            board.characters,
+            escort
+          );
+          if (lib.liberated.length) {
+            const rec = recordDeeds(
+              board.deeds,
+              lib.liberated.map((g) => ({
+                turn: state.turn,
+                kind: "prisoners_liberated" as const,
+                actorFaction: victor,
+                victimFaction: g.captorFaction,
+                holdId: report.holdId,
+                characterIds: g.characterIds,
+                characterNames: g.characterIds.map(
+                  (id) => board.characters[id]?.name ?? id
+                ),
+                menAffected: g.units.reduce((s, u) => s + u.count, 0),
+                circumstances: emptyCircumstances({ stormed: true }),
+                battleId: report.id,
+              }))
+            );
+            board = {
+              ...board,
+              prisoners: reassignEscortedPrisoners(
+                lib.prisoners,
+                armyId,
+                victor,
+                escort,
+                report.holdId
+              ),
+              characters: lib.characters,
+              deeds: rec.deeds,
+              armies:
+                escort && lib.freedUnits.length
+                  ? board.armies.map((a) =>
+                      a.id === escort
+                        ? { ...a, units: mergeUnits(a.units, lib.freedUnits) }
+                        : a
+                    )
+                  : board.armies,
+            };
+          } else {
+            board = {
+              ...board,
+              prisoners: reassignEscortedPrisoners(
+                board.prisoners,
+                armyId,
+                victor,
+                escort,
+                report.holdId
+              ),
+            };
+          }
+        }
+      }
+
+      updatedArmies = board.armies;
+      characters = board.characters;
+      prisoners = board.prisoners;
+      holdStates = board.holdStates;
+      const pendingChoices = [
+        ...(state.pendingChoices ?? []),
+        ...newChoices,
+      ];
+      const battleReportsOut = board.battleReports;
+      const deedsOut = board.deeds;
+
       const postBattleCastellan = syncCastellansWithSieges(
         state.holdStates ?? {},
         holdStates,
@@ -1572,15 +2096,18 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const lastStandHoldIds = [...newLastStandHolds];
 
       // If there are last-stand battles, re-enter resolving with them as pendingBattles
-      if (lastStandBattles.length > 0) {
+      if (lastStandWithBurden.length > 0) {
         return {
           ...state,
           phase: "resolving",
           armies: updatedArmies,
           characters,
           holdStates,
-          pendingBattles: lastStandBattles,
-          battleReports: newBattleReports,
+          prisoners,
+          pendingChoices,
+          deeds: deedsOut,
+          pendingBattles: lastStandWithBurden,
+          battleReports: battleReportsOut,
           retreats: nonTrappedRetreats,
           pendingRenames: survivingRenames,
           lastStandHoldIds,
@@ -1597,8 +2124,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           armies: updatedArmies,
           characters,
           holdStates,
+          prisoners,
+          pendingChoices,
+          deeds: deedsOut,
           pendingBattles: [],
-          battleReports: newBattleReports,
+          battleReports: battleReportsOut,
           retreats: nonTrappedRetreats,
           pendingRenames: survivingRenames,
           lastStandHoldIds,
@@ -1615,8 +2145,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           armies: updatedArmies,
           characters,
           holdStates,
+          prisoners,
+          pendingChoices,
+          deeds: deedsOut,
           pendingBattles: [],
-          battleReports: newBattleReports,
+          battleReports: battleReportsOut,
           retreats: nonTrappedRetreats,
           pendingRenames: [],
           lastStandHoldIds,
@@ -1638,8 +2171,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         armies: updatedArmies,
         characters,
         holdStates: settled.holdStates,
+        prisoners,
+        pendingChoices,
+        deeds: deedsOut,
         pendingBattles: [],
-        battleReports: newBattleReports,
+        battleReports: battleReportsOut,
         retreats: [],
         pendingRenames: [],
         capturePledges: settled.pledges,
@@ -1797,6 +2333,13 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         ...retreatCapture.events,
       ].slice(-400);
 
+      const retreatedTo: Record<string, string | null> = {};
+      for (const r of state.retreats) {
+        retreatedTo[r.armyId] =
+          r.chosenHoldId ?? r.validTargets[0] ?? null;
+      }
+      const battleReports = backfillRetreats(state.battleReports, retreatedTo);
+
       const forage = applyArmyForage(
         state.forage,
         forageMovesFromOrders(retreatOrders, state.armies),
@@ -1810,7 +2353,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         retreatOrders,
         armyOrdersMap,
         siegeSync.holdStates,
-        forage
+        forage,
+        state.prisoners,
+        state.characters
       );
       if (clashBattles.length > 0) {
         return {
@@ -1820,6 +2365,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           characters: castellanSync.characters,
           holdStates: castellanSync.holdStates,
           pendingBattles: clashBattles,
+          battleReports,
           retreats: [],
           capturePledges,
           factionEvents,
@@ -1838,6 +2384,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         armies: updatedArmies,
         characters: castellanSync.characters,
         holdStates: settled.holdStates,
+        battleReports,
         forage,
         retreats: [],
         capturePledges: settled.pledges,
@@ -2002,6 +2549,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         activeFaction: action.faction,
         selectedArmyIds: [],
         moveMode: { active: false, validTargets: [] },
+        briefingOpen: state.adminMode,
+        briefingShownFor: action.faction,
       };
     }
 
@@ -2423,15 +2972,38 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const hs = state.holdStates?.[action.holdId];
       if (!canOfferTerms(hs, action.terms.offeredBy)) return state;
       const holdName = HOLDS_MAP.get(action.holdId)?.name ?? action.holdId;
+      const offered = { ...action.terms, status: "offered" as const };
+      const rec = recordDeed(state.deeds, {
+        turn: state.turn,
+        kind: "terms_offered",
+        actorFaction: action.terms.offeredBy,
+        victimFaction:
+          hs!.siege!.besiegerFaction === action.terms.offeredBy
+            ? (hs!.garrison.faction === "north" || hs!.garrison.faction === "westerlands"
+                ? hs!.garrison.faction
+                : null)
+            : hs!.siege!.besiegerFaction,
+        holdId: action.holdId,
+        characterIds: [],
+        characterNames: [],
+        menAffected: garrisonHeadcount(hs!.garrison),
+        circumstances: emptyCircumstances({
+          siegeTurns: hs!.siege!.turns,
+          timesTermsOffered: (hs!.siege!.termsOfferedCount ?? 0) + 1,
+          promised: fatesOf(offered),
+        }),
+      });
       return {
         ...state,
+        deeds: rec.deeds,
         holdStates: {
           ...state.holdStates,
           [action.holdId]: {
             ...hs!,
             siege: {
               ...hs!.siege!,
-              terms: { ...action.terms, status: "offered" },
+              terms: offered,
+              termsOfferedCount: (hs!.siege!.termsOfferedCount ?? 0) + 1,
             },
           },
         },
@@ -2444,10 +3016,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             kind: "other",
             holdIds: [action.holdId],
             summary: `Terms put to ${holdName}`,
-            detail: `${action.terms.note} (${describeTerms({
-              ...action.terms,
-              status: "offered",
-            })})`,
+            detail: `${action.terms.note} (${describeTerms(offered)})`,
           },
         ],
       };
@@ -2491,8 +3060,30 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       }
 
       if (!action.accepted) {
+        const rec = recordDeed(state.deeds, {
+          turn: state.turn,
+          kind: "terms_rejected",
+          actorFaction:
+            open.offeredBy === hs.siege.besiegerFaction
+              ? (hs.garrison.faction === "north" || hs.garrison.faction === "westerlands"
+                  ? hs.garrison.faction
+                  : hs.siege.besiegerFaction)
+              : hs.siege.besiegerFaction,
+          victimFaction: open.offeredBy,
+          holdId: action.holdId,
+          characterIds: [],
+          characterNames: [],
+          menAffected: 0,
+          circumstances: emptyCircumstances({
+            siegeTurns: hs.siege.turns,
+            timesTermsOffered: hs.siege.termsOfferedCount ?? 0,
+            timesTermsRefused: (hs.siege.termsRefusedCount ?? 0) + 1,
+            promised: fatesOf(open),
+          }),
+        });
         return {
           ...state,
+          deeds: rec.deeds,
           holdStates: {
             ...state.holdStates,
             [action.holdId]: {
@@ -2504,6 +3095,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
                   status: "rejected",
                   reply: action.reply,
                 },
+                termsRefusedCount: (hs.siege.termsRefusedCount ?? 0) + 1,
               },
             },
           },
@@ -2551,11 +3143,59 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         sallyHoldIds: fo.sallyHoldIds.filter((h) => h !== action.holdId),
       });
 
-      return {
+      const accepted = recordDeed(state.deeds, {
+        turn: state.turn,
+        kind: "terms_accepted",
+        actorFaction:
+          open.offeredBy === hs.siege.besiegerFaction
+            ? hs.siege.besiegerFaction
+            : (hs.garrison.faction === "north" || hs.garrison.faction === "westerlands"
+                ? hs.garrison.faction
+                : hs.siege.besiegerFaction),
+        victimFaction:
+          open.offeredBy === hs.siege.besiegerFaction
+            ? (hs.garrison.faction === "north" || hs.garrison.faction === "westerlands"
+                ? hs.garrison.faction
+                : null)
+            : hs.siege.besiegerFaction,
+        holdId: action.holdId,
+        characterIds: [],
+        characterNames: [],
+        menAffected: 0,
+        circumstances: emptyCircumstances({
+          siegeTurns: hs.siege.turns,
+          surrendered: true,
+          surrenderedQuickly: hs.siege.turns <= 2,
+          promised: fatesOf(open),
+        }),
+      });
+
+      // Prisoners promised as part of the bargain walk free at once.
+      let board = boardOf({
         ...state,
         holdStates: yielded.holdStates,
         characters,
         armies: yielded.armies,
+        deeds: accepted.deeds,
+        pendingChoices: [
+          ...(state.pendingChoices ?? []),
+          ...(yielded.pendingChoice ? [yielded.pendingChoice] : []),
+        ],
+      });
+      for (const id of open.releasePrisonerIds ?? []) {
+        const disposed = disposePrisonerGroup(board, id, "release");
+        if (disposed) board = disposed.board;
+      }
+      board = liberateHoldsOnBoard(
+        board,
+        [action.holdId],
+        hs.siege.besiegerFaction,
+        yielded.armies.find(
+          (a) => a.holdId === action.holdId && a.faction === hs.siege!.besiegerFaction
+        )?.id ?? null
+      );
+
+      return withBoard(state, board, {
         conversations,
         north: clearOrders(state.north),
         westerlands: clearOrders(state.westerlands),
@@ -2563,7 +3203,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ? [...(state.capturePledges ?? []), yielded.pledge]
           : state.capturePledges,
         factionEvents: [...(state.factionEvents ?? []), ...yielded.events],
-      };
+        briefingOpen: true,
+        seatFatePanelId: yielded.pendingChoice?.id ?? state.seatFatePanelId,
+      });
     }
 
     case "APPLY_NEGOTIATOR_ENSURE": {
@@ -2626,6 +3268,98 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         speechArmyId: state.speechArmyId,
         garrisonPanel: state.garrisonPanel,
       };
+    }
+
+    case "SET_RAZE_ORDER": {
+      const army = state.armies.find((a) => a.id === action.armyId);
+      if (!army || army.faction !== state.activeFaction) return state;
+      const hs = state.holdStates?.[action.holdId];
+      if (action.active && !canRaze(army, action.holdId, hs).ok) return state;
+      const fo = getFactionOrders(state, army.faction);
+      if (fo.submitted) return state;
+      const razeOrders = action.active
+        ? [
+            ...(fo.razeOrders ?? []).filter((o) => o.armyId !== action.armyId),
+            { armyId: action.armyId, holdId: action.holdId },
+          ]
+        : (fo.razeOrders ?? []).filter((o) => o.armyId !== action.armyId);
+      const holdStates = { ...(state.holdStates ?? {}) };
+      if (hs) {
+        holdStates[action.holdId] = action.active
+          ? beginRaze(hs, army.faction, state.turn)
+          : { ...hs, razeInProgress: null };
+      }
+      return setFactionOrders(
+        { ...state, holdStates },
+        army.faction,
+        {
+          razeOrders,
+          orders: action.active
+            ? fo.orders.filter((o) => o.armyId !== action.armyId)
+            : fo.orders,
+        }
+      );
+    }
+
+    case "RESOLVE_PENDING_CHOICE": {
+      const applied = applyPendingChoice(
+        boardOf(state),
+        action.choiceId,
+        action.fates,
+        action.prisonerDestination
+      );
+      if (!applied) return state;
+      return withBoard(state, applied.board, {
+        factionEvents: [...(state.factionEvents ?? []), ...applied.events],
+        seatFatePanelId:
+          state.seatFatePanelId === action.choiceId ? null : state.seatFatePanelId,
+      });
+    }
+
+    case "OPEN_SEAT_FATE_PANEL": {
+      return { ...state, seatFatePanelId: action.choiceId };
+    }
+
+    case "SET_BRIEFING_OPEN": {
+      return {
+        ...state,
+        briefingOpen: action.open,
+        briefingShownFor: action.open ? state.activeFaction : state.briefingShownFor,
+        briefingShownTurn: action.open ? state.turn : state.briefingShownTurn,
+      };
+    }
+
+    case "DISPOSE_PRISONERS": {
+      const disposed = disposePrisonerGroup(
+        boardOf(state),
+        action.groupId,
+        action.action
+      );
+      if (!disposed) return state;
+      return withBoard(state, disposed.board, {
+        factionEvents: [...(state.factionEvents ?? []), ...disposed.events],
+      });
+    }
+
+    case "MOVE_PRISONERS": {
+      return {
+        ...state,
+        prisoners: movePrisoners(state.prisoners, action.groupId, action.to),
+      };
+    }
+
+    case "SET_TRAVELLER_DESTINATION": {
+      const travellers = (state.travellers ?? []).map((t) =>
+        t.characterId === action.characterId
+          ? {
+              ...t,
+              destHoldId: action.destHoldId,
+              arrivesTurn: action.arrivesTurn,
+              needsDestination: false,
+            }
+          : t
+      );
+      return { ...state, travellers };
     }
 
     default:
@@ -3136,5 +3870,7 @@ export function useGameState(initialState: GameState = INITIAL_GAME_STATE) {
   const [state, dispatch] = useReducer(gameReducer, initialState);
   return { state, dispatch };
 }
+
+export { gameReducer };
 
 export { determineTerritory };

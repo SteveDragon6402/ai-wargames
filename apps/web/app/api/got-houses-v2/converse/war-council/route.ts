@@ -9,13 +9,17 @@ import type {
   ConversationThread,
   FactionEvent,
   ForageState,
+  Deed,
   HoldRuntime,
   NpcAgentState,
   NpcRuntimePatch,
+  PrisonerGroup,
+  TurnHistory,
 } from "@/app/got-houses-v2/types";
 import {
   buildEmbodiedSystemPrompt,
   runCharacterToolLoop,
+  situationLines,
   type CharacterToolContext,
 } from "@/app/got-houses-v2/lib/character-tools";
 
@@ -33,6 +37,9 @@ interface WarCouncilBody {
   adviceLog?: AdviceRecord[];
   holdStates?: Record<string, HoldRuntime>;
   forage?: ForageState;
+  prisoners?: PrisonerGroup[];
+  deeds?: Deed[];
+  turnHistory?: TurnHistory[];
 }
 
 export async function POST(req: NextRequest) {
@@ -67,10 +74,18 @@ export async function POST(req: NextRequest) {
       const npc = body.characters[id];
       if (!npc || npc.kind !== "npc" || !npc.alive) continue;
 
+      const extras = situationLines({
+        prisoners: body.prisoners,
+        deeds: body.deeds,
+        characters: body.characters,
+        armies: body.armies,
+        faction: npc.faction,
+      });
       const system = buildEmbodiedSystemPrompt(
         id,
         "War council with your lord and fellow commanders. You remain at the table and speak counsel. When you speak, only the words you say at the table.",
-        body.characters
+        body.characters,
+        extras
       );
       if (!system) continue;
 
@@ -87,6 +102,9 @@ export async function POST(req: NextRequest) {
         adviceLog: body.adviceLog,
         holdStates: body.holdStates,
         forage: body.forage,
+        prisoners: body.prisoners,
+        deeds: body.deeds,
+        turnHistory: body.turnHistory,
       };
 
       // One commander failing must not silence the whole table: each is tried

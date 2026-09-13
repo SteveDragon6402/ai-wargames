@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Faction, GameAction, GameState, SurrenderTerms } from "../types";
+import type { Faction, GameAction, GameState, PersonFate, SurrenderTerms, TownFate } from "../types";
 import { HOLDS_MAP } from "../data/holds";
 import {
   TERMS_LIFETIME_TURNS,
@@ -15,6 +15,7 @@ import {
   openParleyAtHold,
   promptCastellanAboutTerms,
 } from "../lib/converse-client";
+import { reputationSummary } from "../lib/deeds";
 
 interface Props {
   state: GameState;
@@ -40,8 +41,9 @@ const FACTION_LABEL: Record<Faction, string> = {
  */
 export default function TermsBlock({ state, dispatch, holdId, faction }: Props) {
   const [composing, setComposing] = useState(false);
-  const [spareMen, setSpareMen] = useState(true);
-  const [spareCaptains, setSpareCaptains] = useState(true);
+  const [garrison, setGarrison] = useState<PersonFate>("let_go");
+  const [leaders, setLeaders] = useState<PersonFate>("let_go");
+  const [town, setTown] = useState<TownFate>("occupy");
   const [note, setNote] = useState("");
   const [confirmYield, setConfirmYield] = useState(false);
   const [parleyError, setParleyError] = useState<string | null>(null);
@@ -62,14 +64,20 @@ export default function TermsBlock({ state, dispatch, holdId, faction }: Props) 
   const mineIsOpen = !!open && open.offeredBy === faction;
   const awaitingMyAnswer = !!open && open.offeredBy !== faction;
   const mayOffer = canOfferTerms(hs, faction) && !composing;
-  const pressure = surrenderPressure(holdId, hs, state.armies);
+  const pressure = surrenderPressure(
+    holdId,
+    hs,
+    state.armies,
+    reputationSummary(state.deeds, hs.siege.besiegerFaction)
+  );
 
   async function putTerms() {
     const base = defaultTermsFor(hs!, faction, state.turn);
     const terms = {
       ...base,
-      garrisonSpared: spareMen,
-      leadersSpared: spareCaptains,
+      garrison,
+      leaders,
+      town,
       note: note.trim() || base.note,
       offeredTurn: state.turn,
       expiresTurn: state.turn + TERMS_LIFETIME_TURNS,
@@ -126,8 +134,9 @@ export default function TermsBlock({ state, dispatch, holdId, faction }: Props) 
   function yieldOutright() {
     const unconditional: Omit<SurrenderTerms, "status" | "reply"> = {
       offeredBy: faction,
-      garrisonSpared: false,
-      leadersSpared: false,
+      garrison: "prisoner",
+      leaders: "prisoner",
+      town: "occupy",
       note: `${holdName} is given up without conditions.`,
       offeredTurn: state.turn,
       expiresTurn: state.turn + TERMS_LIFETIME_TURNS,
@@ -219,16 +228,17 @@ export default function TermsBlock({ state, dispatch, holdId, faction }: Props) 
 
       {composing && (
         <div style={{ marginBottom: 6 }}>
-          <Check
-            label="Their men march out alive"
-            checked={spareMen}
-            onChange={setSpareMen}
+          <FateRow
+            label="Garrison"
+            value={garrison}
+            onChange={setGarrison}
           />
-          <Check
-            label="Their captains walk free"
-            checked={spareCaptains}
-            onChange={setSpareCaptains}
+          <FateRow
+            label="Captains"
+            value={leaders}
+            onChange={setLeaders}
           />
+          <TownRow value={town} onChange={setTown} />
           <input
             value={note}
             onChange={(e) => setNote(e.target.value.slice(0, 180))}
@@ -341,36 +351,59 @@ function statusColor(status: SurrenderTerms["status"]): string {
   }
 }
 
-function Check({
+function FateRow({
   label,
-  checked,
+  value,
   onChange,
 }: {
   label: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
+  value: PersonFate;
+  onChange: (v: PersonFate) => void;
 }) {
   return (
-    <label
-      style={{
-        ...MONO,
-        fontSize: 9,
-        color: checked ? "#c8b88a" : "#666",
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        cursor: "pointer",
-        marginTop: 3,
-      }}
-    >
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        style={{ accentColor: "#c8941a" }}
-      />
+    <div style={{ ...MONO, fontSize: 9, color: "#8a7a5a", marginTop: 4 }}>
       {label}
-    </label>
+      <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
+        {(["let_go", "prisoner", "execute"] as PersonFate[]).map((f) => (
+          <label key={f} style={{ color: value === f ? "#c8b88a" : "#555", cursor: "pointer" }}>
+            <input
+              type="radio"
+              checked={value === f}
+              onChange={() => onChange(f)}
+              style={{ accentColor: "#c8941a", marginRight: 4 }}
+            />
+            {f === "let_go" ? "let walk" : f === "prisoner" ? "hold" : "execute"}
+          </label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TownRow({
+  value,
+  onChange,
+}: {
+  value: TownFate;
+  onChange: (v: TownFate) => void;
+}) {
+  return (
+    <div style={{ ...MONO, fontSize: 9, color: "#8a7a5a", marginTop: 4 }}>
+      Town
+      <div style={{ display: "flex", gap: 8, marginTop: 2 }}>
+        {(["occupy", "raze"] as TownFate[]).map((f) => (
+          <label key={f} style={{ color: value === f ? "#c8b88a" : "#555", cursor: "pointer" }}>
+            <input
+              type="radio"
+              checked={value === f}
+              onChange={() => onChange(f)}
+              style={{ accentColor: "#c8941a", marginRight: 4 }}
+            />
+            {f === "occupy" ? "occupy" : "raze"}
+          </label>
+        ))}
+      </div>
+    </div>
   );
 }
 

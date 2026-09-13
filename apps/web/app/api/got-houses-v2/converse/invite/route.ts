@@ -16,8 +16,10 @@ import type {
 import {
   buildEmbodiedSystemPrompt,
   runCharacterToolLoop,
+  situationLines,
   type CharacterToolContext,
 } from "@/app/got-houses-v2/lib/character-tools";
+import type { Deed, PrisonerGroup, TurnHistory } from "@/app/got-houses-v2/types";
 
 interface InviteBody {
   fromCharacterId: CharacterId;
@@ -31,6 +33,9 @@ interface InviteBody {
   adviceLog?: AdviceRecord[];
   holdStates?: Record<string, HoldRuntime>;
   forage?: ForageState;
+  prisoners?: PrisonerGroup[];
+  deeds?: Deed[];
+  turnHistory?: TurnHistory[];
 }
 
 /**
@@ -52,10 +57,18 @@ export async function POST(req: NextRequest) {
       target.role === "castellan"
         ? "Parley at the walls. You speak for the garrison. Greet them and engage — you may negotiate. You cannot decline or walk away."
         : "Your lord (or peer) has called you to speak. The conversation is happening — greet them and engage. You cannot decline or walk away.";
+    const extras = situationLines({
+      prisoners: body.prisoners,
+      deeds: body.deeds,
+      characters: body.characters,
+      armies: body.armies,
+      faction: target.faction,
+    });
     const system = buildEmbodiedSystemPrompt(
       target.id,
       situation,
-      body.characters
+      body.characters,
+      extras
     );
     if (!system) {
       return NextResponse.json({ error: "No system prompt" }, { status: 400 });
@@ -82,6 +95,9 @@ export async function POST(req: NextRequest) {
       adviceLog: body.adviceLog,
       holdStates: body.holdStates,
       forage: body.forage,
+      prisoners: body.prisoners,
+      deeds: body.deeds,
+      turnHistory: body.turnHistory,
     };
 
     const client = new Anthropic({ apiKey });

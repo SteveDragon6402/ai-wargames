@@ -11,6 +11,7 @@ import type {
   HoldRuntime,
 } from "../types";
 import { getCastleSeed } from "../data/castles";
+import { effectiveCastleSeed } from "./raze";
 import { HOLDS_MAP } from "../data/holds";
 import {
   DEFAULT_GARRISON_MORALE,
@@ -281,7 +282,9 @@ function applySiegePresence(
   }
 
   for (const holdId of Object.keys(next)) {
-    const seed = getCastleSeed(holdId);
+    // A razed seat reads as a ruin, which can still be manned and so can still
+    // be invested — you just are not besieging much of a castle.
+    const seed = effectiveCastleSeed(holdId, next[holdId]);
     if (!isGarrisonable(seed)) {
       if (next[holdId].siege) {
         next[holdId] = { ...next[holdId], siege: null };
@@ -419,8 +422,13 @@ export function reconcileSieges(
  * replacing the household. Clamped by what the captor actually has so a battered
  * host is never given an impossible pledge.
  */
-export function minimumHoldingGarrison(holdId: string, available: number): number {
-  const seed = getCastleSeed(holdId);
+export function minimumHoldingGarrison(
+  holdId: string,
+  available: number,
+  /** Pass the runtime so a burned seat asks for fewer men than a whole one. */
+  hs?: HoldRuntime
+): number {
+  const seed = effectiveCastleSeed(holdId, hs);
   if (!isGarrisonable(seed)) return 0;
   const base = Math.min(
     seed.capacity,
@@ -456,10 +464,9 @@ export function applyPresenceControl(
   const pledges: CapturePledge[] = [];
 
   for (const [holdId, raw] of Object.entries(holdStates)) {
-    const seed = getCastleSeed(holdId);
-    if (!isGarrisonable(seed)) continue;
-
     const hs = normalizeHoldRuntime(raw);
+    const seed = effectiveCastleSeed(holdId, hs);
+    if (!isGarrisonable(seed)) continue;
     if (garrisonHeadcount(hs.garrison) > 0) continue;
 
     const sole = soleFieldFaction(armies, holdId);
@@ -602,9 +609,9 @@ export function selectGarrisonsForConditionUpdate(
   const decade = turn > 0 && turn % 10 === 0;
 
   for (const [holdId, raw] of Object.entries(holdStates)) {
-    const seed = getCastleSeed(holdId);
-    if (!isGarrisonable(seed)) continue;
     const hs = normalizeHoldRuntime(raw);
+    const seed = effectiveCastleSeed(holdId, hs);
+    if (!isGarrisonable(seed)) continue;
     if (garrisonHeadcount(hs.garrison) <= 0) continue;
 
     let phase: GarrisonConditionPhase | null = null;

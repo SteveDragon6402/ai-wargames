@@ -6,12 +6,18 @@ import type {
   CharacterId,
   CharacterState,
   ConversationThread,
+  Deed,
+  Faction,
   FactionEvent,
   ForageState,
   Hold,
   HoldRuntime,
   NpcAgentState,
   NpcRuntimePatch,
+  PersonFate,
+  PrisonerGroup,
+  TownFate,
+  TurnHistory,
 } from "../types";
 import {
   CHARACTER_SEED_MAP,
@@ -27,6 +33,16 @@ import { searchAdvice, searchFactionEvents } from "./faction-events";
 import { forageAtHold, forageOnPath } from "./forage";
 import { garrisonHeadcount } from "./hold-runtime";
 import { describeSeat, turnsBetween } from "./travel";
+import { describeCaptivity, prisonerAwarenessLines, prisonerRoster } from "./prisoners";
+import { reputationSummary, searchDeeds } from "./deeds";
+import {
+  formatBattleLog,
+  formatMarch,
+  publicHoldTurnsFrom,
+  queryBattleLogs,
+  queryMarchHistory,
+} from "./battle-records";
+import { refugeOptions } from "./release";
 
 export interface CharacterToolContext {
   actingCharacterId: CharacterId;
@@ -46,6 +62,13 @@ export interface CharacterToolContext {
   holdStates?: Record<string, HoldRuntime>;
   /** Living forage at seats and on the roads */
   forage?: ForageState;
+  prisoners?: PrisonerGroup[];
+  deeds?: Deed[];
+  turnHistory?: TurnHistory[];
+  /**
+   * Set when a freed man is choosing where to walk. Filled by choose_refuge.
+   */
+  refugeChoice?: { destHoldId: string | null; fromHoldId: string };
   /**
    * Set when this NPC is being asked to answer for a besieged seat. Carries the
    * terms on the table plus a soft read of the position, and collects whatever
@@ -191,7 +214,8 @@ message beginning with "SPEAK: " and nothing after it.`;
 export function buildEmbodiedSystemPrompt(
   characterId: CharacterId,
   situation: string,
-  characters?: Record<CharacterId, CharacterState>
+  characters?: Record<CharacterId, CharacterState>,
+  extraLines?: string[]
 ): string | null {
   const seed = CHARACTER_SEED_MAP.get(characterId);
   if (seed && seed.kind === "npc") {
@@ -202,7 +226,7 @@ ${seed.systemPrompt}
 
 Background (private — never narrate this aloud): ${seed.background}
 
-SITUATION: ${situation}
+SITUATION: ${situation}${extraLines?.length ? `\n${extraLines.join("\n")}` : ""}
 
 REMINDER: tools for facts, then call ${SPEAK_TOOL_NAME} with your line. Only that line is heard.`;
   }
@@ -221,12 +245,33 @@ ${runtime.runtimeSystemPrompt}
 
 Background (private — never narrate this aloud): ${runtime.runtimeBackground}
 
-SITUATION: ${situation}
+SITUATION: ${situation}${extraLines?.length ? `\n${extraLines.join("\n")}` : ""}
 
 REMINDER: tools for facts, then call ${SPEAK_TOOL_NAME} with your line. Only that line is heard.`;
   }
 
   return null;
+}
+
+/** Prisoners and reputation every speaker carries into a conversation. */
+export function situationLines(opts: {
+  prisoners?: PrisonerGroup[];
+  deeds?: Deed[];
+  characters: Record<CharacterId, CharacterState>;
+  armies: Army[];
+  faction?: Faction;
+}): string[] {
+  const lines = prisonerAwarenessLines(
+    opts.prisoners,
+    opts.characters,
+    opts.armies
+  );
+  if (opts.faction) {
+    const other: Faction = opts.faction === "north" ? "westerlands" : "north";
+    lines.push(`Word of your own side: ${reputationSummary(opts.deeds, opts.faction)}`);
+    lines.push(`Word of the other side: ${reputationSummary(opts.deeds, other)}`);
+  }
+  return lines;
 }
 
 /**
@@ -598,10 +643,17 @@ export const CHARACTER_TOOL_DEFS: Anthropic.Messages.Tool[] = [
   },
   {
     name: "get_battle_logs",
-    description: "Recall recent battles that have already been fought.",
+    description:
+      "Recall battles already fought — who was there, who fell, who was taken, where the beaten host fled. Filter by seat, faction, or a name.",
     input_schema: {
       type: "object",
-      properties: { limit: { type: "number" } },
+      properties: {
+        holdName: { type: "string" },
+        faction: { type: "string" },
+        characterName: { type: "string" },
+        sinceTurn: { type: "number" },
+        limit: { type: "number" },
+      },
       required: [],
     },
   },
@@ -758,20 +810,118 @@ export const CHARACTER_TOOL_DEFS: Anthropic.Messages.Tool[] = [
     input_schema: {
       type: "object",
       properties: {
-        garrisonSpared: {
-          type: "boolean",
-          description: "Your men march out alive rather than being taken.",
+        garrison: {
+          type: "string",
+          enum: ["let_go", "prisoner", "execute"],
+          description: "What becomes of the rank and file.",
         },
-        leadersSpared: {
-          type: "boolean",
-          description: "You and your captains walk free rather than being held.",
+        leaders: {
+          type: "string",
+          enum: ["let_go", "prisoner", "execute"],
+          description: "What becomes of you and your captains.",
+        },
+        town: {
+          type: "string",
+          enum: ["occupy", "raze"],
+          description: "What becomes of the seat itself.",
+        },
+        releasePrisonerIds: {
+          type: "array",
+          items: { type: "string" },
+          description: "Prisoners the other side must hand back as part of the bargain.",
         },
         note: {
           type: "string",
           description: "The terms in your own words, one or two sentences.",
         },
       },
-      required: ["garrisonSpared", "leadersSpared", "note"],
+      required: ["garrison", "leaders", "town", "note"],
+    },
+  },
+  {
+    name: "search_deeds",
+    description:
+      "Search the public war record — surrenders, terms kept or broken, razings, prisoners taken or freed. Battles are not deeds; use get_battle_logs for those.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        kind: { type: "string" },
+        faction: { type: "string", description: "north | westerlands" },
+        holdName: { type: "string" },
+        characterName: { type: "string" },
+        sinceTurn: { type: "number" },
+        limit: { type: "number" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "reputation_of",
+    description:
+      "How a faction has treated men who yielded — terms kept, broken, razings, executions. Facts only.",
+    input_schema: {
+      type: "object",
+      properties: {
+        faction: { type: "string", description: "north | westerlands" },
+      },
+      required: ["faction"],
+    },
+  },
+  {
+    name: "prisoners_held",
+    description:
+      "Who is held prisoner, by whom, and where. Public knowledge. Filter by captor or a name.",
+    input_schema: {
+      type: "object",
+      properties: {
+        faction: { type: "string", description: "Captor's faction, or omit for both" },
+        name: { type: "string", description: "Optional prisoner name" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "march_history",
+    description:
+      "Recall marches. Your own side in full. The enemy only where a march became public — a battle, a siege, or a seat changing hands.",
+    input_schema: {
+      type: "object",
+      properties: {
+        armyName: { type: "string" },
+        holdName: { type: "string" },
+        faction: { type: "string" },
+        sinceTurn: { type: "number" },
+        limit: { type: "number" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "demand_prisoner_release",
+    description:
+      "Look up captives you might demand back as part of a bargain. Returns ids to pass to propose_terms.releasePrisonerIds. Does not free anyone by itself.",
+    input_schema: {
+      type: "object",
+      properties: {
+        name: { type: "string", description: "Optional name to look for" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "choose_refuge",
+    description:
+      "If you have been freed and are choosing where to walk, pick a refuge from the seats offered. This is not spoken aloud.",
+    input_schema: {
+      type: "object",
+      properties: {
+        holdName: {
+          type: "string",
+          description: "Name of the seat you will walk to.",
+        },
+      },
+      required: ["holdName"],
     },
   },
 ];
@@ -782,8 +932,10 @@ export type SurrenderDecision =
   | { kind: "reject"; reason: string }
   | {
       kind: "propose";
-      garrisonSpared: boolean;
-      leadersSpared: boolean;
+      garrison: PersonFate;
+      leaders: PersonFate;
+      town: TownFate;
+      releasePrisonerIds?: string[];
       note: string;
     };
 
@@ -991,15 +1143,18 @@ Country forage: ${forageAtHold(ctx.forage, holdId)}`,
         c.kind === "npc" && c.holdId
           ? HOLDS_MAP.get(c.holdId)?.name
           : undefined;
-      const where = army
-        ? `Rides with ${army.name} near ${HOLDS_MAP.get(army.holdId)?.name ?? "the host"}.`
-        : holdPost
-          ? c.kind === "npc" && c.role === "castellan"
-            ? `Castellan of ${holdPost}.`
-            : `Posted in the garrison at ${holdPost}.`
-          : c.alive
-            ? "Whereabouts uncertain."
-            : "Believed dead or lost.";
+      const captivity = describeCaptivity(ctx.prisoners, c.id, ctx.armies);
+      const where = captivity
+        ? captivity
+        : army
+          ? `Rides with ${army.name} near ${HOLDS_MAP.get(army.holdId)?.name ?? "the host"}.`
+          : holdPost
+            ? c.kind === "npc" && c.role === "castellan"
+              ? `Castellan of ${holdPost}.`
+              : `Posted in the garrison at ${holdPost}.`
+            : c.alive
+              ? "Whereabouts uncertain."
+              : "Believed dead or lost.";
       const speciesNote =
         c.kind === "npc" && c.species === "beast"
           ? " (beast — not a speaker of courts)"
@@ -1105,17 +1260,27 @@ Country forage: ${forageAtHold(ctx.forage, holdId)}`,
     }
 
     case "get_battle_logs": {
-      const limit = Math.min(Number(input.limit) || 5, 10);
-      const reports = ctx.battleReports.slice(-limit);
-      if (reports.length === 0) return { result: "No battles fought yet that you recall." };
-      return {
-        result: reports
-          .map((r) => {
-            const holdName = HOLDS_MAP.get(r.holdId)?.name ?? r.holdId;
-            return `Turn ${r.turn} at ${holdName}: ${r.holdResult} (${r.defeatType ?? "unclear"})\n${r.narrative.slice(0, 900)}`;
-          })
-          .join("\n\n"),
-      };
+      const holdName = String(input.holdName ?? "").trim();
+      const holdId = holdName
+        ? HOLDS.find((h) => h.name.toLowerCase() === holdName.toLowerCase())?.id
+        : undefined;
+      const reports = queryBattleLogs(ctx.battleReports, {
+        holdId,
+        faction:
+          input.faction === "north" || input.faction === "westerlands"
+            ? input.faction
+            : undefined,
+        characterName: String(input.characterName ?? ""),
+        sinceTurn:
+          input.sinceTurn != null && input.sinceTurn !== ""
+            ? Number(input.sinceTurn)
+            : undefined,
+        limit: Math.min(Number(input.limit) || 8, 12),
+      });
+      if (reports.length === 0) {
+        return { result: "No battles fought yet that you recall." };
+      }
+      return { result: reports.map(formatBattleLog).join("\n\n") };
     }
 
     case "get_recent_messages": {
@@ -1199,10 +1364,17 @@ Country forage: ${forageAtHold(ctx.forage, holdId)}`,
       }
       const note = String(input.note ?? "").trim().slice(0, 300);
       if (!note) return { result: "Say what the terms are and try again." };
+      const person = (v: unknown): PersonFate =>
+        v === "execute" || v === "prisoner" || v === "let_go" ? v : "let_go";
+      const town: TownFate = input.town === "raze" ? "raze" : "occupy";
       ctx.surrender.decision = {
         kind: "propose",
-        garrisonSpared: input.garrisonSpared !== false,
-        leadersSpared: input.leadersSpared !== false,
+        garrison: person(input.garrison),
+        leaders: person(input.leaders),
+        town,
+        releasePrisonerIds: Array.isArray(input.releasePrisonerIds)
+          ? (input.releasePrisonerIds as string[])
+          : undefined,
         note,
       };
       return {
@@ -1233,6 +1405,150 @@ Country forage: ${forageAtHold(ctx.forage, holdId)}`,
       return {
         result: "Judgment recorded for the coming fight.",
       };
+    }
+
+    case "search_deeds": {
+      const holdName = String(input.holdName ?? "").trim();
+      const holdId = holdName
+        ? HOLDS.find((h) => h.name.toLowerCase() === holdName.toLowerCase())?.id
+        : undefined;
+      const hits = searchDeeds(ctx.deeds, {
+        query: String(input.query ?? ""),
+        kind: String(input.kind ?? ""),
+        faction:
+          input.faction === "north" || input.faction === "westerlands"
+            ? input.faction
+            : undefined,
+        holdId,
+        characterName: String(input.characterName ?? ""),
+        sinceTurn:
+          input.sinceTurn != null && input.sinceTurn !== ""
+            ? Number(input.sinceTurn)
+            : undefined,
+        limit: Number(input.limit) || 30,
+      });
+      if (hits.length === 0) return { result: "No matching deeds on the public record." };
+      return {
+        result: hits
+          .map((d) => `[T${d.turn} ${d.kind}] ${d.summary}\n${d.detail.slice(0, 500)}`)
+          .join("\n---\n"),
+      };
+    }
+
+    case "reputation_of": {
+      const faction =
+        input.faction === "north" || input.faction === "westerlands"
+          ? input.faction
+          : npc.faction;
+      return { result: reputationSummary(ctx.deeds, faction) };
+    }
+
+    case "prisoners_held": {
+      const captor =
+        input.faction === "north" || input.faction === "westerlands"
+          ? input.faction
+          : undefined;
+      const roster = prisonerRoster(ctx.prisoners, ctx.characters, ctx.armies, captor);
+      const name = String(input.name ?? "").trim().toLowerCase();
+      const filtered = name
+        ? roster.filter((e) => e.names.some((n) => n.toLowerCase().includes(name)))
+        : roster;
+      if (filtered.length === 0) {
+        return { result: "No prisoners matching that." };
+      }
+      return {
+        result: filtered
+          .map(
+            (e) =>
+              `${e.groupId}: ${e.captorFaction} holds ${e.men.toLocaleString()} ${e.faction} men${e.names.length ? ` — ${e.names.join(", ")}` : ""} (${e.whereabouts}, taken at ${e.takenAtHoldName} T${e.takenTurn})`
+          )
+          .join("\n"),
+      };
+    }
+
+    case "march_history": {
+      const holdName = String(input.holdName ?? "").trim();
+      const holdId = holdName
+        ? HOLDS.find((h) => h.name.toLowerCase() === holdName.toLowerCase())?.id
+        : undefined;
+      const publicTurns = publicHoldTurnsFrom(ctx.battleReports, ctx.holdStates ?? {});
+      const moves = queryMarchHistory(
+        ctx.turnHistory,
+        npc.faction,
+        {
+          armyName: String(input.armyName ?? ""),
+          holdId,
+          faction:
+            input.faction === "north" || input.faction === "westerlands"
+              ? input.faction
+              : undefined,
+          sinceTurn:
+            input.sinceTurn != null && input.sinceTurn !== ""
+              ? Number(input.sinceTurn)
+              : undefined,
+          limit: Number(input.limit) || 30,
+        },
+        publicTurns
+      );
+      if (moves.length === 0) return { result: "No marches you recall under those terms." };
+      return {
+        result: moves
+          .map((m) => {
+            const turn =
+              [...(ctx.turnHistory ?? [])].find((t) =>
+                t.armyMoves.includes(m)
+              )?.turn ?? 0;
+            return formatMarch(m, turn);
+          })
+          .join("\n"),
+      };
+    }
+
+    case "demand_prisoner_release": {
+      const other: Faction = npc.faction === "north" ? "westerlands" : "north";
+      const roster = prisonerRoster(ctx.prisoners, ctx.characters, ctx.armies, other);
+      const name = String(input.name ?? "").trim().toLowerCase();
+      const hits = name
+        ? roster.filter((e) => e.names.some((n) => n.toLowerCase().includes(name)))
+        : roster;
+      if (hits.length === 0) {
+        return { result: "The other side holds no matching prisoners you can name." };
+      }
+      return {
+        result:
+          "These captives can be named in propose_terms.releasePrisonerIds:\n" +
+          hits
+            .map(
+              (e) =>
+                `${e.groupId} — ${e.names.join(", ") || `${e.men.toLocaleString()} men`} (${e.whereabouts})`
+            )
+            .join("\n"),
+      };
+    }
+
+    case "choose_refuge": {
+      if (!ctx.refugeChoice) {
+        return { result: "You are not choosing a refuge just now." };
+      }
+      const want = String(input.holdName ?? "").trim().toLowerCase();
+      const fromHoldId = ctx.refugeChoice.fromHoldId;
+      const options = refugeOptions(
+        fromHoldId,
+        npc.faction,
+        ctx.holdStates ?? {},
+        ctx.armies
+      );
+      const hit = options.find((o) => o.holdName.toLowerCase() === want);
+      if (!hit) {
+        return {
+          result:
+            options.length === 0
+              ? "No refuge is in reach."
+              : `That seat is not among those offered: ${options.map((o) => o.holdName).join(", ")}.`,
+        };
+      }
+      ctx.refugeChoice.destHoldId = hit.holdId;
+      return { result: `Refuge recorded: you will walk to ${hit.holdName}.` };
     }
 
     case "list_past_threads": {

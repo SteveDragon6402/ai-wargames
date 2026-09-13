@@ -6,6 +6,7 @@ import type {
   NpcAgentState,
 } from "../types";
 import { findCharacterIdByName } from "../data/characters";
+import { castellanSeedForHold } from "../data/castellans";
 import { HOLDS_MAP } from "../data/holds";
 import { garrisonHeadcount } from "./hold-runtime";
 
@@ -30,7 +31,51 @@ const CASTELLAN_NAMES = [
 export function isHumanNegotiator(c: CharacterState): boolean {
   if (c.kind !== "npc" || !c.alive) return false;
   if (c.species === "beast") return false;
+  // A man in an enemy cell cannot answer for his own walls.
+  if (c.captive) return false;
   return true;
+}
+
+/** A castellan we seeded, as opposed to one conjured for a siege. */
+export function isPersistentCastellan(c: CharacterState | undefined): boolean {
+  return !!c && c.kind === "npc" && c.role === "castellan" && !c.ephemeral;
+}
+
+/**
+ * Put the seat's own castellan back in charge of it.
+ *
+ * Used when a seat returns to the side whose household holds it — the native
+ * castellan resumes his post, with everything he remembers, rather than a
+ * stranger being invented.
+ */
+export function restoreSeededCastellan(
+  holdId: string,
+  holdStates: Record<string, HoldRuntime>,
+  characters: Record<CharacterId, CharacterState>
+): {
+  holdStates: Record<string, HoldRuntime>;
+  characters: Record<CharacterId, CharacterState>;
+  restoredId: CharacterId | null;
+} {
+  const hs = holdStates[holdId];
+  const seed = castellanSeedForHold(holdId);
+  if (!hs || !seed) return { holdStates, characters, restoredId: null };
+
+  const c = characters[seed.id];
+  if (!c || c.kind !== "npc" || !c.alive || c.captive) {
+    return { holdStates, characters, restoredId: null };
+  }
+  // Only his own side's seat, and only if he is not off riding with a host.
+  if (hs.controller !== c.faction) {
+    return { holdStates, characters, restoredId: null };
+  }
+  if (c.armyId) return { holdStates, characters, restoredId: null };
+
+  return {
+    holdStates: { ...holdStates, [holdId]: { ...hs, castellanId: seed.id } },
+    characters: { ...characters, [seed.id]: { ...c, holdId } },
+    restoredId: seed.id,
+  };
 }
 
 /** Named human in the garrison (leaders first, then notables). Beasts skipped. */
@@ -192,7 +237,13 @@ export function ensureGarrisonNegotiator(
 
   // Reuse existing castellan for this hold
   const existingId = hs.castellanId;
-  if (existingId && characters[existingId]?.kind === "npc" && characters[existingId].alive) {
+  const existing = existingId ? characters[existingId] : undefined;
+  if (
+    existingId &&
+    existing?.kind === "npc" &&
+    existing.alive &&
+    !existing.captive
+  ) {
     return {
       characters,
       holdStates,
@@ -201,6 +252,20 @@ export function ensureGarrisonNegotiator(
     };
   }
 
+  // The seat's own castellan, if he is free and it is still his side's seat.
+  const restored = restoreSeededCastellan(holdId, holdStates, characters);
+  if (restored.restoredId) {
+    return {
+      characters: restored.characters,
+      holdStates: restored.holdStates,
+      negotiatorId: restored.restoredId,
+      created: false,
+    };
+  }
+
+  // Nobody native is left — conjure someone. This is now the fallback it was
+  // always meant to be: a manned ruin, or a conqueror's appointee at a seat
+  // whose own castellan is dead or in a cell.
   const castellan = createCastellanNpc(holdId, hs, characters);
   return {
     characters: { ...characters, [castellan.id]: castellan },
@@ -211,6 +276,12 @@ export function ensureGarrisonNegotiator(
     negotiatorId: castellan.id,
     created: true,
   };
+}
+
+/** Add a line to a notepad without repeating it, keeping the most recent. */
+function appendNote(notepad: string, line: string): string {
+  if (notepad.includes(line)) return notepad;
+  return `${notepad}\n${line}`.trim().slice(-800);
 }
 
 /** Remove ephemeral castellan and close their identity when siege ends. */
@@ -229,6 +300,10 @@ export function removeEphemeralCastellan(
   }
   const id = hs.castellanId;
   const c = characters[id];
+  // A seated castellan is not scaffolding — leave him holding the keys.
+  if (isPersistentCastellan(c)) {
+    return { characters, holdStates, removedId: null };
+  }
   if (!c || c.kind !== "npc" || !c.ephemeral) {
     return {
       characters,
@@ -257,7 +332,9 @@ export function syncCastellansWithSieges(
   nextHoldStates: Record<string, HoldRuntime>,
   characters: Record<CharacterId, CharacterState>,
   /** Keep ephemeral castellans that are still in an open / pending talk */
-  protectCharacterIds?: ReadonlySet<CharacterId>
+  protectCharacterIds?: ReadonlySet<CharacterId>,
+  /** Stamped into the castellan's memory of the siege opening. */
+  turn?: number
 ): {
   holdStates: Record<string, HoldRuntime>;
   characters: Record<CharacterId, CharacterState>;
@@ -279,14 +356,16 @@ export function syncCastellansWithSieges(
       if (ensured) {
         holdStates = ensured.holdStates;
         chars = ensured.characters;
-        // Seed notepad with siege opening
+        // Every castellan keeps a notepad, seeded or conjured — a siege is the
+        // sort of thing a man remembers, and remembers who put terms to him.
         const c = chars[ensured.negotiatorId];
-        if (c?.kind === "npc" && c.ephemeral) {
+        if (c?.kind === "npc") {
           const holdName = HOLDS_MAP.get(holdId)?.name ?? holdId;
           const men = garrisonHeadcount(next.garrison);
+          const line = `Siege opened at ${holdName} (turn ${turn ?? "?"}). Besieger: ${next.siege!.besiegerFaction}. Garrison ~${men}. Food ~${next.foodDaysRemaining ?? "unknown"}. ${next.supplies}`;
           chars[ensured.negotiatorId] = {
             ...c,
-            notepad: `Siege opened at ${holdName}. Day 1. Besieger: ${next.siege!.besiegerFaction}. Garrison ~${men}. Food ~${next.foodDaysRemaining ?? "unknown"}. ${next.supplies}`,
+            notepad: appendNote(c.notepad, line),
             mood: "Watchful on the walls, weighing every word from outside",
           };
         }
@@ -296,24 +375,36 @@ export function syncCastellansWithSieges(
       const cid = next.castellanId;
       if (cid) {
         const c = chars[cid];
-        if (c?.kind === "npc" && c.ephemeral) {
+        if (c?.kind === "npc") {
           const holdName = HOLDS_MAP.get(holdId)?.name ?? holdId;
           const line = `Siege day ${next.siege!.turns} at ${holdName}. Besieger: ${next.siege!.besiegerFaction}. Food ~${next.foodDaysRemaining ?? "unknown"}. ${next.supplies}`;
-          chars[cid] = {
-            ...c,
-            notepad: c.notepad.includes(line)
-              ? c.notepad
-              : `${c.notepad}\n${line}`.slice(-800),
-          };
+          chars[cid] = { ...c, notepad: appendNote(c.notepad, line) };
         }
       }
     } else if (!isSieged && wasSieged) {
       const cid = next.castellanId;
+      const c = cid ? chars[cid] : undefined;
+
+      // A seated castellan stays seated. He held these walls before the enemy
+      // came and he holds them after they leave — and he remembers the siege.
+      if (cid && isPersistentCastellan(c) && c?.kind === "npc") {
+        const holdName = HOLDS_MAP.get(holdId)?.name ?? holdId;
+        chars[cid] = {
+          ...c,
+          notepad: appendNote(
+            c.notepad,
+            `The siege of ${holdName} lifted. The walls held and I still keep them.`
+          ),
+          mood: "Relieved, and counting what the siege cost",
+        };
+        continue;
+      }
+
       if (cid && protectCharacterIds?.has(cid)) {
         // Open parley — keep castellan until the thread closes
         continue;
       }
-      // Siege ended — ephemeral castellan disappears (memory gone with them)
+      // Siege ended — a conjured castellan disappears, memory and all.
       const removed = removeEphemeralCastellan(holdId, holdStates, chars);
       holdStates = removed.holdStates;
       chars = removed.characters;

@@ -11,6 +11,34 @@ import { factionLordId, findCharacterIdByName } from "../data/characters";
  * Word of a named death carries beyond the field. Calibrated: a lord shaking
  * the whole faction, a commander a hard blow, a notable a local sting.
  */
+export function captureRipple(
+  captured: FallenFigure[],
+  characters: Record<CharacterId, CharacterState>,
+  armies: Army[]
+): ArmyConditionUpdate[] {
+  if (captured.length === 0 || armies.length === 0) return [];
+  const names = captured
+    .map((f) => characters[findCharacterIdByName(characters, f.name) ?? ""]?.name ?? f.name)
+    .filter(Boolean);
+  if (names.length === 0) return [];
+  const lead = names[0];
+  const holdHint = "taken alive";
+  return armies.map((army) => {
+    const own = captured.some((f) => {
+      const id = findCharacterIdByName(characters, f.name);
+      return id ? characters[id]?.faction === army.faction : false;
+    });
+    return {
+      armyId: army.id,
+      morale: own
+        ? `Word that ${lead} was ${holdHint}; the host is leaderless and shamed.`
+        : army.morale,
+      tiredness: army.tiredness,
+      stance: army.stance,
+    };
+  });
+}
+
 export function deathRipple(
   fallen: FallenFigure[],
   characters: Record<CharacterId, CharacterState>,

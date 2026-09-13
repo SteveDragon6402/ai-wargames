@@ -260,6 +260,15 @@ ${sideBlock(battle, battle.northArmies, "The North", summary.north, hold)}
 
 ${sideBlock(battle, battle.westArmies, "The Westerlands", summary.west, hold)}
 ${rogueNote}
+${
+    battle.prisonerBurden && Object.keys(battle.prisonerBurden).length > 0
+      ? `\nPRISONERS ON THE FIELD (soft — judge for yourself what a column of captives costs):\n${Object.entries(
+          battle.prisonerBurden
+        )
+          .map(([id, line]) => `  - ${id}: ${line}`)
+          .join("\n")}`
+      : ""
+  }
 
 ═══════════════════════════════════════════════════════════════
 TASK: adjudicate this engagement at ${locationName} and write the report.
@@ -278,6 +287,11 @@ holding a chokepoint can bleed an army twice its size.
 
 In a rout or shattering, men who survive the fighting but scatter or desert are as
 lost to the army as the dead — say so in the report.
+
+Prefer taking named captains alive over killing them when the fight allows it —
+a routed or yielding commander is more often captured than slain. Say so in the
+report when a figure is taken rather than killed. Player faction lords (Robb,
+Tywin) are never captured or killed by this process.
 
 Deaths of named commanders and notables should be proportionate: a decisive rout
 risks commanders, a shattering can kill prominent figures. Do not artificially
@@ -303,6 +317,7 @@ Rules:
 - Casualty counts must be whole numbers greater than zero, and can never exceed the men that army actually has.
 - An army marked HOLDS BACK must take substantially lighter losses than a committed host on the same side.
 - Only report a named figure as fallen if the report says or clearly implies they fell.
+- captured lists named figures taken alive. Prefer capture over death when the chronicle says they were taken, yielded, or overrun without being slain. Never list a player lord (Robb, Tywin) as captured or fallen.
 - retreatingArmyIds must be exactly the losing side's army ids (all of them), or both sides' ids if the verdict was "Neither". Exception: a STORM that did not force the gates has an empty retreat list — the attacker remains camped and the siege continues.
 - conditionUpdates must contain one entry for every army in the battle, describing its state after the fight in one vivid sentence each. A routed army is shattered and desperate; an orderly retreat leaves it bruised but not broken; a pyrrhic winner is bloodied and wary.
 
@@ -354,6 +369,19 @@ const OUTCOME_TOOL: Anthropic.Messages.Tool = {
           required: ["armyId", "name", "isLeader"],
         },
       },
+      captured: {
+        type: "array",
+        description: "Named commanders and notables taken alive in this battle.",
+        items: {
+          type: "object",
+          properties: {
+            armyId: { type: "string" },
+            name: { type: "string", description: "Exact name as listed in the force data." },
+            isLeader: { type: "boolean", description: "true for a commander, false for a notable." },
+          },
+          required: ["armyId", "name", "isLeader"],
+        },
+      },
       retreatingArmyIds: {
         type: "array",
         items: { type: "string" },
@@ -379,6 +407,7 @@ const OUTCOME_TOOL: Anthropic.Messages.Tool = {
       "holdResult",
       "casualties",
       "fallen",
+      "captured",
       "retreatingArmyIds",
       "conditionUpdates",
     ],
@@ -605,19 +634,23 @@ async function runExecutor(
   return { error: "executor never produced a usable record_outcome call" };
 }
 
+function twelveWords(text: string): string {
+  return text.split(/\s+/).filter(Boolean).slice(0, 12).join(" ");
+}
+
 async function summarizeBattle(
   client: Anthropic,
   opts: { chronicle: string; holdName: string }
-): Promise<{ shortSummary: string; summaryError?: string }> {
+): Promise<{ shortSummary: string; headline: string; summaryError?: string }> {
   const response = await client.messages.create({
     model: "claude-haiku-4-5",
     max_tokens: 300,
     system:
-      "You write vivid three-line battle summaries for a medieval wargame. Output exactly three lines of prose. No title, no bullets, no numbering, no blank lines.",
+      "You write battle headlines and summaries for a medieval wargame. Line 1: a headline of at most twelve words, no period required. Then exactly three lines of prose. No bullets, no numbering, no blank lines.",
     messages: [
       {
         role: "user",
-        content: `Write an interesting 3-line summary of this battle at ${opts.holdName}.\n\n${opts.chronicle}\n\nReply with exactly three lines.`,
+        content: `Write a twelve-word-or-fewer headline and a 3-line summary of this battle at ${opts.holdName}.\n\n${opts.chronicle}\n\nReply with four lines: headline, then three summary lines.`,
       },
     ],
   });
@@ -625,10 +658,12 @@ async function summarizeBattle(
     .split(/\n+/)
     .map((l) => l.replace(/^\s*[-*•\d.]+\s*/, "").trim())
     .filter(Boolean);
-  const shortSummary = lines.slice(0, 3).join("\n");
-  return lines.length < 3
-    ? { shortSummary, summaryError: `summary returned ${lines.length} line(s); expected 3` }
-    : { shortSummary };
+  const headline = twelveWords(lines[0] ?? `${opts.holdName} fought`);
+  const body = lines.length > 3 ? lines.slice(1, 4) : lines.slice(0, 3);
+  const shortSummary = body.join("\n");
+  return body.length < 3
+    ? { shortSummary, headline, summaryError: `summary returned ${body.length} line(s); expected 3` }
+    : { shortSummary, headline };
 }
 
 /** Drop the VERDICT line from the displayed chronicle — it is machine plumbing. */
@@ -700,6 +735,7 @@ export async function POST(req: NextRequest) {
     }
 
     let shortSummary = "";
+    let headline = "";
     let summaryError: string | undefined;
     try {
       const summarized = await summarizeBattle(client, {
@@ -707,6 +743,7 @@ export async function POST(req: NextRequest) {
         holdName,
       });
       shortSummary = summarized.shortSummary;
+      headline = summarized.headline;
       summaryError = summarized.summaryError;
     } catch (err) {
       summaryError = `Battle summary failed: ${err instanceof Error ? err.message : String(err)}`;
@@ -717,10 +754,12 @@ export async function POST(req: NextRequest) {
       defeatType: validated.defeatType,
       narrative: presentableChronicle(stage1.chronicle),
       shortSummary,
+      ...(headline ? { headline } : {}),
       ...(summaryError ? { summaryError } : {}),
       holdResult: validated.holdResult,
       casualties: validated.casualties,
       fallen: validated.fallen,
+      captured: validated.captured,
       retreatingArmyIds: validated.retreatingArmyIds,
       conditionUpdates: validated.conditionUpdates,
       factors,

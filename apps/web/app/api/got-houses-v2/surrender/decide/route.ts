@@ -9,14 +9,19 @@ import type {
   ConversationThread,
   FactionEvent,
   ForageState,
+  Deed,
   HoldRuntime,
+  PrisonerGroup,
+  TurnHistory,
 } from "@/app/got-houses-v2/types";
 import {
   buildEmbodiedSystemPrompt,
   runCharacterToolLoop,
+  situationLines,
   type CharacterToolContext,
   type SurrenderDecision,
 } from "@/app/got-houses-v2/lib/character-tools";
+import { reputationSummary } from "@/app/got-houses-v2/lib/deeds";
 import {
   describeTerms,
   openTermsAt,
@@ -35,6 +40,9 @@ interface DecideBody {
   forage?: ForageState;
   factionEvents?: FactionEvent[];
   adviceLog?: AdviceRecord[];
+  prisoners?: PrisonerGroup[];
+  deeds?: Deed[];
+  turnHistory?: TurnHistory[];
   turn: number;
 }
 
@@ -106,13 +114,26 @@ async function decideForHold(
   if (!npc || npc.kind !== "npc" || !npc.alive) return null;
 
   const holdName = HOLDS_MAP.get(holdId)?.name ?? holdId;
-  const pressure = surrenderPressure(holdId, hs, body.armies);
+  const pressure = surrenderPressure(
+    holdId,
+    hs,
+    body.armies,
+    reputationSummary(body.deeds, hs.siege.besiegerFaction)
+  );
   const open = openTermsAt(hs);
 
+  const extras = situationLines({
+    prisoners: body.prisoners,
+    deeds: body.deeds,
+    characters: body.characters,
+    armies: body.armies,
+    faction: npc.faction,
+  });
   const system = buildEmbodiedSystemPrompt(
     npc.id,
     `You are on the walls of ${holdName}, under siege, and you must decide whether to keep holding. No one is speaking to you — this is your own judgment. Use read_terms and inspect_my_castle first. Then either commit with propose_terms (sue for terms), accept_terms (only if terms are already on the table and you mean to open the gates), or reject_terms / say nothing at all, which means you hold. Holding is honourable and often right; do not yield while there is food, hope of relief, or a fight worth making.`,
-    body.characters
+    body.characters,
+    extras
   );
   if (!system) return null;
 
@@ -136,6 +157,9 @@ async function decideForHold(
     adviceLog: body.adviceLog,
     holdStates: body.holdStates,
     forage: body.forage,
+    prisoners: body.prisoners,
+    deeds: body.deeds,
+    turnHistory: body.turnHistory,
     surrender,
   };
 

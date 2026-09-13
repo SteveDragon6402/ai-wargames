@@ -8,6 +8,7 @@ import type {
   GameAction,
   GameState,
   HoldRuntime,
+  PendingChoice,
   SurrenderTerms,
 } from "../types";
 import type { SurrenderDecision } from "./character-tools";
@@ -20,9 +21,11 @@ import {
   normalizeGarrison,
   normalizeHoldRuntime,
 } from "./hold-runtime";
-import { armyNameForCommander } from "./army-naming";
 import { headcountOf, minimumHoldingGarrison } from "./siege";
-import { isOccupyingGarrison, nearestFriendlyHold } from "./travel";
+import { defaultFates, describeTerms as describeTermsAxes, fatesOf, unconditionalFates } from "./terms";
+import { buildSeatFateChoice } from "./pending-choices";
+
+export { describeTermsAxes as describeTerms };
 
 /** How long an offer stays on the table before it lapses. */
 export const TERMS_LIFETIME_TURNS = 2;
@@ -80,14 +83,14 @@ export function defaultTermsFor(
   offeredBy: Faction,
   turn: number
 ): Omit<SurrenderTerms, "status" | "reply"> {
+  const fates = defaultFates();
   return {
     offeredBy,
-    garrisonSpared: true,
-    leadersSpared: true,
+    ...fates,
     note:
       offeredBy === hs.siege?.besiegerFaction
-        ? "Open the gates and your men may march out with their lives."
-        : "We will yield the seat if our people are let walk.",
+        ? "Open the gates and your men may march out with their lives. The seat stands."
+        : "We will yield the seat if our people are let walk and the town is spared.",
     offeredTurn: turn,
     expiresTurn: turn + TERMS_LIFETIME_TURNS,
   };
@@ -115,16 +118,6 @@ export function playerMessageLooksLikeTermsOffer(text: string): boolean {
   );
 }
 
-export function describeTerms(terms: SurrenderTerms): string {
-  const men = terms.garrisonSpared
-    ? "the garrison marches out alive"
-    : "the garrison is taken";
-  const named = terms.leadersSpared
-    ? "its captains walk free"
-    : "its captains are held";
-  return `${men}, ${named}`;
-}
-
 /**
  * How badly the garrison's position argues for taking terms.
  *
@@ -148,7 +141,8 @@ export interface SurrenderPressure {
 export function surrenderPressure(
   holdId: string,
   hs: HoldRuntime,
-  armies: Army[]
+  armies: Army[],
+  reputation?: string
 ): SurrenderPressure | null {
   if (!hs.siege) return null;
   const besieger = hs.siege.besiegerFaction;
@@ -190,6 +184,7 @@ export function surrenderPressure(
       ? "Friendly banners stand one march away — relief is possible."
       : "No relief within a march."
   );
+  if (reputation) parts.push(reputation);
 
   return {
     starving,
@@ -260,7 +255,7 @@ export function applySurrenderDecision(
         accepted: true,
         reply: decision.reason,
       });
-      return `${holdName} yields on the terms offered — ${describeTerms(open)}.`;
+      return `${holdName} yields on the terms offered — ${describeTermsAxes(open)}.`;
     }
 
     case "reject": {
@@ -280,8 +275,10 @@ export function applySurrenderDecision(
       }
       const terms: Omit<SurrenderTerms, "status" | "reply"> = {
         offeredBy: garrisonSide,
-        garrisonSpared: decision.garrisonSpared,
-        leadersSpared: decision.leadersSpared,
+        garrison: decision.garrison,
+        leaders: decision.leaders,
+        town: decision.town,
+        releasePrisonerIds: decision.releasePrisonerIds,
         note: decision.note,
         offeredTurn: state.turn,
         expiresTurn: state.turn + TERMS_LIFETIME_TURNS,
@@ -308,15 +305,15 @@ export interface YieldResult {
   pledge: CapturePledge | null;
   events: FactionEvent[];
   armies: Army[];
+  pendingChoice: PendingChoice | null;
 }
 
 /**
  * Hand a besieged seat over without a battle.
  *
- * The men inside leave the walls. An occupying garrison (posted troops of the
- * taker's enemy, not the native household) that is spared walks out to the
- * nearest friendly seat. Native garrisons just disperse. The victor is never
- * handed a hostile host standing on the castle they just accepted.
+ * The walls change hands and the men inside leave them, but what becomes of
+ * those men — and of the town — is not decided here. That is a PendingChoice
+ * the taker still owes. Terms are only a promise; the act comes after.
  */
 export function yieldHold(opts: {
   turn: number;
@@ -338,6 +335,7 @@ export function yieldHold(opts: {
       pledge: null,
       events: [],
       armies: opts.armies,
+      pendingChoice: null,
     };
   }
 
@@ -346,7 +344,6 @@ export function yieldHold(opts: {
   const garrison = normalizeGarrison(hs.garrison);
   const men = garrisonHeadcount(garrison);
 
-  // Named defenders walk or are held; either way they are off these walls.
   const characters = { ...opts.characters };
   const namedNames = [
     ...garrison.leaders.map((l) => l.name),
@@ -356,79 +353,21 @@ export function yieldHold(opts: {
     const c = characters[hs.castellanId];
     if (c.kind === "npc") namedNames.push(c.name);
   }
-  const held: string[] = [];
-  const walked: string[] = [];
+  const captiveCharacterIds: CharacterId[] = [];
+  const seen = new Set<string>();
   for (const name of namedNames) {
     const id = findCharacterIdByName(characters, name);
-    if (!id) continue;
+    if (!id || seen.has(id)) continue;
     const c = characters[id];
-    if (c?.kind !== "npc") continue;
+    if (c?.kind !== "npc" || !c.alive) continue;
+    seen.add(id);
+    captiveCharacterIds.push(id);
     characters[id] = {
       ...c,
       holdId: null,
       armyId: null,
-      captive: !terms.leadersSpared,
-      mood: terms.leadersSpared
-        ? `Walked out of ${holdName} on terms; the shame of it sits badly.`
-        : `Taken at ${holdName} when the gates opened.`,
+      mood: `The gates of ${holdName} opened. His fate has not been spoken yet.`,
     };
-    (terms.leadersSpared ? walked : held).push(name);
-  }
-
-  let nextArmies = [...opts.armies];
-  let walkDest: string | null = null;
-  const yielderFaction =
-    yielder === "north" || yielder === "westerlands" ? yielder : null;
-  if (
-    terms.garrisonSpared &&
-    yielderFaction &&
-    isOccupyingGarrison(hs) &&
-    men > 0
-  ) {
-    walkDest = nearestFriendlyHold(
-      holdId,
-      yielderFaction,
-      opts.holdStates,
-      nextArmies
-    );
-    if (walkDest) {
-      const lead = terms.leadersSpared
-        ? garrison.leaders[0]?.name ?? null
-        : null;
-      const walkArmy: Army = {
-        id: `walkout-${holdId}-${turn}`,
-        name: armyNameForCommander(lead, garrison.units, yielderFaction),
-        holdId: walkDest,
-        faction: yielderFaction,
-        units: garrison.units.map((u) => ({ ...u })),
-        leaders: terms.leadersSpared
-          ? garrison.leaders.map((l) => ({ ...l }))
-          : [],
-        notables: terms.leadersSpared
-          ? (garrison.notables ?? []).map((n) => ({ ...n }))
-          : [],
-        morale: "Walked out on terms; the shame of it sits badly.",
-        tiredness: "Spent from the siege and the road out.",
-        stance: "Re-forming in friendly country.",
-        activity: {
-          turnsResting: 0,
-          turnsFortiying: 0,
-          turnsMarching: 0,
-          turnsSinceMerge: null,
-          turnsSinceSplit: 0,
-        },
-      };
-      nextArmies = [...nextArmies, walkArmy];
-      if (terms.leadersSpared) {
-        for (const name of walked) {
-          const id = findCharacterIdByName(characters, name);
-          if (!id) continue;
-          const c = characters[id];
-          if (c?.kind !== "npc") continue;
-          characters[id] = { ...c, armyId: walkArmy.id, holdId: null };
-        }
-      }
-    }
   }
 
   const holdStates = {
@@ -453,8 +392,23 @@ export function yieldHold(opts: {
     } satisfies HoldRuntime,
   };
 
+  const escortArmyIds = opts.armies
+    .filter((a) => a.holdId === holdId && a.faction === taker)
+    .map((a) => a.id);
+
+  const pendingChoice = buildSeatFateChoice({
+    turn,
+    holdId,
+    faction: taker,
+    promised: fatesOf(terms),
+    garrisonUnits: garrison.units,
+    captiveCharacterIds,
+    escortArmyIds,
+    stormed: false,
+  });
+
   const takerMenHere = headcountOf(
-    nextArmies.filter((a) => a.holdId === holdId && a.faction === taker)
+    opts.armies.filter((a) => a.holdId === holdId && a.faction === taker)
   );
   const pledge: CapturePledge | null =
     takerMenHere > 0
@@ -467,11 +421,8 @@ export function yieldHold(opts: {
         }
       : null;
 
-  const destName = walkDest ? HOLDS_MAP.get(walkDest)?.name ?? walkDest : null;
-  const detail = `${holdName} yielded to ${taker} on terms after ${hs.siege.turns} turns of investment: ${describeTerms(terms)}. ${men.toLocaleString()} defenders left the walls${held.length > 0 ? `; taken: ${held.join(", ")}` : walked.length > 0 ? `; walked free: ${walked.join(", ")}` : ""}${destName ? `; the occupying host appeared at ${destName}` : ""}.${
-    pledge
-      ? ` The walls stand empty; posting a garrison is optional.`
-      : ""
+  const detail = `${holdName} yielded to ${taker} on terms after ${hs.siege.turns} turns of investment: ${describeTermsAxes(terms)}. ${men.toLocaleString()} defenders left the walls. Their fate has not been spoken.${
+    pledge ? ` The walls stand empty; posting a garrison is optional.` : ""
   }`;
 
   const events: FactionEvent[] = [
@@ -497,5 +448,12 @@ export function yieldHold(opts: {
     });
   }
 
-  return { holdStates, characters, pledge, events, armies: nextArmies };
+  return {
+    holdStates,
+    characters,
+    pledge,
+    events,
+    armies: opts.armies,
+    pendingChoice,
+  };
 }

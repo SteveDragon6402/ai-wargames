@@ -29,6 +29,10 @@ import ArmyCard from "./ArmyCard";
 import SpeechComposer from "./SpeechComposer";
 import ConversationDock from "./ConversationDock";
 import TermsBlock from "./TermsBlock";
+import PrisonerCard from "./PrisonerCard";
+import { prisonersAt, prisonersWith } from "../lib/prisoners";
+import { canRaze } from "../lib/raze";
+import { choiceAtHold } from "../lib/pending-choices";
 
 interface Props {
   state: GameState;
@@ -633,6 +637,75 @@ export default function SidePanel({ state, dispatch }: Props) {
               holdId={selectedHoldId}
               faction={myFaction}
             />
+          )}
+          {choiceAtHold(state.pendingChoices, selectedHoldId) &&
+            choiceAtHold(state.pendingChoices, selectedHoldId)!.faction === myFaction && (
+              <button
+                type="button"
+                onClick={() =>
+                  dispatch({
+                    type: "OPEN_SEAT_FATE_PANEL",
+                    choiceId: choiceAtHold(state.pendingChoices, selectedHoldId)!.id,
+                  })
+                }
+                style={{
+                  marginTop: 8,
+                  width: "100%",
+                  fontFamily: "var(--font-mono), monospace",
+                  fontSize: 9,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.1em",
+                  color: "#0d0b06",
+                  background: "#c8941a",
+                  border: "1px solid #c8941a",
+                  padding: "7px 8px",
+                  cursor: "pointer",
+                }}
+              >
+                Settle fate — {choiceAtHold(state.pendingChoices, selectedHoldId)!.headline}
+              </button>
+            )}
+          {prisonersAt(state.prisoners, selectedHoldId).map((g) => (
+            <PrisonerCard key={g.id} group={g} state={state} dispatch={dispatch} />
+          ))}
+          {selectedArmies.flatMap((a) =>
+            prisonersWith(state.prisoners, a.id).map((g) => (
+              <PrisonerCard key={g.id} group={g} state={state} dispatch={dispatch} />
+            ))
+          )}
+          {selectedArmies.some((a) => canRaze(a, selectedHoldId, holdRuntime).ok) && (
+            <button
+              type="button"
+              onClick={() => {
+                const army = selectedArmies.find((a) => canRaze(a, selectedHoldId, holdRuntime).ok);
+                if (!army) return;
+                const active = (state[army.faction].razeOrders ?? []).some(
+                  (o) => o.armyId === army.id
+                );
+                dispatch({
+                  type: "SET_RAZE_ORDER",
+                  armyId: army.id,
+                  holdId: selectedHoldId,
+                  active: !active,
+                });
+              }}
+              style={{
+                marginTop: 8,
+                width: "100%",
+                fontFamily: "var(--font-mono), monospace",
+                fontSize: 9,
+                textTransform: "uppercase",
+                color: "#d07050",
+                background: "#170a04",
+                border: "1px solid #4a2010",
+                padding: "6px 8px",
+                cursor: "pointer",
+              }}
+            >
+              {(state[myFaction].razeOrders ?? []).some((o) => o.holdId === selectedHoldId)
+                ? "Cancel raze"
+                : "Raze this seat"}
+            </button>
           )}
           {(canUngarrison || canParley) && (
             <div

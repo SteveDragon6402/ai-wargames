@@ -120,5 +120,10 @@ export function boardFingerprint(state: GameState): string {
     north: state.north,
     westerlands: state.westerlands,
     rename: state.pendingRenames,
+    // Settling a seat's fate changes nothing above, so without these the guest
+    // would never re-hydrate after the host decided.
+    choices: (state.pendingChoices ?? []).map((c) => c.id),
+    prisoners: (state.prisoners ?? []).map((p) => [p.id, p.location]),
+    deeds: (state.deeds ?? []).length,
   });
 }

@@ -183,7 +183,11 @@ function MapInner({ state, dispatch }: Props) {
         termsState: hs?.siege?.terms?.status === "lapsed"
           ? null
           : hs?.siege?.terms?.status ?? null,
-        awaitingGarrison: pledgedHoldIds.has(hold.id),
+        awaitingGarrison:
+          pledgedHoldIds.has(hold.id) ||
+          (state.pendingChoices ?? []).some(
+            (c) => c.holdId === hold.id && c.faction === state.activeFaction
+          ),
         contested:
           armies.some((a) => a.faction === "north") &&
           armies.some((a) => a.faction === "westerlands"),

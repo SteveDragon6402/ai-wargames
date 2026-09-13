@@ -59,16 +59,23 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
     notablesByArmy.set(key, list);
   }
 
-  // Castles you can parley with: only seats you are investing
+  // Castles you can parley with: seats you are investing, or sitting beside
+  const myHoldIds = new Set(
+    state.armies.filter((a) => a.faction === faction).map((a) => a.holdId)
+  );
   const castleTalkTargets: { holdId: string; label: string; sub: string }[] = [];
   for (const [holdId, hs] of Object.entries(state.holdStates ?? {})) {
     const seed = getCastleSeed(holdId);
     if (!isGarrisonable(seed)) continue;
     const men = garrisonHeadcount(hs.garrison);
-    if (men <= 0 || !hs.siege) continue;
+    if (men <= 0) continue;
 
     const besieging = hs.siege?.besiegerFaction === faction;
-    if (!besieging) continue;
+    const adjacent = (HOLDS_MAP.get(holdId)?.links ?? []).some((l) =>
+      myHoldIds.has(l)
+    );
+    const here = myHoldIds.has(holdId);
+    if (!besieging && !adjacent && !here) continue;
 
     const named = findNamedGarrisonNegotiator(
       holdId,
@@ -81,9 +88,9 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
       castleTalkTargets.push({
         holdId,
         label: `${lab.name} · ${holdName}`,
-        sub: "Parley under siege",
+        sub: besieging ? "Parley under siege" : "Castellan — in reach",
       });
-    } else {
+    } else if (besieging) {
       castleTalkTargets.push({
         holdId,
         label: `Castellan of ${holdName}`,
