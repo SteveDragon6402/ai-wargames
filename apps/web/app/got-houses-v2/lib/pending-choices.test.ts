@@ -6,6 +6,7 @@ import {
   blockingChoicesFor,
   blockingMessage,
   buildSeatFateChoice,
+  choiceForArmy,
   disposePrisonerGroup,
 } from "./pending-choices";
 import { createPrisonerGroup } from "./prisoners";
@@ -120,5 +121,20 @@ describe("pending choices", () => {
     assert.equal(out.board.prisoners.length, 0);
     assert.ok(out.board.travellers.some((t) => t.characterId === "edmure-tully"));
     assert.ok(out.board.deeds.some((d) => d.kind === "prisoners_released"));
+  });
+
+  it("does not throw when a choice is missing escortArmyIds", () => {
+    const choice = buildSeatFateChoice({
+      turn: 1,
+      holdId: "21",
+      faction: "north",
+      promised: null,
+      garrisonUnits: [],
+      captiveCharacterIds: [],
+      escortArmyIds: [],
+      stormed: true,
+    });
+    delete (choice as { escortArmyIds?: string[] }).escortArmyIds;
+    assert.equal(choiceForArmy([choice], "army-robb"), null);
   });
 });

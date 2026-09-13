@@ -69,7 +69,6 @@ export default function TurnBriefing({ state, dispatch, faction }: Props) {
                 type="button"
                 onClick={() => {
                   dispatch({ type: "SELECT_HOLD", holdId: c.holdId });
-                  dispatch({ type: "OPEN_SEAT_FATE_PANEL", choiceId: c.id });
                   dispatch({ type: "SET_BRIEFING_OPEN", open: false });
                 }}
                 style={{

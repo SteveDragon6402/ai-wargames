@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { INITIAL_GAME_STATE } from "../data/initial-state";
-import { mergeRoomState, stateProgress } from "./room-sync";
+import { boardFingerprint, mergeRoomState, stateProgress } from "./room-sync";
 import type { GameState, RetreatEntry } from "../types";
 
 function withOrders(
@@ -98,5 +98,18 @@ describe("mergeRoomState", () => {
       afterGuest.retreats.find((r) => r.armyId === westArmy.id)?.chosenHoldId,
       "20"
     );
+  });
+});
+
+describe("boardFingerprint", () => {
+  it("does not throw on a sparse room snapshot", () => {
+    const sparse = {
+      turn: 2,
+      phase: "resolving",
+      north: INITIAL_GAME_STATE.north,
+      westerlands: INITIAL_GAME_STATE.westerlands,
+    } as GameState;
+    assert.doesNotThrow(() => boardFingerprint(sparse));
+    assert.ok(boardFingerprint(sparse).includes("resolving"));
   });
 });

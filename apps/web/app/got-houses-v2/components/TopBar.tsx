@@ -353,7 +353,7 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
         style={{
           fontFamily: "var(--font-mono), monospace",
           fontSize: 9,
-          color: state.battleLogOpen ? "#c8941a" : state.battleReports.length > 0 ? "#888" : "#333",
+          color: state.battleLogOpen ? "#c8941a" : (state.battleReports ?? []).length > 0 ? "#888" : "#333",
           background: state.battleLogOpen ? "#1a1200" : "transparent",
           border: `1px solid ${state.battleLogOpen ? "#3a2a00" : "#222"}`,
           padding: "4px 10px",
@@ -369,11 +369,11 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
           e.currentTarget.style.borderColor = "#3a2a00";
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.color = state.battleLogOpen ? "#c8941a" : state.battleReports.length > 0 ? "#888" : "#333";
+          e.currentTarget.style.color = state.battleLogOpen ? "#c8941a" : (state.battleReports ?? []).length > 0 ? "#888" : "#333";
           e.currentTarget.style.borderColor = state.battleLogOpen ? "#3a2a00" : "#222";
         }}
       >
-        ⚔ Battles{state.battleReports.length > 0 ? ` (${state.battleReports.length})` : ""}
+        ⚔ Battles{(state.battleReports ?? []).length > 0 ? ` (${state.battleReports.length})` : ""}
       </button>
 
       {/* Admin toggle */}

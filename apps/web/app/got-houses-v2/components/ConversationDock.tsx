@@ -54,9 +54,11 @@ export default function ConversationDock({ state, dispatch }: Props) {
     <div
       style={{
         width,
+        maxWidth: width,
         flexShrink: 0,
         height: "100%",
         minHeight: 0,
+        overflow: "hidden",
         borderLeft: "1px solid #1e1e1e",
         background: "#0a0a0a",
         display: "flex",

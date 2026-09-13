@@ -204,4 +204,38 @@ describe("prisoners / terms / raze walk", () => {
     assert.equal(logs[0].aftermath?.retreatedTo["army-jaime"], "16");
     assert.match(formatBattleLog(logs[0]), /Retreats/);
   });
+
+  it("does not open the host seat-fate panel on the guest hydrate", () => {
+    const choice = buildSeatFateChoice({
+      turn: 2,
+      holdId: "21",
+      faction: "north",
+      promised: null,
+      garrisonUnits: [],
+      captiveCharacterIds: [],
+      escortArmyIds: [],
+      stormed: true,
+    });
+    const guest: GameState = {
+      ...INITIAL_GAME_STATE,
+      activeFaction: "westerlands",
+      seatFatePanelId: null,
+      battleLogOpen: false,
+    };
+    const hostSave: GameState = {
+      ...INITIAL_GAME_STATE,
+      phase: "planning",
+      turn: 2,
+      pendingChoices: [choice],
+      seatFatePanelId: choice.id,
+      briefingOpen: true,
+      battleLogOpen: true,
+    };
+    const next = gameReducer(guest, { type: "HYDRATE_REMOTE", state: hostSave });
+    assert.equal(next.seatFatePanelId, null);
+    assert.equal(next.battleLogOpen, false);
+    assert.equal(next.briefingOpen, true);
+    assert.equal(next.activeFaction, "westerlands");
+    assert.equal((next.pendingChoices ?? [])[0]?.id, choice.id);
+  });
 });

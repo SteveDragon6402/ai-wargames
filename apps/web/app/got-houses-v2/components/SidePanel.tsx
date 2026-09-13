@@ -30,13 +30,15 @@ import SpeechComposer from "./SpeechComposer";
 import ConversationDock from "./ConversationDock";
 import TermsBlock from "./TermsBlock";
 import PrisonerCard from "./PrisonerCard";
+import SeatFatePanel from "./SeatFatePanel";
 import { prisonersAt, prisonersWith } from "../lib/prisoners";
 import { canRaze } from "../lib/raze";
-import { choiceAtHold } from "../lib/pending-choices";
+import { blockingChoicesFor, choiceAtHold } from "../lib/pending-choices";
 
 interface Props {
   state: GameState;
   dispatch: React.Dispatch<GameAction>;
+  viewerFaction?: Faction;
 }
 
 const FACTION_LABEL: Record<Faction, string> = {
@@ -44,7 +46,7 @@ const FACTION_LABEL: Record<Faction, string> = {
   westerlands: "The Westerlands",
 };
 
-export default function SidePanel({ state, dispatch }: Props) {
+export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
   const [parleyError, setParleyError] = useState<string | null>(null);
   const { selectedHoldId, selectedArmyIds, moveMode, armies, activeFaction, adminMode } = state;
 
@@ -157,7 +159,7 @@ export default function SidePanel({ state, dispatch }: Props) {
     ? freeCapacity(selectedHoldId, holdRuntime)
     : 0;
 
-  const myFaction = adminMode ? activeFaction : activeFaction;
+  const myFaction = adminMode ? activeFaction : viewerFaction ?? activeFaction;
   const friendlyHold =
     !!holdRuntime && isFriendlyTo(holdRuntime, myFaction);
   const nonHomeOccupier =
@@ -287,16 +289,32 @@ export default function SidePanel({ state, dispatch }: Props) {
     if (error) setParleyError(error);
   }
 
+  const fateHere = choiceAtHold(state.pendingChoices, selectedHoldId);
+  const myFateHere = fateHere && fateHere.faction === myFaction ? fateHere : null;
+  const otherFates = blockingChoicesFor(state.pendingChoices, myFaction).filter(
+    (c) => c.holdId !== selectedHoldId
+  );
+  const holdPrisoners = prisonersAt(state.prisoners, selectedHoldId);
+  const armyPrisoners = selectedArmies.flatMap((a) =>
+    prisonersWith(state.prisoners, a.id)
+  );
+
   return (
     <div
       style={{
         width: 320,
+        minWidth: 0,
+        maxWidth: 320,
+        height: "100%",
+        minHeight: 0,
+        alignSelf: "stretch",
         flexShrink: 0,
         borderLeft: "1px solid #1e1e1e",
         background: "#0a0a0a",
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",
+        boxSizing: "border-box",
       }}
     >
       {/* Hold header */}
@@ -367,44 +385,76 @@ export default function SidePanel({ state, dispatch }: Props) {
         >
           {hold.lord}
         </div>
-        <div
-          style={{
-            fontFamily: "var(--font-mono), monospace",
-            fontSize: 8,
-            color: "#333",
-            marginTop: 4,
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
-          }}
-        >
-          Roads
-        </div>
-        <div
-          style={{
-            fontFamily: "var(--font-mono), monospace",
-            fontSize: 9,
-            color: "#555",
-            lineHeight: 1.45,
-            marginTop: 3,
-          }}
-        >
-          {hold.links.map((id) => {
-            const name = HOLDS_MAP.get(id)?.name ?? id;
-            return (
-              <div key={id}>
-                {name} — {forageOnPath(state.forage, hold.id, id)}
-              </div>
-            );
-          })}
-        </div>
-        {/* Region character, plus the living forage line. */}
-        <div
-          style={{
-            marginTop: 8,
-            paddingTop: 8,
-            borderTop: "1px solid #161616",
-          }}
-        >
+      </div>
+
+      <div
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowX: "hidden",
+          overflowY: "auto",
+        }}
+      >
+        {otherFates.length > 0 && (
+          <div style={{ padding: "8px 14px", borderBottom: "1px solid #1e1e1e" }}>
+            {otherFates.map((c) => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => dispatch({ type: "SELECT_HOLD", holdId: c.holdId })}
+                style={{
+                  display: "block",
+                  width: "100%",
+                  marginBottom: 6,
+                  fontFamily: "var(--font-mono), monospace",
+                  fontSize: 8,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.08em",
+                  color: "#c8941a",
+                  background: "#1a1406",
+                  border: "1px solid #3a2a00",
+                  padding: "6px 8px",
+                  cursor: "pointer",
+                  textAlign: "left",
+                  boxSizing: "border-box",
+                }}
+              >
+                Fate unpaid — {c.headline}
+              </button>
+            ))}
+          </div>
+        )}
+
+        <Collapse title="Country" hint={trait.name} defaultOpen={false}>
+          <div
+            style={{
+              fontFamily: "var(--font-mono), monospace",
+              fontSize: 8,
+              color: "#333",
+              textTransform: "uppercase",
+              letterSpacing: "0.1em",
+            }}
+          >
+            Roads
+          </div>
+          <div
+            style={{
+              fontFamily: "var(--font-mono), monospace",
+              fontSize: 9,
+              color: "#555",
+              lineHeight: 1.45,
+              marginTop: 3,
+            }}
+          >
+            {hold.links.map((id) => {
+              const name = HOLDS_MAP.get(id)?.name ?? id;
+              return (
+                <div key={id}>
+                  {name} — {forageOnPath(state.forage, hold.id, id)}
+                </div>
+              );
+            })}
+          </div>
           <div
             style={{
               fontFamily: "var(--font-mono), monospace",
@@ -412,6 +462,7 @@ export default function SidePanel({ state, dispatch }: Props) {
               color: "#555",
               textTransform: "uppercase",
               letterSpacing: "0.12em",
+              marginTop: 8,
               marginBottom: 3,
             }}
           >
@@ -450,17 +501,25 @@ export default function SidePanel({ state, dispatch }: Props) {
           >
             {forageAtHold(state.forage, hold.id)}
           </div>
-        </div>
-      </div>
+        </Collapse>
 
       {/* Castle / garrison overview */}
       {garrisonable && holdRuntime && (
-        <div
-          style={{
-            borderBottom: "1px solid #1e1e1e",
-            padding: "10px 14px",
-            flexShrink: 0,
-          }}
+        <Collapse
+          title="Seat"
+          hint={
+            holdRuntime.siege
+              ? `Garrison ${garrisonMen.toLocaleString()} · siege`
+              : `Garrison ${garrisonMen.toLocaleString()}`
+          }
+          defaultOpen={
+            !!holdRuntime.siege ||
+            !!myFateHere ||
+            holdPrisoners.length > 0 ||
+            armyPrisoners.length > 0 ||
+            !!openPledge
+          }
+          accent={!!myFateHere || !!holdRuntime.siege}
         >
           <div
             style={{
@@ -638,41 +697,23 @@ export default function SidePanel({ state, dispatch }: Props) {
               faction={myFaction}
             />
           )}
-          {choiceAtHold(state.pendingChoices, selectedHoldId) &&
-            choiceAtHold(state.pendingChoices, selectedHoldId)!.faction === myFaction && (
-              <button
-                type="button"
-                onClick={() =>
-                  dispatch({
-                    type: "OPEN_SEAT_FATE_PANEL",
-                    choiceId: choiceAtHold(state.pendingChoices, selectedHoldId)!.id,
-                  })
-                }
-                style={{
-                  marginTop: 8,
-                  width: "100%",
-                  fontFamily: "var(--font-mono), monospace",
-                  fontSize: 9,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  color: "#0d0b06",
-                  background: "#c8941a",
-                  border: "1px solid #c8941a",
-                  padding: "7px 8px",
-                  cursor: "pointer",
-                }}
-              >
-                Settle fate — {choiceAtHold(state.pendingChoices, selectedHoldId)!.headline}
-              </button>
-            )}
-          {prisonersAt(state.prisoners, selectedHoldId).map((g) => (
+          {myFateHere && (
+            <div style={{ marginTop: 8 }}>
+              <SeatFatePanel
+                state={state}
+                dispatch={dispatch}
+                viewerFaction={myFaction}
+                embedded
+                holdId={selectedHoldId}
+              />
+            </div>
+          )}
+          {holdPrisoners.map((g) => (
             <PrisonerCard key={g.id} group={g} state={state} dispatch={dispatch} />
           ))}
-          {selectedArmies.flatMap((a) =>
-            prisonersWith(state.prisoners, a.id).map((g) => (
-              <PrisonerCard key={g.id} group={g} state={state} dispatch={dispatch} />
-            ))
-          )}
+          {armyPrisoners.map((g) => (
+            <PrisonerCard key={g.id} group={g} state={state} dispatch={dispatch} />
+          ))}
           {selectedArmies.some((a) => canRaze(a, selectedHoldId, holdRuntime).ok) && (
             <button
               type="button"
@@ -754,16 +795,15 @@ export default function SidePanel({ state, dispatch }: Props) {
               {parleyError}
             </div>
           )}
-        </div>
+        </Collapse>
       )}
 
       {/* Action bar */}
-      {selectedArmies.length > 0 && (
+      {(selectedArmies.length > 0 || canSally) && (
+        <Collapse title="Orders" hint="Move · rest · walls" defaultOpen>
+        {selectedArmies.length > 0 && (
         <div
           style={{
-            borderBottom: "1px solid #1e1e1e",
-            padding: "8px 14px",
-            flexShrink: 0,
             display: "flex",
             gap: 6,
             flexWrap: "wrap",
@@ -916,17 +956,14 @@ export default function SidePanel({ state, dispatch }: Props) {
             </>
           )}
         </div>
-      )}
-
+        )}
       {canSally && (
         <div
           style={{
-            borderBottom: "1px solid #1e1e1e",
-            padding: "8px 14px",
-            flexShrink: 0,
             display: "flex",
             gap: 6,
             flexWrap: "wrap",
+            marginTop: 8,
           }}
         >
           <ActionButton
@@ -944,6 +981,8 @@ export default function SidePanel({ state, dispatch }: Props) {
           />
         </div>
       )}
+        </Collapse>
+      )}
 
       {/* Select all */}
       {controllableArmies.length > 1 && !moveMode.active && (
@@ -951,7 +990,6 @@ export default function SidePanel({ state, dispatch }: Props) {
           style={{
             borderBottom: "1px solid #1a1a1a",
             padding: "5px 14px",
-            flexShrink: 0,
           }}
         >
           <button
@@ -983,7 +1021,15 @@ export default function SidePanel({ state, dispatch }: Props) {
       )}
 
       {/* Army lists */}
-      <div style={{ flex: 1, overflowY: "auto" }}>
+      <Collapse
+        title="Hosts"
+        hint={
+          northHere.length + westHere.length > 0
+            ? `${northHere.length + westHere.length} here`
+            : "none"
+        }
+        defaultOpen
+      >
         {northHere.length === 0 && westHere.length === 0 ? (
           <div
             style={{
@@ -1048,13 +1094,98 @@ export default function SidePanel({ state, dispatch }: Props) {
             )}
           </>
         )}
+      </Collapse>
       </div>
 
       {singleSelected &&
         state.speechArmyId === singleSelected.id &&
         (adminMode || singleSelected.faction === activeFaction) && (
-          <SpeechComposer army={singleSelected} state={state} dispatch={dispatch} />
+          <div
+            style={{
+              flexShrink: 0,
+              maxHeight: "36%",
+              minHeight: 0,
+              overflowY: "auto",
+              overflowX: "hidden",
+              borderTop: "1px solid #1e1e1e",
+            }}
+          >
+            <SpeechComposer army={singleSelected} state={state} dispatch={dispatch} />
+          </div>
         )}
+    </div>
+  );
+}
+
+function Collapse({
+  title,
+  hint,
+  defaultOpen = false,
+  accent,
+  children,
+}: {
+  title: string;
+  hint?: string;
+  defaultOpen?: boolean;
+  accent?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ borderBottom: "1px solid #1e1e1e" }}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
+          padding: "8px 14px",
+          fontFamily: "var(--font-mono), monospace",
+          fontSize: 8,
+          fontWeight: 700,
+          textTransform: "uppercase",
+          letterSpacing: "0.12em",
+          color: accent ? "#c8941a" : "#888",
+          background: open ? "#0d0d0d" : "transparent",
+          border: "none",
+          cursor: "pointer",
+          textAlign: "left",
+          boxSizing: "border-box",
+        }}
+      >
+        <span>
+          {open ? "▾" : "▸"} {title}
+        </span>
+        {!open && hint && (
+          <span
+            style={{
+              color: "#444",
+              fontWeight: 400,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              maxWidth: 160,
+            }}
+          >
+            {hint}
+          </span>
+        )}
+      </button>
+      {open && (
+        <div
+          style={{
+            padding: "4px 14px 12px",
+            boxSizing: "border-box",
+            maxWidth: "100%",
+            overflowX: "hidden",
+          }}
+        >
+          {children}
+        </div>
+      )}
     </div>
   );
 }

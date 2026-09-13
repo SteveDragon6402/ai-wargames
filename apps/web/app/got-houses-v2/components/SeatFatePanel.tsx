@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type {
+  Faction,
   GameAction,
   GameState,
   PersonFate,
@@ -16,45 +17,81 @@ const MONO: React.CSSProperties = { fontFamily: "var(--font-mono), monospace" };
 interface Props {
   state: GameState;
   dispatch: React.Dispatch<GameAction>;
+  viewerFaction?: Faction;
+  /** Render inside the sidebar instead of a floating card. */
+  embedded?: boolean;
+  holdId?: string;
 }
 
-export default function SeatFatePanel({ state, dispatch }: Props) {
-  const choice = (state.pendingChoices ?? []).find(
-    (c) => c.id === state.seatFatePanelId
+export default function SeatFatePanel({
+  state,
+  dispatch,
+  viewerFaction,
+  embedded,
+  holdId,
+}: Props) {
+  const found = (state.pendingChoices ?? []).find((c) =>
+    holdId
+      ? c.holdId === holdId && (!viewerFaction || c.faction === viewerFaction)
+      : c.id === state.seatFatePanelId
   );
+  const choice =
+    found && (!viewerFaction || found.faction === viewerFaction) ? found : null;
+  const escorts = choice?.escortArmyIds ?? [];
+
+  const [garrison, setGarrison] = useState<PersonFate>("prisoner");
+  const [leaders, setLeaders] = useState<PersonFate>("prisoner");
+  const [town, setTown] = useState<TownFate>("occupy");
+  const [dest, setDest] = useState<PrisonerLocation>({
+    kind: "hold",
+    holdId: "",
+  });
+
+  useEffect(() => {
+    if (!choice) return;
+    setGarrison(choice.promised?.garrison ?? "prisoner");
+    setLeaders(choice.promised?.leaders ?? "prisoner");
+    setTown(choice.promised?.town ?? "occupy");
+    const ids = choice.escortArmyIds ?? [];
+    setDest(
+      ids[0]
+        ? { kind: "army", armyId: ids[0] }
+        : { kind: "hold", holdId: choice.holdId }
+    );
+  }, [choice]);
+
   if (!choice) return null;
 
   const holdName = HOLDS_MAP.get(choice.holdId)?.name ?? choice.holdId;
-  const [garrison, setGarrison] = useState<PersonFate>(
-    choice.promised?.garrison ?? "prisoner"
-  );
-  const [leaders, setLeaders] = useState<PersonFate>(
-    choice.promised?.leaders ?? "prisoner"
-  );
-  const [town, setTown] = useState<TownFate>(choice.promised?.town ?? "occupy");
-  const [dest, setDest] = useState<PrisonerLocation>(
-    choice.escortArmyIds[0]
-      ? { kind: "army", armyId: choice.escortArmyIds[0] }
-      : { kind: "hold", holdId: choice.holdId }
-  );
 
   const needsDest = garrison === "prisoner" || leaders === "prisoner";
 
   return (
     <div
-      style={{
-        position: "fixed",
-        right: 16,
-        top: 72,
-        width: 320,
-        zIndex: 70,
-        background: "#0d0b06",
-        border: "1px solid #c8941a",
-        padding: 12,
-      }}
+      style={
+        embedded
+          ? {
+              width: "100%",
+              maxWidth: "100%",
+              boxSizing: "border-box",
+              background: "#0d0b06",
+              border: "1px solid #c8941a",
+              padding: 10,
+            }
+          : {
+              position: "fixed",
+              right: 16,
+              top: 72,
+              width: 320,
+              zIndex: 70,
+              background: "#0d0b06",
+              border: "1px solid #c8941a",
+              padding: 12,
+            }
+      }
     >
       <div style={{ ...MONO, fontSize: 8, color: "#c8941a", letterSpacing: "0.12em" }}>
-        {choice.headline.toUpperCase()}
+        {(choice.headline ?? "Seat fate").toUpperCase()}
       </div>
       <div style={{ ...MONO, fontSize: 11, color: "#c8b88a", marginTop: 4 }}>
         {holdName}
@@ -94,7 +131,7 @@ export default function SeatFatePanel({ state, dispatch }: Props) {
               />
               Leave in {holdName}
             </label>
-            {choice.escortArmyIds.map((id) => {
+            {escorts.map((id) => {
               const army = state.armies.find((a) => a.id === id);
               return (
                 <label key={id} style={{ color: dest.kind === "army" && dest.armyId === id ? "#c8b88a" : "#555", cursor: "pointer" }}>
@@ -136,6 +173,7 @@ export default function SeatFatePanel({ state, dispatch }: Props) {
         >
           Confirm
         </button>
+        {!embedded && (
         <button
           type="button"
           onClick={() => dispatch({ type: "OPEN_SEAT_FATE_PANEL", choiceId: null })}
@@ -151,6 +189,7 @@ export default function SeatFatePanel({ state, dispatch }: Props) {
         >
           Later
         </button>
+        )}
       </div>
     </div>
   );

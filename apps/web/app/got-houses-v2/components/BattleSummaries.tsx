@@ -211,10 +211,10 @@ function BattleModal({
 
   // Collect all names to highlight in the narrative
   const allNames: string[] = [];
-  report.casualties.forEach((c) => {
+  (report.casualties ?? []).forEach((c) => {
     // House names aren't proper nouns to highlight, skip
   });
-  report.fallen.forEach((f) => allNames.push(f.name));
+  (report.fallen ?? []).forEach((f) => allNames.push(f.name));
   // Add well-known faction names
   ["Stark", "Lannister", "Bolton", "Manderly", "Umber", "Glover"].forEach((n) =>
     allNames.push(n)
@@ -427,7 +427,7 @@ function BattleModal({
                 <FactorRow label="North condition" value={report.factors.northCondition} />
                 <FactorRow label="Westerlands" value={report.factors.westPosture} />
                 <FactorRow label="West condition" value={report.factors.westCondition} />
-                {report.factors.commanderMoods.map((mood, i) => (
+                {(report.factors.commanderMoods ?? []).map((mood, i) => (
                   <FactorRow key={i} label={i === 0 ? "Commanders" : ""} value={mood} />
                 ))}
               </div>
@@ -470,7 +470,7 @@ function BattleModal({
             >
               Chronicle
             </div>
-            {report.narrative.split(/\n+/).map((para, i) => (
+            {(report.narrative ?? "").split(/\n+/).map((para, i) => (
               <p
                 key={i}
                 style={{
@@ -490,7 +490,7 @@ function BattleModal({
           <div style={{ borderTop: "1px solid #1a1a1a" }} />
 
           {/* Casualties */}
-          {report.casualties.length > 0 && (
+          {(report.casualties ?? []).length > 0 && (
             <div>
               <div
                 style={{
@@ -505,15 +505,15 @@ function BattleModal({
               >
                 Casualties
               </div>
-              <CasualtyTable casualties={report.casualties} />
+              <CasualtyTable casualties={report.casualties ?? []} />
             </div>
           )}
 
           {/* Fallen figures */}
-          {report.fallen.length > 0 && (
+          {(report.fallen ?? []).length > 0 && (
             <>
               <div style={{ borderTop: "1px solid #1a1a1a" }} />
-              <FallenList fallen={report.fallen} />
+              <FallenList fallen={report.fallen ?? []} />
             </>
           )}
         </div>

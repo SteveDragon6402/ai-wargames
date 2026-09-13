@@ -61,7 +61,7 @@ const FACTION_NAMES: Record<Faction, string> = {
 const MONO = "var(--font-mono), monospace";
 
 function strengthOf(army: Army): number {
-  return army.units.reduce((s, u) => s + u.count, 0);
+  return (army.units ?? []).reduce((s, u) => s + u.count, 0);
 }
 
 /**

@@ -110,13 +110,17 @@ export function factionOrdersEqual(a: FactionOrders, b: FactionOrders): boolean 
 
 /** Shared-board identity so the guest poller does not re-hydrate the same snapshot. */
 export function boardFingerprint(state: GameState): string {
+  const pending = state.pendingBattles ?? [];
+  const reports = state.battleReports ?? [];
+  const armies = state.armies ?? [];
+  const retreats = state.retreats ?? [];
   return JSON.stringify({
     turn: state.turn,
     phase: state.phase,
-    pending: state.pendingBattles.map((b) => `${b.holdId}:${b.lastStand ? 1 : 0}`),
-    reports: state.battleReports.length,
-    armies: state.armies.map((a) => [a.id, a.holdId, a.units, a.name]),
-    retreats: state.retreats.map((r) => [r.armyId, r.chosenHoldId]),
+    pending: pending.map((b) => `${b.holdId}:${b.lastStand ? 1 : 0}`),
+    reports: reports.length,
+    armies: armies.map((a) => [a.id, a.holdId, a.units, a.name]),
+    retreats: retreats.map((r) => [r.armyId, r.chosenHoldId]),
     north: state.north,
     westerlands: state.westerlands,
     rename: state.pendingRenames,

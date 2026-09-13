@@ -1132,7 +1132,7 @@ export type GameAction =
       armyCommitments?: Record<string, "commit" | "hold_back">;
       commanderBriefs?: CommanderBrief[];
     }
-  | { type: "SET_RETREAT"; armyId: string; toHoldId: string }
+  | { type: "SET_RETREAT"; armyId: string; toHoldId: string; asFaction?: Faction }
   | { type: "COMMIT_RETREATS" }
   | { type: "COMBINE_ARMIES" }
   | { type: "TOGGLE_ADMIN" }
@@ -1254,6 +1254,12 @@ export type GameAction =
       faction: Faction;
       north: FactionOrders;
       westerlands: FactionOrders;
+    }
+  | {
+      /** Take the other side's retreat picks without touching ours. */
+      type: "PULL_RIVAL_RETREATS";
+      myFaction: Faction;
+      retreats: RetreatEntry[];
     }
   | {
       /** Replace the board with the host's resolved state (guest client). */

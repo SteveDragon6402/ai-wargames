@@ -12,7 +12,6 @@ import GarrisonPanel from "./GarrisonPanel";
 import CommanderRenamePanel from "./CommanderRenamePanel";
 import VictoryOverlay from "./VictoryOverlay";
 import TurnBriefing from "./TurnBriefing";
-import SeatFatePanel from "./SeatFatePanel";
 import { HOLDS, HOLDS_MAP } from "../data/holds";
 import { FACTION_HOMELAND } from "../data/homeland";
 import { regionSoftFor, regionTrait } from "../data/regions";
@@ -92,6 +91,10 @@ function normalizeState(raw: GameState): GameState {
     forage: normalizeForage(raw.forage),
     outcome: raw.outcome ?? null,
     northPrize: raw.northPrize ?? null,
+    armies: raw.armies ?? INITIAL_GAME_STATE.armies,
+    pendingBattles: raw.pendingBattles ?? [],
+    retreats: raw.retreats ?? [],
+    pendingRenames: raw.pendingRenames ?? [],
     prisoners: raw.prisoners ?? [],
     pendingChoices: raw.pendingChoices ?? [],
     travellers: raw.travellers ?? [],
@@ -115,14 +118,28 @@ function normalizeState(raw: GameState): GameState {
       })),
     })),
     holdStates: Object.fromEntries(
-      Object.entries(raw.holdStates ?? INITIAL_GAME_STATE.holdStates).map(
-        ([id, hs]) => [id, normalizeHoldRuntime(hs)]
-      )
+      Object.entries({
+        ...INITIAL_GAME_STATE.holdStates,
+        ...(raw.holdStates ?? {}),
+      }).map(([id, hs]) => [
+        id,
+        normalizeHoldRuntime(hs ?? INITIAL_GAME_STATE.holdStates[id]),
+      ])
     ),
     battleReports: (raw.battleReports ?? []).map((r) => ({
       ...r,
       shortSummary: r.shortSummary ?? "",
       summaryError: r.summaryError,
+      fallen: r.fallen ?? [],
+      casualties: r.casualties ?? [],
+      narrative: r.narrative ?? "",
+      prisoners: r.prisoners ?? [],
+      factors: r.factors
+        ? {
+            ...r.factors,
+            commanderMoods: r.factors.commanderMoods ?? [],
+          }
+        : r.factors,
     })),
     garrisonPanel: raw.garrisonPanel ?? null,
     turnedHouses: raw.turnedHouses ?? [],
@@ -210,17 +227,28 @@ export default function GameCore({
       return;
     }
 
-    if (!isGuest) return;
-    if (stateProgress(remoteState) < stateProgress(state)) return;
-    // Same-phase retreat: do not wipe a pick the guest has not saved yet.
     if (
       state.phase === "retreat" &&
       remoteState.phase === "retreat" &&
       remoteState.turn === state.turn
     ) {
+      dispatch({
+        type: "PULL_RIVAL_RETREATS",
+        myFaction: viewerFaction,
+        retreats: remoteState.retreats ?? [],
+      });
       return;
     }
-    if (boardFingerprint(remoteState) === boardFingerprint(state)) return;
+
+    if (!isGuest) return;
+    if (stateProgress(remoteState) < stateProgress(state)) return;
+    let sameBoard = false;
+    try {
+      sameBoard = boardFingerprint(remoteState) === boardFingerprint(state);
+    } catch {
+      sameBoard = false;
+    }
+    if (sameBoard) return;
     dispatch({ type: "HYDRATE_REMOTE", state: normalizeState(remoteState) });
   }, [
     twoBrowser,
@@ -732,11 +760,12 @@ export default function GameCore({
   const isRetreat = state.phase === "retreat";
   const isRename = state.phase === "rename_commanders" || !!state.voluntaryCommanderChange;
 
-  const totalBattleArmies = state.pendingBattles.reduce(
-    (sum, b) => sum + b.northArmies.length + b.westArmies.length,
+  const totalBattleArmies = (state.pendingBattles ?? []).reduce(
+    (sum, b) =>
+      sum + (b.northArmies ?? []).length + (b.westArmies ?? []).length,
     0
   );
-  const totalBattles = state.pendingBattles.length;
+  const totalBattles = (state.pendingBattles ?? []).length;
 
   return (
     <div
@@ -857,20 +886,31 @@ export default function GameCore({
             )}
 
             {/* Retreat overlay */}
-            {isRetreat && <RetreatPanel state={state} dispatch={dispatch} />}
+            {isRetreat && (
+              <RetreatPanel
+                state={state}
+                dispatch={dispatch}
+                viewerFaction={viewerFaction ?? state.activeFaction}
+                twoBrowser={twoBrowser}
+                canCommit={!isGuest}
+              />
+            )}
             {state.outcome && <VictoryOverlay outcome={state.outcome} />}
             {state.phase === "planning" && (
               <TurnBriefing
                 state={state}
                 dispatch={dispatch}
-                faction={state.activeFaction}
+                faction={viewerFaction ?? state.activeFaction}
               />
             )}
-            <SeatFatePanel state={state} dispatch={dispatch} />
           </div>
 
           {/* Side panel */}
-          <SidePanel state={state} dispatch={dispatch} />
+          <SidePanel
+            state={state}
+            dispatch={dispatch}
+            viewerFaction={viewerFaction}
+          />
         </div>
 
         {/* Battle log */}

@@ -118,7 +118,7 @@ export function choiceForArmy(
   armyId: string
 ): PendingChoice | null {
   return (
-    (choices ?? []).find((c) => c.escortArmyIds.includes(armyId)) ?? null
+    (choices ?? []).find((c) => (c.escortArmyIds ?? []).includes(armyId)) ?? null
   );
 }
 

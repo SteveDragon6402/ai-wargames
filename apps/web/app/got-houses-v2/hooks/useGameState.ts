@@ -2245,12 +2245,28 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case "SET_RETREAT": {
+      const army = state.armies.find((a) => a.id === action.armyId);
+      if (!army) return state;
+      if (action.asFaction && army.faction !== action.asFaction) return state;
       return {
         ...state,
         retreats: state.retreats.map((r) =>
           r.armyId === action.armyId ? { ...r, chosenHoldId: action.toHoldId } : r
         ),
       };
+    }
+
+    case "PULL_RIVAL_RETREATS": {
+      let changed = false;
+      const retreats = state.retreats.map((local) => {
+        const army = state.armies.find((a) => a.id === local.armyId);
+        if (!army || army.faction === action.myFaction) return local;
+        const remote = action.retreats.find((r) => r.armyId === local.armyId);
+        if (!remote || remote.chosenHoldId === local.chosenHoldId) return local;
+        changed = true;
+        return { ...local, chosenHoldId: remote.chosenHoldId };
+      });
+      return changed ? { ...state, retreats } : state;
     }
 
     case "COMMIT_RETREATS": {
@@ -3255,6 +3271,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
     case "HYDRATE_REMOTE": {
       const remote = action.state;
+      // Per-browser chrome. The host's open fate panel / battle log must not
+      // mount on the joiner mid-adjudication — that used to change hook order
+      // in SeatFatePanel and white-screen the guest.
+      const localChoiceStillOpen =
+        !!state.seatFatePanelId &&
+        (remote.pendingChoices ?? []).some((c) => c.id === state.seatFatePanelId);
       return {
         ...remote,
         selectedHoldId: state.selectedHoldId,
@@ -3267,6 +3289,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         activeFaction: state.activeFaction,
         speechArmyId: state.speechArmyId,
         garrisonPanel: state.garrisonPanel,
+        splitPanelArmyId: state.splitPanelArmyId,
+        battleLogOpen: state.battleLogOpen,
+        seatFatePanelId: localChoiceStillOpen ? state.seatFatePanelId : null,
       };
     }
 
