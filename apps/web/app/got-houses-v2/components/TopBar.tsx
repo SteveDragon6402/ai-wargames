@@ -11,8 +11,6 @@ interface Props {
   dispatch: React.Dispatch<GameAction>;
   /** Two-browser rooms: lock locally but let the host resolve once both sides land. */
   deferAdjudicate?: boolean;
-  /** Hide admin dual-control — each browser is one house. */
-  twoBrowser?: boolean;
 }
 
 const FACTION_COLORS: Record<Faction, { bg: string; border: string; text: string; activeBg: string }> = {
@@ -30,14 +28,8 @@ const FACTION_COLORS: Record<Faction, { bg: string; border: string; text: string
   },
 };
 
-export default function TopBar({
-  state,
-  dispatch,
-  deferAdjudicate,
-  twoBrowser,
-}: Props) {
+export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
   const { turn, north, westerlands, adminMode, activeFaction, phase } = state;
-  const showAdmin = adminMode && !twoBrowser;
   const inPlanningPhase = phase === "planning";
   const [endsOpen, setEndsOpen] = useState(false);
   const progress = victoryProgress(state);
@@ -129,8 +121,8 @@ export default function TopBar({
         </span>
       </div>
 
-      {/* Faction tabs (admin / solo only) */}
-      {showAdmin && (
+      {/* Faction tabs (admin mode) */}
+      {adminMode && (
         <div
           style={{
             display: "flex",
@@ -198,7 +190,7 @@ export default function TopBar({
       )}
 
       {/* Non-admin faction indicator */}
-      {!showAdmin && (
+      {!adminMode && (
         <div
           style={{
             display: "flex",
@@ -384,8 +376,7 @@ export default function TopBar({
         ⚔ Battles{(state.battleReports ?? []).length > 0 ? ` (${state.battleReports.length})` : ""}
       </button>
 
-      {/* Admin toggle — solo / standalone only */}
-      {!twoBrowser && (
+      {/* Admin toggle */}
       <button
         type="button"
         onClick={() => dispatch({ type: "TOGGLE_ADMIN" })}
@@ -413,7 +404,6 @@ export default function TopBar({
       >
         Admin {adminMode ? "✓" : ""}
       </button>
-      )}
     </div>
   );
 }

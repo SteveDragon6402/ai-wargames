@@ -38,6 +38,21 @@ export function defendingSideOf(hs: HoldRuntime): Faction | "hostile" | null {
   return hs.garrison.faction ?? hs.controller;
 }
 
+/**
+ * In a two-browser room admin is off: both crowns are human. Do not let a
+ * castellan sue, accept, or refuse for them. Solo/admin still uses the AI.
+ */
+export function aiMayDecideTerms(
+  state: Pick<GameState, "adminMode" | "holdStates">,
+  holdId: string
+): boolean {
+  if (state.adminMode) return true;
+  const hs = state.holdStates?.[holdId];
+  if (!hs) return false;
+  const side = defendingSideOf(hs);
+  return side !== "north" && side !== "westerlands";
+}
+
 /** The side a besieger's terms would be addressed to, and vice versa. */
 export function counterpartyOf(
   hs: HoldRuntime,
@@ -239,6 +254,7 @@ export function applySurrenderDecision(
   holdId: string,
   decision: SurrenderDecision
 ): string | null {
+  if (!aiMayDecideTerms(state, holdId)) return null;
   const hs = state.holdStates?.[holdId];
   if (!hs?.siege) return null;
   const holdName = HOLDS_MAP.get(holdId)?.name ?? holdId;

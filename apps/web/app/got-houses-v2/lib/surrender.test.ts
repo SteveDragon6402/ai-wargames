@@ -1,6 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { playerMessageLooksLikeTermsOffer } from "./surrender";
+import { aiMayDecideTerms, playerMessageLooksLikeTermsOffer } from "./surrender";
+import { INITIAL_GAME_STATE } from "../data/initial-state";
 
 describe("playerMessageLooksLikeTermsOffer", () => {
   it("counts a spoken offer as terms", () => {
@@ -12,6 +13,29 @@ describe("playerMessageLooksLikeTermsOffer", () => {
     );
     assert.equal(
       playerMessageLooksLikeTermsOffer("I offer you terms: spare the garrison."),
+      true
+    );
+  });
+
+  it("does not let the host AI sue for a human garrison", () => {
+    const holdId = "21";
+    const holdStates = {
+      ...INITIAL_GAME_STATE.holdStates,
+      [holdId]: {
+        ...INITIAL_GAME_STATE.holdStates[holdId],
+        controller: "westerlands" as const,
+        garrison: {
+          ...INITIAL_GAME_STATE.holdStates[holdId].garrison,
+          faction: "westerlands" as const,
+        },
+      },
+    };
+    assert.equal(
+      aiMayDecideTerms({ adminMode: false, holdStates }, holdId),
+      false
+    );
+    assert.equal(
+      aiMayDecideTerms({ adminMode: true, holdStates }, holdId),
       true
     );
   });

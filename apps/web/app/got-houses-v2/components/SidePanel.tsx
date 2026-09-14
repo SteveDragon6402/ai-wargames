@@ -103,8 +103,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
   const isLocked = factionOrders?.submitted ?? false;
 
   const controllableArmies = armiesHere.filter((a) => {
-    if (viewerFaction ? a.faction !== viewerFaction : !adminMode && a.faction !== activeFaction)
-      return false;
+    if (!adminMode && a.faction !== activeFaction) return false;
     const orders = a.faction === "north" ? state.north : state.westerlands;
     return !orders.submitted;
   });
@@ -112,9 +111,16 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
     controllableArmies.length > 0 &&
     controllableArmies.every((a) => selectedArmyIds.includes(a.id));
 
+  const myFaction = adminMode ? activeFaction : viewerFaction ?? activeFaction;
+  const ownsSelection =
+    adminMode ||
+    (selectedArmies.length > 0 &&
+      selectedArmies.every((a) => a.faction === myFaction));
+
   // Can combine: 2+ selected, same hold, same faction, not locked
   const canCombine =
     selectedArmies.length >= 2 &&
+    ownsSelection &&
     selectedArmies.every((a) => a.holdId === selectedHoldId) &&
     selectedArmies.every((a) => !isGarrisonArmyId(a.id)) &&
     allSelectedSameFaction &&
@@ -126,17 +132,19 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
     !!singleSelected && isGarrisonArmyId(singleSelected.id);
   const canSplit =
     !!singleSelected &&
+    ownsSelection &&
     !garrisonSelected &&
     !isLocked &&
     (singleSelected.leaders.length >= 2 || singleSelected.units.length >= 2);
 
   // Can change commander: any single controllable field host
   const canChangeCommander =
-    !!singleSelected && !garrisonSelected && !isLocked;
+    !!singleSelected && ownsSelection && !garrisonSelected && !isLocked;
 
   // Can move: 1+ selected field hosts, not locked, not in move mode
   const canMove =
     selectedArmies.length > 0 &&
+    ownsSelection &&
     !isLocked &&
     selectedArmies.every((a) => !isGarrisonArmyId(a.id));
 
@@ -148,7 +156,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
           : state.westerlands.stanceOrders[singleSelected.id]) ?? null
       : null;
 
-  const canIssueStance = !!singleSelected && !isLocked;
+  const canIssueStance = !!singleSelected && ownsSelection && !isLocked;
 
   const holdRuntime = state.holdStates?.[selectedHoldId];
   const castleSeed = getCastleSeed(selectedHoldId);
@@ -159,8 +167,6 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
   const freeSlots = holdRuntime
     ? freeCapacity(selectedHoldId, holdRuntime)
     : 0;
-
-  const myFaction = viewerFaction ?? activeFaction;
   const friendlyHold =
     !!holdRuntime && isFriendlyTo(holdRuntime, myFaction);
   const nonHomeOccupier =
@@ -191,6 +197,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
   const canGarrison =
     garrisonable &&
     !!singleSelected &&
+    ownsSelection &&
     !garrisonSelected &&
     !isLocked &&
     singleSelected.holdId === selectedHoldId &&
@@ -219,6 +226,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
   const canAbandon =
     garrisonable &&
     !!singleSelected &&
+    ownsSelection &&
     !isLocked &&
     nonHomeOccupier &&
     garrisonMen > 0 &&
@@ -226,6 +234,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
   const canStorm =
     garrisonable &&
     !!singleSelected &&
+    ownsSelection &&
     !isLocked &&
     amBesieger &&
     singleSelected.holdId === selectedHoldId;
@@ -715,7 +724,11 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
           {armyPrisoners.map((g) => (
             <PrisonerCard key={g.id} group={g} state={state} dispatch={dispatch} />
           ))}
-          {selectedArmies.some((a) => canRaze(a, selectedHoldId, holdRuntime).ok) && (
+          {selectedArmies.some(
+            (a) =>
+              (adminMode || a.faction === myFaction) &&
+              canRaze(a, selectedHoldId, holdRuntime).ok
+          ) && (
             <button
               type="button"
               onClick={() => {
@@ -924,7 +937,6 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                       type: "SET_STORM_ORDER",
                       armyId: singleSelected!.id,
                       active: !stormActive,
-                      asFaction: myFaction,
                     })
                   }
                 />
@@ -977,7 +989,6 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                 type: "SET_SALLY_ORDER",
                 holdId: selectedHoldId,
                 active: !sallyActive,
-                asFaction: myFaction,
               })
             }
             accent
@@ -1102,8 +1113,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
 
       {singleSelected &&
         state.speechArmyId === singleSelected.id &&
-        (singleSelected.faction === myFaction ||
-          (!viewerFaction && adminMode)) && (
+        (adminMode || singleSelected.faction === activeFaction) && (
           <div
             style={{
               flexShrink: 0,

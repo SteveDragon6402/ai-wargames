@@ -766,15 +766,13 @@ export function foldSiegeIntoBattles(
       engagement,
       garrisonHoldId: holdId,
       wallsStand: false,
-      combinedAssault: engagement === "storm" && includeRelief,
       seatLine: battleSeatLine(holdId, hs),
     });
     usedHolds.add(holdId);
   }
 
-  // Storm first. A defender sally into a storm is a combined assault on the
-  // walls, not a sally-only fight — the old order emitted sally and skipped
-  // the storm when there was no field clash.
+  // Storm first. A sally at the same seat used to emit first and then
+  // swallow the storm (usedHolds), so a West assault resolved as a sally.
   for (const holdId of stormHolds) {
     const hs = holdStates[holdId];
     if (!hs?.siege || garrisonHeadcount(hs.garrison) <= 0) continue;
@@ -782,9 +780,9 @@ export function foldSiegeIntoBattles(
   }
 
   for (const holdId of sallySet) {
-    if (stormHolds.has(holdId)) continue;
     const hs = holdStates[holdId];
     if (!hs?.siege || garrisonHeadcount(hs.garrison) <= 0) continue;
+    if (stormHolds.has(holdId)) continue;
     pushSiegeOnly(holdId, hs, "sally", true);
   }
 

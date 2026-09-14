@@ -76,12 +76,12 @@ export default function RoomGamePage() {
           ? (data.game.state as GameState)
           : { ...INITIAL_GAME_STATE, adminMode: solo, activeFaction: factionId };
 
-        // Two-browser rooms: each client is one house. Admin dual-control
-        // must not leak in from a saved blob or the host plays both sides.
+        // Override: in non-solo games, start showing the viewer's faction
+        // (adminMode can still be toggled in the UI)
         const overriddenState: GameState = {
           ...base,
           activeFaction: solo ? base.activeFaction : factionId,
-          adminMode: solo,
+          adminMode: solo ? true : base.adminMode,
         };
 
         setInitialGameState(overriddenState);

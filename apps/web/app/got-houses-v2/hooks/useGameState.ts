@@ -85,6 +85,8 @@ import {
 } from "../lib/castellan";
 import {
   canOfferTerms,
+  counterpartyOf,
+  defendingSideOf,
   describeTerms,
   openTermsAt,
   yieldHold,
@@ -633,6 +635,10 @@ function getFactionOrders(state: GameState, faction: Faction) {
   return faction === "north" ? state.north : state.westerlands;
 }
 
+function canActAs(state: GameState, faction: Faction): boolean {
+  return state.adminMode || state.activeFaction === faction;
+}
+
 function setFactionOrders(
   state: GameState,
   faction: Faction,
@@ -1028,7 +1034,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         .filter(Boolean) as Army[];
 
       const newOrders: MoveOrder[] = selectedArmies
-        .filter((army) => getAdjacentHolds(army.holdId).includes(action.toHoldId))
+        .filter(
+          (army) =>
+            canActAs(state, army.faction) &&
+            getAdjacentHolds(army.holdId).includes(action.toHoldId)
+        )
         .map((army) => ({
           armyId: army.id,
           fromHoldId: army.holdId,
@@ -1072,6 +1082,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         action.armyId
       );
       if (!army) return state;
+      if (!canActAs(state, army.faction)) return state;
 
       const faction = army.faction;
       const factionOrders = getFactionOrders(state, faction);
@@ -2924,7 +2935,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case "SET_STORM_ORDER": {
       const army = state.armies.find((a) => a.id === action.armyId);
       if (!army) return state;
-      if (action.asFaction && army.faction !== action.asFaction) return state;
+      if (!canActAs(state, army.faction)) return state;
       if (action.active) {
         // There must be a live siege of ours here to storm.
         const hs = state.holdStates?.[army.holdId];
@@ -2964,7 +2975,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               ? hs.homeFaction
               : null;
       if (!faction) return state;
-      if (action.asFaction && faction !== action.asFaction) return state;
+      if (!canActAs(state, faction)) return state;
       if (hs.siege.besiegerFaction === faction) return state;
       const key = faction === "north" ? "north" : "westerlands";
       const fo = state[key];
@@ -2988,6 +2999,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
     case "OFFER_SURRENDER_TERMS": {
       const hs = state.holdStates?.[action.holdId];
+      if (!canActAs(state, action.terms.offeredBy)) return state;
       if (!canOfferTerms(hs, action.terms.offeredBy)) return state;
       const holdName = HOLDS_MAP.get(action.holdId)?.name ?? action.holdId;
       const offered = { ...action.terms, status: "offered" as const };
@@ -3043,6 +3055,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case "WITHDRAW_SURRENDER_TERMS": {
       const hs = state.holdStates?.[action.holdId];
       if (!hs?.siege?.terms) return state;
+      if (!canActAs(state, hs.siege.terms.offeredBy)) return state;
       return {
         ...state,
         holdStates: {
@@ -3059,6 +3072,18 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const hs = state.holdStates?.[action.holdId];
       const open = openTermsAt(hs);
       if (!hs?.siege || !open) return state;
+      const answerer = counterpartyOf(hs, open.offeredBy);
+      // A garrison that yields puts terms and accepts them itself.
+      const actor =
+        action.accepted && open.offeredBy === defendingSideOf(hs)
+          ? open.offeredBy
+          : answerer;
+      if (
+        (actor === "north" || actor === "westerlands") &&
+        !canActAs(state, actor)
+      ) {
+        return state;
+      }
 
       // A counter-offer is a rejection that leaves fresh terms on the table.
       if (!action.accepted && action.counterTerms) {

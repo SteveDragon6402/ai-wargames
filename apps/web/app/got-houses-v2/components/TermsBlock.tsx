@@ -5,6 +5,7 @@ import type { Faction, GameAction, GameState, PersonFate, SurrenderTerms, TownFa
 import { HOLDS_MAP } from "../data/holds";
 import {
   TERMS_LIFETIME_TURNS,
+  aiMayDecideTerms,
   canOfferTerms,
   defaultTermsFor,
   describeTerms,
@@ -105,6 +106,12 @@ export default function TermsBlock({ state, dispatch, holdId, faction }: Props) 
     if (error || !thread) {
       setParleyBusy(false);
       setParleyError(error ?? "Could not open a word with the castellan.");
+      return;
+    }
+    // Two-browser: the other crown answers in the terms block. Do not let
+    // the castellan accept or sue on their behalf.
+    if (!aiMayDecideTerms({ ...state, holdStates: patchedHoldStates }, holdId)) {
+      setParleyBusy(false);
       return;
     }
     const promptError = await promptCastellanAboutTerms({

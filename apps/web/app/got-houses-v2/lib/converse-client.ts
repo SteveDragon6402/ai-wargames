@@ -17,6 +17,7 @@ import {
 } from "../data/characters";
 import { ensureGarrisonNegotiator } from "./castellan";
 import {
+  aiMayDecideTerms,
   applySurrenderDecision,
   describeTerms,
   openTermsAt,
@@ -237,7 +238,7 @@ export async function promptCastellanAboutTerms(opts: {
         makeMessage(npcId, characters[npcId]?.name ?? npcId, data.reply, "chat"),
       ],
     });
-    if (data.surrender) {
+    if (data.surrender && aiMayDecideTerms({ ...state, holdStates }, data.surrender.holdId)) {
       const note = applySurrenderDecision(
         dispatch,
         { ...state, holdStates, characters },
