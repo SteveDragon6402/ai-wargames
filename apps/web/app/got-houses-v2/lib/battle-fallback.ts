@@ -1,6 +1,6 @@
 import type { BattleContext, BattleReport, Casualty, ForceSummary, Hold } from "../types";
 import { describeForceRatio, fallbackOutcome } from "./battle-forces";
-import { distributeProportional } from "./battle-validate";
+import { distributeProportional, inferPrisonersTaken } from "./battle-validate";
 
 /**
  * The one deterministic outcome used whenever the models cannot resolve a
@@ -79,6 +79,13 @@ export function buildFallbackReport(
         .map((a) => a.id)
         .filter((id) => !id.startsWith("garrison:"));
 
+  const prisonersTaken = inferPrisonersTaken(
+    battle,
+    casualties,
+    holdResult,
+    battle.lastStand ? "last_stand" : "structured_withdrawal"
+  );
+
   return {
     defeatType: battle.lastStand ? "last_stand" : "structured_withdrawal",
     narrative:
@@ -92,6 +99,8 @@ export function buildFallbackReport(
     holdResult,
     casualties,
     fallen: [],
+    captured: [],
+    prisonersTaken,
     retreatingArmyIds,
     conditionUpdates: [],
     fallbackReason: reason,

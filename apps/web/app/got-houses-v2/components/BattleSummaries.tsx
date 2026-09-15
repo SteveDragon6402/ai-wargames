@@ -133,7 +133,7 @@ function CasualtyTable({ casualties }: { casualties: Casualty[] }) {
             marginBottom: 4,
           }}
         >
-          {label} — {total.toLocaleString()} fallen
+          {label} — {total.toLocaleString()} lost
         </div>
         {items.map((c, i) => (
           <div
@@ -180,7 +180,7 @@ function FallenList({ fallen }: { fallen: FallenFigure[] }) {
           marginBottom: 4,
         }}
       >
-        Fallen
+        Slain
       </div>
       {fallen.map((f, i) => (
         <div
@@ -190,6 +190,40 @@ function FallenList({ fallen }: { fallen: FallenFigure[] }) {
             fontSize: 9,
             color: "#555",
             textDecoration: "line-through",
+            paddingLeft: 8,
+          }}
+        >
+          {f.name} {f.isLeader ? "(Commander)" : "(Notable)"}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CapturedList({ captured }: { captured: FallenFigure[] }) {
+  if (captured.length === 0) return null;
+  return (
+    <div>
+      <div
+        style={{
+          fontFamily: "var(--font-mono), monospace",
+          fontSize: 8,
+          fontWeight: 700,
+          textTransform: "uppercase",
+          letterSpacing: "0.12em",
+          color: "#c8941a",
+          marginBottom: 4,
+        }}
+      >
+        Taken alive
+      </div>
+      {captured.map((f, i) => (
+        <div
+          key={i}
+          style={{
+            fontFamily: "var(--font-mono), monospace",
+            fontSize: 9,
+            color: "#888",
             paddingLeft: 8,
           }}
         >
@@ -215,6 +249,7 @@ function BattleModal({
     // House names aren't proper nouns to highlight, skip
   });
   (report.fallen ?? []).forEach((f) => allNames.push(f.name));
+  (report.captured ?? []).forEach((f) => allNames.push(f.name));
   // Add well-known faction names
   ["Stark", "Lannister", "Bolton", "Manderly", "Umber", "Glover"].forEach((n) =>
     allNames.push(n)
@@ -514,6 +549,38 @@ function BattleModal({
             <>
               <div style={{ borderTop: "1px solid #1a1a1a" }} />
               <FallenList fallen={report.fallen ?? []} />
+            </>
+          )}
+
+          {(report.captured ?? []).length > 0 && (
+            <>
+              <div style={{ borderTop: "1px solid #1a1a1a" }} />
+              <CapturedList captured={report.captured ?? []} />
+            </>
+          )}
+
+          {(report.prisonersTaken ?? []).length > 0 && (
+            <>
+              <div style={{ borderTop: "1px solid #1a1a1a" }} />
+              <div>
+                <div
+                  style={{
+                    fontFamily: "var(--font-mono), monospace",
+                    fontSize: 8,
+                    fontWeight: 700,
+                    textTransform: "uppercase",
+                    letterSpacing: "0.12em",
+                    color: "#c8941a",
+                    marginBottom: 4,
+                  }}
+                >
+                  Rank-and-file taken prisoner —{" "}
+                  {(report.prisonersTaken ?? [])
+                    .reduce((s, c) => s + c.count, 0)
+                    .toLocaleString()}
+                </div>
+                <CasualtyTable casualties={report.prisonersTaken ?? []} />
+              </div>
             </>
           )}
         </div>

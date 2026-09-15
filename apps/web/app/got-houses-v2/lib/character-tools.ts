@@ -32,6 +32,7 @@ import { getCastleSeed } from "../data/castles";
 import { searchAdvice, searchFactionEvents } from "./faction-events";
 import { forageAtHold, forageOnPath } from "./forage";
 import { garrisonHeadcount } from "./hold-runtime";
+import { armyFieldPresence } from "./siege";
 import { describeSeat, turnsBetween } from "./travel";
 import { describeCaptivity, prisonerAwarenessLines, prisonerRoster } from "./prisoners";
 import { reputationSummary, searchDeeds } from "./deeds";
@@ -508,11 +509,22 @@ function findHoldByName(name: string): Hold | undefined {
   );
 }
 
-function armySummary(a: Army): string {
+function armySummary(
+  a: Army,
+  holdStates?: Record<string, HoldRuntime>
+): string {
   const hold = HOLDS_MAP.get(a.holdId);
+  const holdName = hold?.name ?? a.holdId;
   const leaders = a.leaders.map((l) => l.name).join(", ");
   const strength = a.units.reduce((s, u) => s + u.count, 0);
-  return `${a.name} (${a.faction}) — ~${strength} men at ${hold?.name ?? a.holdId}; led by ${leaders || "unknown"}; morale: ${a.morale}; condition: ${a.tiredness}; stance: ${a.stance}`;
+  const presence = armyFieldPresence(a, holdStates?.[a.holdId]);
+  const where =
+    presence === "siege_camp"
+      ? `in the siege camp outside ${holdName} (investing — not occupying. Digging in defends the camp; a host friendly to the garrison will be joined by a sally)`
+      : presence === "holding"
+        ? `at ${holdName}`
+        : `in the field near ${holdName}`;
+  return `${a.name} (${a.faction}) — ~${strength} men ${where}; led by ${leaders || "unknown"}; morale: ${a.morale}; condition: ${a.tiredness}; stance: ${a.stance}`;
 }
 
 export const CHARACTER_TOOL_DEFS: Anthropic.Messages.Tool[] = [
@@ -1033,7 +1045,7 @@ export function executeCharacterTool(
       const forces =
         here.length === 0
           ? "No known hosts camped here."
-          : here.map(armySummary).join("\n");
+          : here.map((a) => armySummary(a, ctx.holdStates)).join("\n");
       const hs = ctx.holdStates?.[hold.id];
       const castle = formatCastleBlock(hold.id, hs);
       return {
@@ -1126,7 +1138,7 @@ Country forage: ${forageAtHold(ctx.forage, holdId)}`,
         });
       }
       if (armies.length === 0) return { result: "No matching hosts found." };
-      return { result: armies.map(armySummary).join("\n") };
+      return { result: armies.map((a) => armySummary(a, ctx.holdStates)).join("\n") };
     }
 
     case "who_is": {
@@ -1147,7 +1159,10 @@ Country forage: ${forageAtHold(ctx.forage, holdId)}`,
       const where = captivity
         ? captivity
         : army
-          ? `Rides with ${army.name} near ${HOLDS_MAP.get(army.holdId)?.name ?? "the host"}.`
+          ? armyFieldPresence(army, ctx.holdStates?.[army.holdId]) ===
+            "siege_camp"
+            ? `Rides with ${army.name} in the siege camp outside ${HOLDS_MAP.get(army.holdId)?.name ?? "the walls"} — investing, not occupying. Digging in defends the camp; a friendly relief force is joined by a sally.`
+            : `Rides with ${army.name} near ${HOLDS_MAP.get(army.holdId)?.name ?? "the host"}.`
           : holdPost
             ? c.kind === "npc" && c.role === "castellan"
               ? `Castellan of ${holdPost}.`

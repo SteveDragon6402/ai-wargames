@@ -236,6 +236,38 @@ export function investorAtHold(
     : null;
 }
 
+/**
+ * Where a field host sits relative to the named seat.
+ *
+ * Investing is always a camp outside the walls. Fortify there means digging
+ * siege lines, not taking the keep.
+ */
+export type ArmyFieldPresence = "field" | "siege_camp" | "holding";
+
+export function armyFieldPresence(
+  army: Pick<Army, "faction">,
+  holdRuntime: HoldRuntime | undefined
+): ArmyFieldPresence {
+  const siege = holdRuntime?.siege;
+  if (siege && siege.besiegerFaction === army.faction) return "siege_camp";
+  if (holdRuntime?.controller === army.faction) return "holding";
+  return "field";
+}
+
+export function presenceNote(
+  presence: ArmyFieldPresence,
+  holdName: string,
+  siegeTurns?: number
+): string {
+  if (presence === "siege_camp") {
+    return `Siege camp outside the walls of ${holdName} — investing (siege turn ${siegeTurns ?? 1}). Digging in means defending those lines against anyone who hits the camp, not occupying the keep. If a host friendly to the garrison attacks the camp, the garrison will sally to help.`;
+  }
+  if (presence === "holding") {
+    return `On ground this faction already holds at ${holdName}.`;
+  }
+  return `In the field near ${holdName}, not inside the keep.`;
+}
+
 type SiegePresenceMode = "advance" | "reconcile";
 
 /**
@@ -661,8 +693,10 @@ export function defenderFactionFor(hs: HoldRuntime, besieger: Faction): Faction 
  * Fold storm / sally into field clashes at the same hold so they resolve as
  * one fight, then emit leftover siege-only battles.
  *
- * A field clash at a living garrison with no storm/sally stays a field battle
- * — the walls are not in it.
+ * A field clash at a living garrison that is *not* invested stays a field
+ * battle — the walls are not in it. If the hold is invested and a host
+ * friendly to the garrison hits the siege camp, the garrison sallies to help
+ * even when nobody ordered a sally.
  */
 export function foldSiegeIntoBattles(
   fieldBattles: BattleContext[],
@@ -723,8 +757,11 @@ export function foldSiegeIntoBattles(
     const hs = holdStates[b.holdId];
     const storm = stormHolds.has(b.holdId);
     const sally = sallySet.has(b.holdId);
-    const canFold =
-      !!hs?.siege && garrisonHeadcount(hs.garrison) > 0 && (storm || sally);
+    const livingSiege =
+      !!hs?.siege && garrisonHeadcount(hs.garrison) > 0;
+    const reliefJoinsGarrison =
+      livingSiege && fieldHasDefenderHost(b, hs);
+    const canFold = livingSiege && (storm || sally || reliefJoinsGarrison);
     if (canFold) {
       out.push(attachGarrison(b, hs, storm ? "storm" : "sally", true));
     } else {
@@ -787,6 +824,19 @@ export function foldSiegeIntoBattles(
   }
 
   return out;
+}
+
+/** A field host of the garrison's side is on this tile, hitting the siege camp. */
+export function fieldHasDefenderHost(
+  battle: BattleContext,
+  hs: HoldRuntime
+): boolean {
+  if (!hs.siege) return false;
+  const defender = defenderFactionFor(hs, hs.siege.besiegerFaction);
+  const hosts = defender === "north" ? battle.northArmies : battle.westArmies;
+  return hosts.some(
+    (a) => !a.id.startsWith("garrison:") && a.faction === defender
+  );
 }
 
 export function applyGarrisonCasualties(

@@ -75,16 +75,27 @@ function ArmyDot({
   army,
   fortified,
   resting,
+  investing,
   turnedHouses,
 }: {
   army: Army;
   fortified?: boolean;
   resting?: boolean;
+  investing?: boolean;
   turnedHouses?: string[];
 }) {
   const men = strengthOf(army);
   const k = men >= 1000 ? `${Math.round(men / 1000)}` : "·";
-  const activity = fortified ? "fortifying" : resting ? "resting" : "in the field";
+  const activity =
+    fortified && investing
+      ? "digging in around the walls (defending the siege camp)"
+      : investing
+        ? "in the siege camp"
+        : fortified
+          ? "fortifying"
+          : resting
+            ? "resting"
+            : "in the field";
   const turned =
     !!turnedHouses?.length &&
     army.units.some((u) => turnedHouses.includes(u.house));
@@ -276,6 +287,7 @@ function HoldNode({ data }: { data: HoldNodeData }) {
                 army={a}
                 fortified={(a.activity?.turnsFortiying ?? 0) > 0}
                 resting={(a.activity?.turnsResting ?? 0) > 0}
+                investing={underSiege && besiegerFaction === a.faction}
                 turnedHouses={turnedHouses}
               />
             ))}

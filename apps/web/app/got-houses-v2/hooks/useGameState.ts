@@ -102,7 +102,7 @@ import {
 } from "../lib/forage";
 import { captureRipple, deathRipple, mergeRipple } from "../lib/death-ripple";
 import { evaluateVictory, robbDeadOutcome } from "../lib/victory";
-import { convertDeathsToCaptures } from "../lib/battle-validate";
+import { convertDeathsToCaptures, ensureNamedCaptures } from "../lib/battle-validate";
 import {
   emptyCircumstances,
   recordDeed,
@@ -128,6 +128,7 @@ import {
   prisonersAt,
   prisonersWith,
   reassignEscortedPrisoners,
+  unitsFromCasualties,
 } from "../lib/prisoners";
 import { tickTravellers } from "../lib/release";
 import {
@@ -1287,7 +1288,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         state.north.orders,
         state.westerlands.orders,
         state.north.stanceOrders,
-        state.westerlands.stanceOrders
+        state.westerlands.stanceOrders,
+        castellanSync.holdStates
       );
 
       // Storm / sally order events
@@ -1451,15 +1453,32 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         const allowed = participantsFor(r);
         return allowed ? r.fallen.filter((f) => allowed.has(f.armyId)) : [];
       });
-      const convertedByReport = reports.map((r) =>
-        convertDeathsToCaptures(
+      const convertedByReport = reports.map((r) => {
+        const converted = convertDeathsToCaptures(
           r.fallen ?? [],
           r.captured ?? [],
           state.characters,
           state.turn,
           r.holdId
-        )
-      );
+        );
+        const battle = state.pendingBattles.find((b) => b.holdId === r.holdId);
+        if (!battle) return converted;
+        const extra = ensureNamedCaptures(
+          battle,
+          converted.fallen,
+          converted.captured,
+          state.characters,
+          state.turn,
+          r.holdId,
+          r.holdResult,
+          r.defeatType
+        );
+        return {
+          fallen: converted.fallen,
+          captured: extra.captured,
+          notes: [...converted.notes, ...extra.notes],
+        };
+      });
       const allFallen = convertedByReport.flatMap((c, i) => {
         const allowed = participantsFor(reports[i]);
         return allowed ? c.fallen.filter((f) => allowed.has(f.armyId)) : [];
@@ -1947,19 +1966,23 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         const ids = capturedHere
           .map((f) => findCharacterIdByName(board.characters, f.name))
           .filter((id): id is string => !!id);
-        const group = ids.length
-          ? createPrisonerGroup({
+        const loser = victor === "north" ? "westerlands" : "north";
+        const rankFile = unitsFromCasualties(
+          (report.prisonersTaken ?? []).filter((c) => c.faction === loser)
+        );
+        const group =
+          ids.length > 0 || rankFile.length > 0
+            ? createPrisonerGroup({
           captorFaction: victor,
           faction:
             board.characters[ids[0] ?? ""]?.faction === "north" ||
             board.characters[ids[0] ?? ""]?.faction === "westerlands"
               ? board.characters[ids[0]!].faction
-              : victor === "north"
-                ? "westerlands"
-                : "north",
+              : loser,
           location: escort
             ? { kind: "army", armyId: escort }
             : { kind: "hold", holdId: report.holdId },
+          units: rankFile,
           characterIds: ids,
           takenAtHoldId: report.holdId,
           takenTurn: state.turn,
@@ -1993,7 +2016,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
               holdId: report.holdId,
               faction: victor,
               battleId: report.id,
-              garrisonUnits: [],
+              garrisonUnits: rankFile,
               captiveCharacterIds: ids,
               escortArmyIds: escort ? [escort] : [],
             })

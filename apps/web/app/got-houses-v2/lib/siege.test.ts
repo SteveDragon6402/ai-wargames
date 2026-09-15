@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { getCastleSeed } from "../data/castles";
 import { freeCapacity, garrisonHeadcount } from "./hold-runtime";
 import {
+  armyFieldPresence,
   foldSiegeIntoBattles,
   garrisonArmyId,
   investorCheckAtHold,
@@ -10,6 +11,7 @@ import {
   MIN_SIEGE_FRACTION,
   minimumHoldingGarrison,
   minimumSiegeForce,
+  presenceNote,
   reconcilePledges,
   resolveSelectableArmy,
 } from "./siege";
@@ -299,6 +301,43 @@ describe("foldSiegeIntoBattles", () => {
     assert.equal(out[0].wallsStand, true);
     assert.ok(!out[0].northArmies.some((a) => a.id.startsWith("garrison:")));
   });
+
+  it("sallies the garrison when a friendly host hits the siege camp", () => {
+    const holdId = "16";
+    const north = army({ id: "army-robb", faction: "north", holdId });
+    const west = army({ id: "army-jaime", faction: "westerlands", holdId });
+    const hs = holdRuntime({
+      homeFaction: "north",
+      controller: "north",
+      garrison: {
+        faction: "north",
+        units: [{ house: "Tully", type: "infantry", count: 2000 }],
+        leaders: [{ name: "Edmure Tully" }],
+        notables: [],
+        morale: "Holding",
+        tiredness: "Tired",
+        stance: "On the walls",
+      },
+      siege: {
+        besiegerFaction: "westerlands",
+        armyIds: ["army-jaime"],
+        turns: 3,
+        terms: null,
+      },
+    });
+    const out = foldSiegeIntoBattles(
+      [{ holdId, northArmies: [north], westArmies: [west] }],
+      [north, west],
+      { [holdId]: hs },
+      [],
+      [],
+      { "army-jaime": "fortify" }
+    );
+    assert.equal(out.length, 1);
+    assert.equal(out[0].engagement, "sally");
+    assert.equal(out[0].combinedAssault, true);
+    assert.ok(out[0].northArmies.some((a) => a.id.startsWith("garrison:")));
+  });
 });
 
 describe("resolveSelectableArmy", () => {
@@ -323,5 +362,37 @@ describe("resolveSelectableArmy", () => {
     assert.equal(card?.faction, "westerlands");
     assert.equal(card?.morale, "High after the storm");
     assert.equal(resolveSelectableArmy([], holds, "garrison:16"), undefined);
+  });
+});
+
+describe("armyFieldPresence", () => {
+  it("calls a besieger's host a siege camp, not an occupation", () => {
+    const hs = holdRuntime({
+      controller: "north",
+      siege: {
+        besiegerFaction: "westerlands",
+        turns: 3,
+        armyIds: ["w1"],
+      },
+    });
+    const host = army({ id: "w1", faction: "westerlands", holdId: "16" });
+    assert.equal(armyFieldPresence(host, hs), "siege_camp");
+    const note = presenceNote("siege_camp", "Riverrun", 3);
+    assert.match(note, /outside the walls/i);
+    assert.match(note, /defending those lines/i);
+    assert.match(note, /sally/i);
+    assert.doesNotMatch(note, /occupied the castle/i);
+  });
+
+  it("calls a controller's host holding, and anyone else field", () => {
+    const hs = holdRuntime({ controller: "north", siege: null });
+    assert.equal(
+      armyFieldPresence(army({ id: "n1", faction: "north", holdId: "01" }), hs),
+      "holding"
+    );
+    assert.equal(
+      armyFieldPresence(army({ id: "w1", faction: "westerlands", holdId: "01" }), hs),
+      "field"
+    );
   });
 });

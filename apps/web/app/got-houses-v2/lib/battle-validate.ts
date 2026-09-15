@@ -42,6 +42,7 @@ export interface ExecutorOutput {
   casualties?: unknown;
   fallen?: unknown;
   captured?: unknown;
+  prisonersTaken?: unknown;
   retreatingArmyIds?: unknown;
   conditionUpdates?: unknown;
 }
@@ -52,6 +53,7 @@ export interface ValidatedOutcome {
   casualties: Casualty[];
   fallen: FallenFigure[];
   captured: FallenFigure[];
+  prisonersTaken: Casualty[];
   retreatingArmyIds: string[];
   conditionUpdates: ArmyConditionUpdate[];
   notes: ValidationNote[];
@@ -504,23 +506,152 @@ export function validateBattleOutcome(
       ? "last_stand"
       : undefined;
 
+  const prisonersTaken = resolvePrisonersTaken(
+    battle,
+    casualties,
+    raw.prisonersTaken,
+    holdResult,
+    defeatType,
+    notes
+  );
+
   return {
     defeatType,
     holdResult,
     casualties,
     fallen,
     captured,
+    prisonersTaken,
     retreatingArmyIds,
     conditionUpdates,
     notes,
   };
 }
 
+/** Share of the loser's casualties that should be in the winner's hands. */
+export const PRISONER_SHARE: Record<DefeatType, number> = {
+  structured_withdrawal: 0.22,
+  rout: 0.38,
+  shattering: 0.28,
+  pyrrhic_win: 0.18,
+  last_stand: 0.1,
+};
+
+function casualtyKey(c: Pick<Casualty, "armyId" | "house" | "unitType">): string {
+  return `${c.armyId}|${c.house}|${c.unitType}`;
+}
+
+function clampPrisonersToCasualties(
+  prisoners: Casualty[],
+  casualties: Casualty[]
+): Casualty[] {
+  const cap = new Map<string, number>();
+  for (const c of casualties) {
+    const k = casualtyKey(c);
+    cap.set(k, (cap.get(k) ?? 0) + c.count);
+  }
+  const used = new Map<string, number>();
+  const out: Casualty[] = [];
+  for (const p of prisoners) {
+    const k = casualtyKey(p);
+    const max = cap.get(k) ?? 0;
+    const already = used.get(k) ?? 0;
+    const take = Math.min(p.count, Math.max(0, max - already));
+    if (take <= 0) continue;
+    used.set(k, already + take);
+    out.push({ ...p, count: take });
+  }
+  return out;
+}
+
+/**
+ * Rank-and-file taken alive. Trusts the executor when it named a haul;
+ * otherwise peels a share of the loser's casualties so fights are not
+ * capture-free by default.
+ */
+export function inferPrisonersTaken(
+  _battle: BattleContext,
+  casualties: Casualty[],
+  holdResult: Faction | "abandoned",
+  defeatType?: DefeatType
+): Casualty[] {
+  const share = PRISONER_SHARE[defeatType ?? "rout"];
+  const loser: Faction | null =
+    holdResult === "north"
+      ? "westerlands"
+      : holdResult === "westerlands"
+        ? "north"
+        : null;
+  const rows = loser
+    ? casualties.filter((c) => c.faction === loser)
+    : casualties;
+  const out: Casualty[] = [];
+  for (const c of rows) {
+    const n = Math.floor(c.count * share);
+    if (n <= 0) continue;
+    out.push({ ...c, count: n });
+  }
+  return out;
+}
+
+function resolvePrisonersTaken(
+  battle: BattleContext,
+  casualties: Casualty[],
+  raw: unknown,
+  holdResult: Faction | "abandoned",
+  defeatType: DefeatType | undefined,
+  notes: ValidationNote[]
+): Casualty[] {
+  const armies = participants(battle);
+  const parsed: Casualty[] = [];
+  if (Array.isArray(raw)) {
+    for (const row of raw as Casualty[]) {
+      if (!row || typeof row !== "object") continue;
+      const armyId = String(row.armyId ?? "");
+      const army = armies.get(armyId);
+      if (!army) continue;
+      const count = Number(row.count);
+      if (!Number.isFinite(count) || count <= 0) continue;
+      const unitType = UNIT_TYPES.includes(row.unitType) ? row.unitType : null;
+      if (!unitType) continue;
+      parsed.push({
+        faction: army.faction,
+        armyId,
+        unitType,
+        house: String(row.house ?? ""),
+        count: Math.floor(count),
+      });
+    }
+  }
+  const clamped = clampPrisonersToCasualties(parsed, casualties);
+  if (clamped.length > 0) return clamped;
+  const inferred = clampPrisonersToCasualties(
+    inferPrisonersTaken(battle, casualties, holdResult, defeatType),
+    casualties
+  );
+  if (inferred.length > 0) {
+    const n = inferred.reduce((s, c) => s + c.count, 0);
+    notes.push({
+      kind: "inferred_prisoners",
+      detail: `${n.toLocaleString()} rank-and-file taken alive — the report named no haul, so a share of the loser's losses was taken prisoner.`,
+    });
+  }
+  return inferred;
+}
+
 const CAPTURE_CHANCE = {
   lord: 0.7,
-  commander: 0.55,
-  notable: 0.3,
+  commander: 0.82,
+  notable: 0.55,
 } as const;
+
+const SURVIVOR_CAPTURE_CHANCE: Record<DefeatType, { commander: number; notable: number }> = {
+  structured_withdrawal: { commander: 0.35, notable: 0.2 },
+  rout: { commander: 0.7, notable: 0.5 },
+  shattering: { commander: 0.6, notable: 0.4 },
+  pyrrhic_win: { commander: 0.28, notable: 0.16 },
+  last_stand: { commander: 0.2, notable: 0.12 },
+};
 
 /**
  * Models ignore "take them alive". This converts a share of reported deaths
@@ -568,4 +699,55 @@ export function convertDeathsToCaptures(
   }
 
   return { fallen: stillFallen, captured: nowCaptured, notes };
+}
+
+/**
+ * If the model listed nobody taken alive, scoop surviving captains from the
+ * losing side. Player lords stay exempt.
+ */
+export function ensureNamedCaptures(
+  battle: BattleContext,
+  fallen: FallenFigure[],
+  captured: FallenFigure[],
+  characters: Record<string, CharacterState>,
+  turn: number,
+  holdId: string,
+  holdResult: Faction | "abandoned",
+  defeatType?: DefeatType
+): { captured: FallenFigure[]; notes: ValidationNote[] } {
+  if (captured.length > 0) return { captured, notes: [] };
+  const loser: Faction | null =
+    holdResult === "north"
+      ? "westerlands"
+      : holdResult === "westerlands"
+        ? "north"
+        : null;
+  if (!loser) return { captured, notes: [] };
+  const odds = SURVIVOR_CAPTURE_CHANCE[defeatType ?? "rout"];
+  const dead = new Set(fallen.map((f) => f.name));
+  const extra: FallenFigure[] = [];
+  const notes: ValidationNote[] = [];
+  const hosts = loser === "north" ? battle.northArmies : battle.westArmies;
+  for (const army of hosts) {
+    const figures: { name: string; isLeader: boolean }[] = [
+      ...army.leaders.map((l) => ({ name: l.name, isLeader: true })),
+      ...(army.notables ?? []).map((n) => ({ name: n.name, isLeader: false })),
+    ];
+    for (const fig of figures) {
+      if (dead.has(fig.name)) continue;
+      const id = findCharacterIdByName(characters, fig.name);
+      const c = id ? characters[id] : undefined;
+      if (c && (c.role === "lord" || c.id === factionLordId(c.faction))) continue;
+      const weight = fig.isLeader ? "commander" : "notable";
+      const key = `${turn}:${holdId}:alive:${fig.name}`;
+      if (chanceFor(key, odds[weight])) {
+        extra.push({ armyId: army.id, name: fig.name, isLeader: fig.isLeader });
+        notes.push({
+          kind: "inferred_named_capture",
+          detail: `${fig.name} was taken alive from the beaten host.`,
+        });
+      }
+    }
+  }
+  return { captured: [...captured, ...extra], notes };
 }

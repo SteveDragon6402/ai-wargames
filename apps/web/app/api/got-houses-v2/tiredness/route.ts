@@ -37,6 +37,13 @@ STANCE — battle-readiness and tactical posture:
 - Investing a castle (besieging, no field battle): patient, dug-in siege lines; boredom and rot if long; post-siege scar leaves hosts wary and thin for a few turns
 - Prisoners in the train (prisonerEscort): a host dragging captives is slower, hungrier, and less ready — say so if the line is present. Do not invent a formula; judge the column as you would any other burden
 
+OCCUPATION vs INVESTMENT — read Presence before you write:
+- The hold name is the nearest seat. Being listed there does NOT mean the host holds the keep.
+- Presence "siege_camp": the host is OUTSIDE the walls, in a siege camp. They have NOT occupied, taken, or entered the castle. Fortify / digging in = earthworks around the walls AND defending those lines if anyone hits the camp. A host friendly to the garrison that attacks the camp is joined by a sally from the walls. Never say occupied, taken the seat, holding the castle, or inside the keep.
+- Presence "holding": this faction already controls the seat.
+- Presence "field": camped near the seat, not inside unless they are the garrison.
+- Territory "hostile" while investing means the castle is still against them, even if the surrounding country is familiar.
+
 MERGED ARMIES (when "Pre-merge source conditions" is present):
 This army was formed by combining two or more forces this turn. Each source army entered the merger with its own tiredness, morale, and stance — those do not vanish the moment they march together. Describe the merged state in terms of its constituent parts rather than flattening them into a single average.
 - Example: "Disorganised from the merger — Tywin's veterans remain steady and well-rested while Jaime's battered men are still exhausted and shaken from their ordeal"
@@ -82,7 +89,11 @@ function fallbackTiredness(armies: TirednessRequest["armies"]): TirednessUpdate[
       : false;
 
     if (army.stanceOrder === "rest") {
-      if (army.territory === "hostile") {
+      if (army.presence === "siege_camp") {
+        tiredness = "Resting in the siege camp under the walls — the keep is still shut";
+        morale = "Patient and bored; investing, not occupying";
+        stance = "Dug in outside the walls, watching the castle";
+      } else if (army.territory === "hostile") {
         tiredness = "Resting badly in hostile country — no true recovery";
         morale = "Ashamed and jumpy on enemy land";
         stance = "Looking over their shoulders";
@@ -108,11 +119,19 @@ function fallbackTiredness(armies: TirednessRequest["armies"]): TirednessUpdate[
         stance = "Cautious and defensive";
       }
     } else if (army.stanceOrder === "fortify") {
-      tiredness = "Tired from digging and construction, but purposefully so";
-      morale = "Determined — building defences focuses the men";
-      stance = army.activity.turnsFortiying >= 2
-        ? "Hardened and entrenched — they know this ground"
-        : "Defensive posture taking shape";
+      if (army.presence === "siege_camp") {
+        tiredness = "Tired from throwing up earthworks around the walls, not from holding the keep";
+        morale = "Determined — the siege camp is taking shape; the castle is still shut against them";
+        stance = army.activity.turnsFortiying >= 2
+          ? "Hardened siege lines outside the walls — investing, not occupying"
+          : "Digging in around the walls — a camp, not a captured keep";
+      } else {
+        tiredness = "Tired from digging and construction, but purposefully so";
+        morale = "Determined — building defences focuses the men";
+        stance = army.activity.turnsFortiying >= 2
+          ? "Hardened and entrenched — they know this ground"
+          : "Defensive posture taking shape";
+      }
     } else {
       if (forageBare && army.movesSinceRest >= 2) {
         tiredness = "Hungry and worn — the road and country have nothing left to take";
@@ -196,10 +215,18 @@ export async function POST(req: NextRequest) {
                 ? `\nRoad forage: ${army.marchRoute.forage ?? army.marchForage}`
                 : ""
             }`
-          : "\nMarch this turn: none (held position)";
+          : army.presence === "siege_camp"
+            ? "\nMarch this turn: none (held the siege camp — still outside the walls)"
+            : "\nMarch this turn: none (held position)";
+
+        const presenceLine = army.presenceNote
+          ? `\nPresence: ${army.presenceNote}`
+          : army.presence === "siege_camp"
+            ? `\nPresence: Siege camp outside the walls of ${army.holdName} — investing, NOT occupying the castle.`
+            : "";
 
         return `Army: ${army.name} [id: "${army.armyId}"]
-Location: ${army.holdName} (${army.territory} territory)
+Location: ${army.holdName} (${army.territory} territory)${presenceLine}
 Hold ground: ${army.holdGround}
 Hold forage: ${army.holdForage ?? "unknown"}
 Region character: ${army.regionMarch}

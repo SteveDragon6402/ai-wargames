@@ -66,6 +66,21 @@ export function createPrisonerGroup(
   };
 }
 
+/** Collapse casualty-shaped rows into unit stacks for a prisoner card. */
+export function unitsFromCasualties(
+  rows: { house: string; unitType: ArmyUnit["type"]; count: number }[]
+): ArmyUnit[] {
+  const map = new Map<string, ArmyUnit>();
+  for (const r of rows) {
+    if (r.count <= 0) continue;
+    const key = `${r.house}|${r.unitType}`;
+    const prev = map.get(key);
+    if (prev) prev.count += r.count;
+    else map.set(key, { house: r.house, type: r.unitType, count: r.count });
+  }
+  return [...map.values()];
+}
+
 /* ── Finding captives ─────────────────────────────────────────── */
 
 /** Groups sitting behind these walls. */

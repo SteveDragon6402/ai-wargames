@@ -209,8 +209,12 @@ export function formatBattleLog(r: BattleReport): string {
   }
   const fallen = (r.fallen ?? []).map((f) => f.name);
   const captured = (r.captured ?? []).map((f) => f.name);
-  if (fallen.length) lines.push(`Fallen: ${fallen.join(", ")}.`);
+  if (fallen.length) lines.push(`Slain: ${fallen.join(", ")}.`);
   if (captured.length) lines.push(`Taken alive: ${captured.join(", ")}.`);
+  const haul = (r.prisonersTaken ?? []).reduce((s, c) => s + c.count, 0);
+  if (haul > 0) {
+    lines.push(`Rank-and-file taken prisoner: ${haul.toLocaleString()}.`);
+  }
   for (const p of r.prisoners ?? []) {
     lines.push(
       `Prisoners (${p.role}): ${p.men.toLocaleString()} ${p.faction} men${p.characterNames.length ? ` — ${p.characterNames.join(", ")}` : ""}; ${p.outcome}.`

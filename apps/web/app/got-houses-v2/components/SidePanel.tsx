@@ -870,7 +870,18 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
               )}
               {canIssueStance && (
                 <ActionButton
-                  label="Fortify"
+                  label={
+                    singleSelected &&
+                    holdRuntime?.siege?.besiegerFaction === singleSelected.faction
+                      ? "Dig in"
+                      : "Fortify"
+                  }
+                  title={
+                    singleSelected &&
+                    holdRuntime?.siege?.besiegerFaction === singleSelected.faction
+                      ? "Defend the siege camp against anyone who hits the lines — not occupying the keep. If a host friendly to the garrison attacks the camp, the garrison will sally to help."
+                      : undefined
+                  }
                   disabled={false}
                   active={singleArmyStanceOrder === "fortify"}
                   onClick={() =>
@@ -1233,12 +1244,14 @@ function ActionButton({
   onClick,
   accent,
   active,
+  title,
 }: {
   label: string;
   disabled: boolean;
   onClick: () => void;
   accent?: boolean;
   active?: boolean;
+  title?: string;
 }) {
   const isActive = active ?? false;
   return (
@@ -1246,6 +1259,7 @@ function ActionButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
+      title={title}
       style={{
         fontFamily: "var(--font-mono), monospace",
         fontSize: 9,

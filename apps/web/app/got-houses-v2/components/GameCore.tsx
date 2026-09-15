@@ -32,7 +32,11 @@ import { INITIAL_GAME_STATE } from "../data/initial-state";
 import { snapshotForApi } from "../lib/converse-client";
 import { buildInitialCharacters } from "../data/characters";
 import { normalizeHoldRuntime } from "../lib/hold-runtime";
-import { selectGarrisonsForConditionUpdate } from "../lib/siege";
+import {
+  armyFieldPresence,
+  presenceNote,
+  selectGarrisonsForConditionUpdate,
+} from "../lib/siege";
 import { buildForceSummary } from "../lib/battle-forces";
 import { buildFallbackReport } from "../lib/battle-fallback";
 import type { SurrenderDecision } from "../lib/character-tools";
@@ -132,6 +136,8 @@ function normalizeState(raw: GameState): GameState {
       shortSummary: r.shortSummary ?? "",
       summaryError: r.summaryError,
       fallen: r.fallen ?? [],
+      captured: r.captured ?? [],
+      prisonersTaken: r.prisonersTaken ?? [],
       casualties: r.casualties ?? [],
       narrative: r.narrative ?? "",
       prisoners: r.prisoners ?? [],
@@ -344,12 +350,13 @@ export default function GameCore({
     if (tirednessUpdatedRef.current !== state.turn) {
       tirednessUpdatedRef.current = state.turn;
 
-      // Empty field: settle the turn now. Soft conditions can land after.
-      // Waiting on the tiredness call used to leave a room stuck in resolving
-      // when the API failed and never dispatched.
-      if (state.pendingBattles.length === 0) {
+      // Empty field: hold the resolving overlay until stance/morale/condition
+      // land. Mark the batch so a mid-flight UPDATE_TIREDNESS re-render cannot
+      // skip ahead and settle the turn. Always resolve in finally so a failed
+      // tiredness call cannot leave the room stuck.
+      const emptyField = state.pendingBattles.length === 0;
+      if (emptyField) {
         resolvedBatchRef.current = batchKey;
-        dispatch({ type: "BATTLES_RESOLVED", reports: [] });
       }
 
       async function updateSoftConditions() {
@@ -362,8 +369,11 @@ export default function GameCore({
           armies: state.armies.map((army) => {
             const hold = HOLDS_MAP.get(army.holdId);
             const holdRuntime = state.holdStates?.[army.holdId];
+            const presence = armyFieldPresence(army, holdRuntime);
             const territory = hold
-              ? determineTerritory(army, hold, holdRuntime)
+              ? presence === "siege_camp"
+                ? "hostile"
+                : determineTerritory(army, hold, holdRuntime)
               : "neutral";
             const moved = lastTurnHistory?.armyMoves.find((m) => m.armyId === army.id)?.moved ?? false;
 
@@ -417,6 +427,15 @@ export default function GameCore({
               ...(marchRoute ? { marchRoute } : {}),
               activity: army.activity,
               stanceOrder,
+              presence,
+              presenceNote: presenceNote(
+                presence,
+                hold?.name ?? "Unknown",
+                holdRuntime?.siege?.turns
+              ),
+              ...(presence === "siege_camp" && holdRuntime?.siege
+                ? { siegeTurns: holdRuntime.siege.turns }
+                : {}),
               // Pass pre-merge conditions so the tiredness API can describe
               // the heterogeneous state of a freshly merged army.
               ...(army.mergedFrom ? { mergedFrom: army.mergedFrom } : {}),
@@ -596,8 +615,16 @@ export default function GameCore({
           }
         } catch (err) {
           console.error("✗ Soft condition update error:", err);
+          // Battles wait for UPDATE_TIREDNESS to re-enter the effect. Empty
+          // field settles in finally either way.
+          if (!emptyField) {
+            dispatch({ type: "UPDATE_TIREDNESS", updates: [] });
+          }
         } finally {
           console.groupEnd();
+          if (emptyField) {
+            dispatch({ type: "BATTLES_RESOLVED", reports: [] });
+          }
         }
       }
 
@@ -716,6 +743,8 @@ export default function GameCore({
             console.log("✓ Resolved — holdResult:", data.holdResult);
             console.log("  Casualties:", data.casualties);
             console.log("  Fallen:", data.fallen);
+            console.log("  Captured:", data.captured);
+            console.log("  Prisoners taken:", data.prisonersTaken);
             console.log("  Retreating:", data.retreatingArmyIds);
             if (data.validation?.length) {
               console.warn("  Validator corrections:", data.validation);

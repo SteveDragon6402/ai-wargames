@@ -402,6 +402,8 @@ export interface ValidationNote {
     | "dropped_unknown_fallen"
     | "dropped_unknown_captured"
     | "converted_death_to_capture"
+    | "inferred_prisoners"
+    | "inferred_named_capture"
     | "corrected_hold_result"
     | "corrected_retreats"
     | "dropped_unknown_condition";
@@ -505,6 +507,8 @@ export interface BattleReport {
   fallen: FallenFigure[];
   /** Named men taken alive, beside the fallen. */
   captured?: FallenFigure[];
+  /** Rank-and-file taken alive — subset of casualties now in the winner's hands. */
+  prisonersTaken?: Casualty[];
   retreatingArmyIds: string[];
   /** Who was there and in what state — snapshotted before casualties land. */
   participants?: BattleParticipant[];
@@ -643,6 +647,15 @@ export interface TirednessArmyContext {
   activity: ArmyActivity;
   /** The explicit stance order the player issued this turn (if any) */
   stanceOrder: "rest" | "fortify" | "march";
+  /**
+   * Where the host actually sits relative to the named hold.
+   * siege_camp = investing outside the walls, not inside / occupying.
+   */
+  presence?: "field" | "siege_camp" | "holding";
+  /** Soft one-liner for the tiredness model — especially siege-camp vs occupy. */
+  presenceNote?: string;
+  /** Siege day, when investing. */
+  siegeTurns?: number;
   /**
    * If this army was formed by merging this turn, the pre-merge conditions
    * of each source army. Used to produce a heterogeneous condition description.

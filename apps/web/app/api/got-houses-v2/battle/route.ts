@@ -93,7 +93,7 @@ SOFT MECHANICS — these are mechanical inputs, not decoration, and MUST shape t
 - Region character: the four regions fight very differently — read the region lines and let them matter
 - Approach route: an army that marched in arrives shaped by that road (disordered from bog or pass, still formed from an easy road). An army already present holds the local ground
 - Homeland fit: men fighting in country they are not bred for are at a real disadvantage
-- Orders: an EXPLICITLY RESTING army is caught unprepared; a FORTIFYING army is dug in
+- Orders: an EXPLICITLY RESTING army is caught unprepared; a FORTIFYING army is dug in. Digging in around a castle under investment means defending the siege camp, not holding the keep.
 
 You may cite numbers from the data or not, as you prefer — the force totals have already been computed for you, so never do arithmetic of your own.
 
@@ -113,7 +113,11 @@ function armyBlock(
       order === "rest"
         ? "Order: EXPLICITLY RESTING — encamped, off-guard, not expecting to fight"
         : order === "fortify"
-          ? "Order: FORTIFYING — digging in, constructing field defences"
+          ? army.id.startsWith("garrison:")
+            ? "Order: FORTIFYING — strengthening the works inside the walls"
+            : battle.engagement === "sally" || battle.engagement === "storm"
+              ? "Order: DIGGING IN — defending the siege camp against anyone who hits the lines. Fieldworks around the walls, not occupation of the keep. A host friendly to the garrison is joined by a sally from the walls."
+              : "Order: FORTIFYING — digging in, constructing field defences"
           : "Order: MARCHING / ENGAGING";
 
   const commanders =
@@ -214,7 +218,7 @@ function buildChroniclerMessage(
     engagement === "storm"
       ? `\nENGAGEMENT TYPE: STORM THE GATES — field armies assault the walls against a defending GARRISON (its army id starts with "garrison:"). The garrison fights from fortifications; treat walls, towers and gates as decisive advantages for the defenders unless numbers or leadership overwhelm them. A failed storm does NOT drive the attacker from the country: they fall back to their siege camp and the investment continues. They only leave if the garrison is broken and the gates are forced, or if they are shattered as a host.${combinedNote}`
       : engagement === "sally"
-        ? `\nENGAGEMENT TYPE: SALLY OUT — the defending GARRISON (plus any relieving field armies on their side) sorties against the besiegers. This may be a two-front fight if relief has marched onto the invested hold.${combinedNote}`
+        ? `\nENGAGEMENT TYPE: SALLY OUT — the defending GARRISON sorties to help. If a field host friendly to the garrison has hit the siege camp, this is that relief fight: the garrison comes off the walls to join it, whether or not anyone ordered a sally. Besiegers who were digging in are defending their camp, not the keep.${combinedNote}`
         : wallsNote;
 
   const briefs = battle.commanderBriefs ?? [];
@@ -289,13 +293,29 @@ In a rout or shattering, men who survive the fighting but scatter or desert are 
 lost to the army as the dead — say so in the report.
 
 Prefer taking named captains alive over killing them when the fight allows it —
-a routed or yielding commander is more often captured than slain. Say so in the
-report when a figure is taken rather than killed. Player faction lords (Robb,
-Tywin) are never captured or killed by this process.
+a routed or yielding commander is more often captured than slain. Player faction
+lords (Robb, Tywin) are never captured or killed by this process.
+
+Every fight takes prisoners. Do not write a bloodless capture-free clash unless
+it was a tiny skirmish that never closed. After RESOLUTION and before VERDICT,
+you MUST include a TAKEN AND SLAIN block in this form (use the force data names
+and round counts; never invent people):
+
+TAKEN AND SLAIN
+The North: about N rank-and-file killed, about N taken prisoner. Named slain: … or none. Named taken: … or none.
+The Westerlands: about N rank-and-file killed, about N taken prisoner. Named slain: … or none. Named taken: … or none.
+
+"Killed" here means dead on the field. "Taken prisoner" means in the winner's
+hands after the fight. Men who scatter into the country are lost to their army
+but are not prisoners — say so if that is what happened. In a rout or shattering
+the winner should take a real haul of captives, including named captains when
+the chronicle has them overrun or yielding. A structured withdrawal still leaves
+a rear-guard that can be scooped up.
 
 Deaths of named commanders and notables should be proportionate: a decisive rout
 risks commanders, a shattering can kill prominent figures. Do not artificially
-protect named characters, and do not invent deaths in minor skirmishes.
+protect named characters, and do not invent deaths in minor skirmishes. Always
+say the numbers and the names — empty silence is not an answer.
 
 The available outcome labels are:
 ${DEFEAT_TYPES.map((d) => `- ${OUTCOME_VOCABULARY[d]}`).join("\n")}
@@ -318,6 +338,7 @@ Rules:
 - An army marked HOLDS BACK must take substantially lighter losses than a committed host on the same side.
 - Only report a named figure as fallen if the report says or clearly implies they fell.
 - captured lists named figures taken alive. Prefer capture over death when the chronicle says they were taken, yielded, or overrun without being slain. Never list a player lord (Robb, Tywin) as captured or fallen.
+- prisonersTaken is rank-and-file taken alive, using the same army/house/unit rows as casualties. These men are already among the casualties (lost to their army) — prisonersTaken is the share now in the winner's hands, not extra losses. Read the TAKEN AND SLAIN block. If the report names a haul of captives, fill this. Empty prisonersTaken is almost always wrong after a real fight.
 - retreatingArmyIds must be exactly the losing side's army ids (all of them), or both sides' ids if the verdict was "Neither". Exception: a STORM that did not force the gates has an empty retreat list — the attacker remains camped and the siege continues.
 - conditionUpdates must contain one entry for every army in the battle, describing its state after the fight in one vivid sentence each. A routed army is shattered and desperate; an orderly retreat leaves it bruised but not broken; a pyrrhic winner is bloodied and wary.
 
@@ -371,7 +392,7 @@ const OUTCOME_TOOL: Anthropic.Messages.Tool = {
       },
       captured: {
         type: "array",
-        description: "Named commanders and notables taken alive in this battle.",
+        description: "Named commanders and notables taken alive in this battle. Usually non-empty after a rout or shattering.",
         items: {
           type: "object",
           properties: {
@@ -380,6 +401,21 @@ const OUTCOME_TOOL: Anthropic.Messages.Tool = {
             isLeader: { type: "boolean", description: "true for a commander, false for a notable." },
           },
           required: ["armyId", "name", "isLeader"],
+        },
+      },
+      prisonersTaken: {
+        type: "array",
+        description:
+          "Rank-and-file taken alive. Same row shape as casualties. Counts must not exceed that unit's casualty row. Taken from the TAKEN AND SLAIN block.",
+        items: {
+          type: "object",
+          properties: {
+            armyId: { type: "string", description: "Exact army id from the force data." },
+            unitType: { type: "string", enum: ["cavalry", "infantry", "archers"] },
+            house: { type: "string", description: "Exact house name as listed for that unit." },
+            count: { type: "integer", minimum: 1, description: "Men taken alive from this stack." },
+          },
+          required: ["armyId", "unitType", "house", "count"],
         },
       },
       retreatingArmyIds: {
@@ -408,6 +444,7 @@ const OUTCOME_TOOL: Anthropic.Messages.Tool = {
       "casualties",
       "fallen",
       "captured",
+      "prisonersTaken",
       "retreatingArmyIds",
       "conditionUpdates",
     ],
@@ -466,7 +503,7 @@ THE BATTLE REPORT (authoritative — do not contradict it)
 ${chronicle}
 ─────────────────────────────────────────────────────────
 
-Call record_outcome once with the mechanical consequences of that report.`;
+Call record_outcome once with the mechanical consequences of that report. Fill fallen, captured, and prisonersTaken from the TAKEN AND SLAIN block. A fight with casualties and no prisonersTaken is almost certainly incomplete.`;
 }
 
 // ─── Player-facing "what mattered" strip ─────────────────────────────────────
@@ -646,7 +683,7 @@ async function summarizeBattle(
     model: "claude-haiku-4-5",
     max_tokens: 300,
     system:
-      "You write battle headlines and summaries for a medieval wargame. Line 1: a headline of at most twelve words, no period required. Then exactly three lines of prose. No bullets, no numbering, no blank lines.",
+      "You write battle headlines and summaries for a medieval wargame. Line 1: a headline of at most twelve words, no period required. Then exactly three lines of prose. Mention who was slain and who was taken prisoner if the report names them. No bullets, no numbering, no blank lines.",
     messages: [
       {
         role: "user",
@@ -760,6 +797,7 @@ export async function POST(req: NextRequest) {
       casualties: validated.casualties,
       fallen: validated.fallen,
       captured: validated.captured,
+      prisonersTaken: validated.prisonersTaken,
       retreatingArmyIds: validated.retreatingArmyIds,
       conditionUpdates: validated.conditionUpdates,
       factors,

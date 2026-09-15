@@ -115,4 +115,35 @@ describe("validateBattleOutcome", () => {
     const taken = validateBattleOutcome(storm, { holdResult: "westerlands" });
     assert.deepEqual(taken.retreatingArmyIds, ["n1"]);
   });
+
+  it("peels a share of the loser's casualties into prisoners when the executor names none", () => {
+    const out = validateBattleOutcome(battle([north], [west], "18"), {
+      holdResult: "north",
+      defeatType: "rout",
+      casualties: [
+        { armyId: "w1", unitType: "infantry", house: "Lannister", count: 400 },
+        { armyId: "n1", unitType: "infantry", house: "Stark", count: 80 },
+      ],
+    });
+    const taken = out.prisonersTaken.reduce((s, c) => s + c.count, 0);
+    assert.ok(taken > 0);
+    assert.ok(out.prisonersTaken.every((c) => c.armyId === "w1"));
+    assert.ok(out.notes.some((n) => n.kind === "inferred_prisoners"));
+  });
+
+  it("keeps an executor haul of prisoners instead of inferring", () => {
+    const out = validateBattleOutcome(battle([north], [west], "18"), {
+      holdResult: "north",
+      defeatType: "rout",
+      casualties: [
+        { armyId: "w1", unitType: "infantry", house: "Lannister", count: 400 },
+      ],
+      prisonersTaken: [
+        { armyId: "w1", unitType: "infantry", house: "Lannister", count: 50 },
+      ],
+    });
+    assert.equal(out.prisonersTaken.length, 1);
+    assert.equal(out.prisonersTaken[0].count, 50);
+    assert.ok(!out.notes.some((n) => n.kind === "inferred_prisoners"));
+  });
 });

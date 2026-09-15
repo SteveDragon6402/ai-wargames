@@ -6,8 +6,10 @@ import type {
   Faction,
   FactionEvent,
   GameState,
+  HoldRuntime,
   MoveOrder,
 } from "../types";
+import { armyFieldPresence } from "./siege";
 import { HOLDS_MAP } from "../data/holds";
 import { factionLordId } from "../data/characters";
 
@@ -69,7 +71,8 @@ export function eventsFromResolvedOrders(
   northOrders: MoveOrder[],
   westOrders: MoveOrder[],
   northStance: Record<string, "rest" | "fortify">,
-  westStance: Record<string, "rest" | "fortify">
+  westStance: Record<string, "rest" | "fortify">,
+  holdStates?: Record<string, HoldRuntime>
 ): FactionEvent[] {
   const events: FactionEvent[] = [];
   const armyMap = new Map(armies.map((a) => [a.id, a]));
@@ -103,6 +106,19 @@ export function eventsFromResolvedOrders(
       const army = armyMap.get(armyId);
       const hold = army ? HOLDS_MAP.get(army.holdId)?.name ?? army.holdId : "?";
       const name = army?.name ?? armyId;
+      const investing =
+        !!army &&
+        armyFieldPresence(army, holdStates?.[army.holdId]) === "siege_camp";
+      const summary = investing
+        ? order === "fortify"
+          ? `${name} dug siege lines around ${hold}`
+          : `${name} rested in the siege camp outside ${hold}`
+        : `${name} ${order === "rest" ? "rested" : "fortified"} at ${hold}`;
+      const detail = investing
+        ? order === "fortify"
+          ? `On turn ${turn}, ${name} (${faction}) dug in around ${hold} — defending the siege camp against anyone who hits the lines, not occupying the castle. A host friendly to the garrison will be joined by a sally from the walls.`
+          : `On turn ${turn}, ${name} (${faction}) rested in the siege camp outside ${hold}. The castle is still held against them.`
+        : `On turn ${turn}, ${name} (${faction}) issued ${order} at ${hold}.`;
       events.push({
         id: eid("ev"),
         turn,
@@ -110,8 +126,8 @@ export function eventsFromResolvedOrders(
         kind: order,
         armyId,
         holdIds: army ? [army.holdId] : undefined,
-        summary: `${name} ${order === "rest" ? "rested" : "fortified"} at ${hold}`,
-        detail: `On turn ${turn}, ${name} (${faction}) issued ${order} at ${hold}.`,
+        summary,
+        detail,
       });
     }
   };
