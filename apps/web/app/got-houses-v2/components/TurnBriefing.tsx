@@ -3,10 +3,7 @@
 import type { Faction, GameAction, GameState } from "../types";
 import { HOLDS_MAP } from "../data/holds";
 import { blockingChoicesFor } from "../lib/pending-choices";
-
-const MONO: React.CSSProperties = {
-  fontFamily: "var(--font-mono), monospace",
-};
+import { Button } from "@/components/ui/button";
 
 interface Props {
   state: GameState;
@@ -23,92 +20,57 @@ export default function TurnBriefing({ state, dispatch, faction }: Props) {
   }
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        background: "rgba(0,0,0,0.72)",
-        zIndex: 80,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-      }}
-    >
-      <div
-        style={{
-          width: 420,
-          maxWidth: "92vw",
-          background: "#0d0b06",
-          border: "1px solid #3a2a10",
-          padding: 16,
-        }}
-      >
-        <div style={{ ...MONO, fontSize: 9, color: "#7a6a3a", letterSpacing: "0.14em", textTransform: "uppercase" }}>
-          Turn {state.turn} — what stands
+    <div className="absolute inset-0 z-[80] flex items-center justify-center bg-background/80 p-4">
+      <div className="w-[440px] max-w-[92vw] rounded-sm border border-border bg-card p-5 shadow-xl">
+        <div className="font-display text-2xl text-foreground">
+          Turn {state.turn}
         </div>
+        <p className="mt-1 text-[13px] text-muted-foreground">What stands from the last march.</p>
 
         {reports.length > 0 && (
-          <div style={{ marginTop: 12 }}>
-            <div style={{ ...MONO, fontSize: 8, color: "#5a4a2a", marginBottom: 6 }}>BATTLES</div>
-            {reports.map((r) => (
-              <div key={r.id} style={{ ...MONO, fontSize: 11, color: "#c8b88a", marginBottom: 4 }}>
-                {r.headline ?? twelveWords(r.shortSummary) ?? `${HOLDS_MAP.get(r.holdId)?.name ?? r.holdId} fought`}
-              </div>
-            ))}
+          <div className="mt-4">
+            <div className="text-[11px] font-medium text-muted-foreground">Battles</div>
+            <ul className="mt-2 space-y-1.5">
+              {reports.map((r) => (
+                <li key={r.id} className="text-[14px] leading-snug text-foreground/90">
+                  {r.headline ??
+                    twelveWords(r.shortSummary) ??
+                    `${HOLDS_MAP.get(r.holdId)?.name ?? r.holdId} fought`}
+                </li>
+              ))}
+            </ul>
           </div>
         )}
 
         {choices.length > 0 && (
-          <div style={{ marginTop: 12 }}>
-            <div style={{ ...MONO, fontSize: 8, color: "#c8941a", marginBottom: 6 }}>
-              YOU MUST SETTLE THESE
+          <div className="mt-4">
+            <div className="text-[11px] font-medium text-primary">You must settle these</div>
+            <div className="mt-2 space-y-2">
+              {choices.map((c) => (
+                <button
+                  key={c.id}
+                  type="button"
+                  onClick={() => {
+                    dispatch({ type: "SELECT_HOLD", holdId: c.holdId });
+                    dispatch({ type: "SET_BRIEFING_OPEN", open: false });
+                  }}
+                  className="block w-full rounded-sm border border-primary/40 bg-primary/10 px-3 py-2 text-left text-[13px] text-primary"
+                >
+                  {c.headline}
+                </button>
+              ))}
             </div>
-            {choices.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => {
-                  dispatch({ type: "SELECT_HOLD", holdId: c.holdId });
-                  dispatch({ type: "SET_BRIEFING_OPEN", open: false });
-                }}
-                style={{
-                  ...MONO,
-                  display: "block",
-                  width: "100%",
-                  textAlign: "left",
-                  fontSize: 11,
-                  color: "#f0d080",
-                  background: "#1a1406",
-                  border: "1px solid #c8941a",
-                  padding: "7px 9px",
-                  marginBottom: 6,
-                  cursor: "pointer",
-                }}
-              >
-                {c.headline} — click to decide
-              </button>
-            ))}
           </div>
         )}
 
-        <button
+        <Button
           type="button"
+          variant="outline"
+          className="mt-5"
           onClick={() => dispatch({ type: "SET_BRIEFING_OPEN", open: false })}
-          style={{
-            ...MONO,
-            marginTop: 14,
-            fontSize: 9,
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
-            color: "#888",
-            background: "transparent",
-            border: "1px solid #333",
-            padding: "6px 10px",
-            cursor: "pointer",
-          }}
         >
-          {choices.length > 0 ? "Decide in the field" : "To the map"}
-        </button>
+          {choices.length > 0 ? "Decide on the map" : "To the map"}
+        </Button>
       </div>
     </div>
   );

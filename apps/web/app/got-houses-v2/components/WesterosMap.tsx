@@ -272,7 +272,7 @@ function MapInner({ state, dispatch }: Props) {
       panOnScroll={true}
       zoomOnScroll={true}
       onNodeClick={(_event, node) => handleHoldClick(node.id)}
-      style={{ background: "#080808" }}
+      className="bg-background"
     >
       <Background
         variant={BackgroundVariant.Dots}
@@ -298,160 +298,76 @@ function MapInner({ state, dispatch }: Props) {
         maskColor="rgba(0,0,0,0.7)"
       />
 
-      {/* Legend */}
+      {/* Legend — collapsed by default so the map stays the theater */}
       <Panel position="top-left">
-        <div
-          style={{
-            background: "#0a0a0a",
-            border: "1px solid #1e1e1e",
-            padding: "8px 10px",
-            display: "flex",
-            flexDirection: "column",
-            gap: 4,
-          }}
-        >
-          <div
-            style={{
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 8,
-              color: "#333",
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              marginBottom: 2,
-            }}
-          >
-            Regions
-          </div>
-          {REGIONS.map((region) => (
-            <div key={region} style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <div
-                style={{
-                  width: 8,
-                  height: 8,
-                  background: REGION_COLORS[region],
-                  border: "1px solid #333",
-                  flexShrink: 0,
-                }}
-              />
-              <span
-                style={{
-                  fontFamily: "var(--font-mono), monospace",
-                  fontSize: 8,
-                  color: "#444",
-                  letterSpacing: "0.06em",
-                }}
-              >
-                {REGION_TRAITS[region].name}
-              </span>
+        <details className="max-w-[220px] rounded-sm border border-border bg-card/95 shadow-lg backdrop-blur">
+          <summary className="cursor-pointer list-none px-3 py-2 text-[12px] font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+            Map key
+          </summary>
+          <div className="space-y-1.5 border-t border-border px-3 py-2.5">
+            {REGIONS.map((region) => (
+              <div key={region} className="flex items-center gap-2">
+                <div
+                  className="size-2 shrink-0"
+                  style={{ background: REGION_COLORS[region] }}
+                />
+                <span className="text-[12px] text-muted-foreground">
+                  {REGION_TRAITS[region].name}
+                </span>
+              </div>
+            ))}
+            <div className="mt-2 space-y-1 border-t border-border pt-2">
+              <LegendRow color="#3a6ea8" rounded>
+                Northern host (number = thousands)
+              </LegendRow>
+              <LegendRow color="#b03030" rounded>
+                Westerlands host
+              </LegendRow>
+              <div className="flex items-center gap-2">
+                <div className="h-2.5 w-0.5 shrink-0 bg-north" />
+                <span className="text-[12px] text-muted-foreground">
+                  Left edge = who holds the seat
+                </span>
+              </div>
             </div>
-          ))}
-          <div style={{ borderTop: "1px solid #1a1a1a", marginTop: 4, paddingTop: 4 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-              <div
-                style={{ width: 12, height: 10, borderRadius: 5, background: "#3a6ea8" }}
-              />
-              <LegendText>Northern host (number = thousands)</LegendText>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <div
-                style={{ width: 12, height: 10, borderRadius: 5, background: "#b03030" }}
-              />
-              <LegendText>Westerlands host</LegendText>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-              <div
-                style={{
-                  width: 3,
-                  height: 10,
-                  background: "#3a6ea8",
-                  flexShrink: 0,
-                }}
-              />
-              <LegendText>Left edge = who holds the seat (every turn)</LegendText>
-            </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-              <div
-                style={{
-                  width: 12,
-                  height: 10,
-                  borderRadius: 5,
-                  background: "#b03030",
-                  flexShrink: 0,
-                }}
-              />
-              <LegendText>Turned northern house (rides red)</LegendText>
+            <div className="mt-2 space-y-1 border-t border-border pt-2 text-[12px] text-muted-foreground">
+              <div>▤ ▦ ▩ garrison thin / full / reinforced</div>
+              <div>⊘ siege turn · ! too few to hold</div>
+              <div>⚐ terms · ⚑ walls empty · ⚔ contested</div>
             </div>
           </div>
-
-          <div style={{ borderTop: "1px solid #1a1a1a", marginTop: 4, paddingTop: 4 }}>
-            <LegendGlyph glyph="▤ ▦ ▩" color="#8a8a6a">
-              Garrison thin / at strength / reinforced
-            </LegendGlyph>
-            <LegendGlyph glyph="⊘4" color="#c05050">
-              Invested, turn count; ! = too few to hold
-            </LegendGlyph>
-            <LegendGlyph glyph="⚐" color="#c8941a">
-              Terms on the table
-            </LegendGlyph>
-            <LegendGlyph glyph="⚑" color="#f0b429">
-              Taken — walls empty (garrison optional)
-            </LegendGlyph>
-            <LegendGlyph glyph="⚔" color="#d06868">
-              Contested — a battle will be fought
-            </LegendGlyph>
-          </div>
-        </div>
+        </details>
       </Panel>
     </ReactFlow>
   );
 }
 
-function LegendText({ children }: { children: React.ReactNode }) {
-  return (
-    <span
-      style={{
-        fontFamily: "var(--font-mono), monospace",
-        fontSize: 8,
-        color: "#444",
-        letterSpacing: "0.04em",
-      }}
-    >
-      {children}
-    </span>
-  );
-}
-
-function LegendGlyph({
-  glyph,
+function LegendRow({
   color,
+  rounded,
   children,
 }: {
-  glyph: string;
   color: string;
+  rounded?: boolean;
   children: React.ReactNode;
 }) {
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 2 }}>
-      <span
-        style={{
-          fontFamily: "var(--font-mono), monospace",
-          fontSize: 8,
-          color,
-          minWidth: 26,
-          flexShrink: 0,
-        }}
-      >
-        {glyph}
-      </span>
-      <LegendText>{children}</LegendText>
+    <div className="flex items-center gap-2">
+      <div
+        className={rounded ? "h-2.5 w-3 rounded-full" : "size-2"}
+        style={{ background: color }}
+      />
+      <span className="text-[12px] text-muted-foreground">{children}</span>
     </div>
   );
 }
 
 export default function WesterosMap({ state, dispatch }: Props) {
   return (
-    <ReactFlowProvider>
-      <MapInner state={state} dispatch={dispatch} />
-    </ReactFlowProvider>
+    <div className="game-map">
+      <ReactFlowProvider>
+        <MapInner state={state} dispatch={dispatch} />
+      </ReactFlowProvider>
+    </div>
   );
 }

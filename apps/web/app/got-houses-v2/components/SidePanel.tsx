@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { X } from "lucide-react";
 import type { GameState, GameAction, Army, Faction } from "../types";
 import { HOLDS_MAP } from "../data/holds";
 import { getCastleSeed } from "../data/castles";
@@ -31,9 +32,14 @@ import ConversationDock from "./ConversationDock";
 import TermsBlock from "./TermsBlock";
 import PrisonerCard from "./PrisonerCard";
 import SeatFatePanel from "./SeatFatePanel";
+import TheaterOverview from "./TheaterOverview";
+import { OrderButton, OrderGroup } from "./chrome/OrderButton";
 import { prisonersAt, prisonersWith } from "../lib/prisoners";
 import { canRaze } from "../lib/raze";
 import { blockingChoicesFor, choiceAtHold } from "../lib/pending-choices";
+import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { cn } from "@/lib/utils";
 
 interface Props {
   state: GameState;
@@ -49,29 +55,16 @@ const FACTION_LABEL: Record<Faction, string> = {
 export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
   const [parleyError, setParleyError] = useState<string | null>(null);
   const { selectedHoldId, selectedArmyIds, moveMode, armies, activeFaction, adminMode } = state;
+  const talkOpen = state.talkPickerOpen && state.phase === "planning";
 
-  // Talk takes the right rail (map stays primary — no left dock)
-  if (state.talkPickerOpen && state.phase === "planning") {
-    return <ConversationDock state={state} dispatch={dispatch} />;
-  }
+  const hold = selectedHoldId ? HOLDS_MAP.get(selectedHoldId) : undefined;
+  const trait = hold ? regionTrait(hold.region) : null;
 
-  // No sidebar until a hold is selected
-  if (!selectedHoldId) {
-    return null;
-  }
-
-  const hold = HOLDS_MAP.get(selectedHoldId);
-  if (!hold) return null;
-
-  const trait = regionTrait(hold.region);
-
-  const armiesHere = armies.filter((a) => a.holdId === selectedHoldId);
+  const armiesHere = selectedHoldId
+    ? armies.filter((a) => a.holdId === selectedHoldId)
+    : [];
   const wallArmy = selectedHoldId
-    ? resolveSelectableArmy(
-        [],
-        state.holdStates,
-        garrisonArmyId(selectedHoldId)
-      )
+    ? resolveSelectableArmy([], state.holdStates, garrisonArmyId(selectedHoldId))
     : undefined;
   const northHere = [
     ...(wallArmy?.faction === "north" ? [wallArmy] : []),
@@ -117,7 +110,6 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
     (selectedArmies.length > 0 &&
       selectedArmies.every((a) => a.faction === myFaction));
 
-  // Can combine: 2+ selected, same hold, same faction, not locked
   const canCombine =
     selectedArmies.length >= 2 &&
     ownsSelection &&
@@ -126,7 +118,6 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
     allSelectedSameFaction &&
     !isLocked;
 
-  // Can split: exactly 1 selected, not locked, has at least 2 leaders or 2 unit groups
   const singleSelected = selectedArmies.length === 1 ? selectedArmies[0] : null;
   const garrisonSelected =
     !!singleSelected && isGarrisonArmyId(singleSelected.id);
@@ -137,18 +128,15 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
     !isLocked &&
     (singleSelected.leaders.length >= 2 || singleSelected.units.length >= 2);
 
-  // Can change commander: any single controllable field host
   const canChangeCommander =
     !!singleSelected && ownsSelection && !garrisonSelected && !isLocked;
 
-  // Can move: 1+ selected field hosts, not locked, not in move mode
   const canMove =
     selectedArmies.length > 0 &&
     ownsSelection &&
     !isLocked &&
     selectedArmies.every((a) => !isGarrisonArmyId(a.id));
 
-  // Stance orders for selected single army
   const singleArmyStanceOrder =
     singleSelected && selectedFaction
       ? (selectedFaction === "north"
@@ -158,17 +146,14 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
 
   const canIssueStance = !!singleSelected && ownsSelection && !isLocked;
 
-  const holdRuntime = state.holdStates?.[selectedHoldId];
-  const castleSeed = getCastleSeed(selectedHoldId);
-  const garrisonable = isGarrisonable(castleSeed);
-  const garrisonMen = holdRuntime
-    ? garrisonHeadcount(holdRuntime.garrison)
-    : 0;
-  const freeSlots = holdRuntime
+  const holdRuntime = selectedHoldId ? state.holdStates?.[selectedHoldId] : undefined;
+  const castleSeed = selectedHoldId ? getCastleSeed(selectedHoldId) : undefined;
+  const garrisonable = !!castleSeed && isGarrisonable(castleSeed);
+  const garrisonMen = holdRuntime ? garrisonHeadcount(holdRuntime.garrison) : 0;
+  const freeSlots = holdRuntime && selectedHoldId
     ? freeCapacity(selectedHoldId, holdRuntime)
     : 0;
-  const friendlyHold =
-    !!holdRuntime && isFriendlyTo(holdRuntime, myFaction);
+  const friendlyHold = !!holdRuntime && isFriendlyTo(holdRuntime, myFaction);
   const nonHomeOccupier =
     !!holdRuntime &&
     holdRuntime.controller === myFaction &&
@@ -185,35 +170,30 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
         holdRuntime!.controller === "hostile") &&
         holdRuntime!.homeFaction === myFaction));
 
-  const factionFo =
-    myFaction === "north" ? state.north : state.westerlands;
+  const factionFo = myFaction === "north" ? state.north : state.westerlands;
   const stormActive =
     !!singleSelected && factionFo.stormArmyIds.includes(singleSelected.id);
-  const sallyActive = factionFo.sallyHoldIds.includes(selectedHoldId);
+  const sallyActive = !!selectedHoldId && factionFo.sallyHoldIds.includes(selectedHoldId);
 
-  // Depositing is allowed into a seat we hold (reinforce) or one standing empty
-  // (claim). A live foreign garrison has to be beaten first — matching the
-  // reducer, which used to accept a "liberate" case the UI could never reach.
   const canGarrison =
     garrisonable &&
     !!singleSelected &&
     ownsSelection &&
     !garrisonSelected &&
     !isLocked &&
+    !!selectedHoldId &&
     singleSelected.holdId === selectedHoldId &&
     freeSlots > 0 &&
     (friendlyHold || garrisonMen === 0);
 
-  // A seat still held by its own house keeps its native default; a conquered one
-  // keeps whatever its capture pledge demanded.
   const openPledge = (state.capturePledges ?? []).find(
     (p) => p.holdId === selectedHoldId && p.faction === myFaction
   );
   const garrisonFloor =
     holdRuntime && holdRuntime.controller === holdRuntime.homeFaction
-      ? castleSeed.defaultGarrison
+      ? castleSeed?.defaultGarrison ?? 0
       : openPledge?.minimumMen ??
-        minimumHoldingGarrison(selectedHoldId, garrisonMen);
+        (selectedHoldId ? minimumHoldingGarrison(selectedHoldId, garrisonMen) : 0);
 
   const canUngarrison =
     garrisonable &&
@@ -230,6 +210,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
     !isLocked &&
     nonHomeOccupier &&
     garrisonMen > 0 &&
+    !!selectedHoldId &&
     singleSelected.holdId === selectedHoldId;
   const canStorm =
     garrisonable &&
@@ -237,6 +218,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
     ownsSelection &&
     !isLocked &&
     amBesieger &&
+    !!selectedHoldId &&
     singleSelected.holdId === selectedHoldId;
   const canSally =
     garrisonable &&
@@ -251,8 +233,6 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
     garrisonMen > 0 &&
     amBesieger;
 
-  // Our own hosts here are too thin to ring the walls: no siege will open, and
-  // any siege we already have will lift.
   const ownMenHere = armiesHere
     .filter((a) => a.faction === myFaction)
     .reduce((s, a) => s + a.units.reduce((n, u) => n + u.count, 0), 0);
@@ -267,9 +247,6 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
       ? { men: ownMenHere, required: siegeRequirement }
       : null;
 
-  // Only a stormed seat has its gates literally forced. Keying this on
-  // `postSiegeTurnsLeft` made it fire after any siege ended, including one that
-  // was simply lifted.
   const wallsBrokenOpen =
     garrisonable &&
     !!holdRuntime &&
@@ -277,7 +254,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
     !!holdRuntime.scar?.toLowerCase().includes("storm");
 
   const namedNegotiatorId =
-    canParley && holdRuntime
+    canParley && holdRuntime && selectedHoldId
       ? findNamedGarrisonNegotiator(
           selectedHoldId,
           state.holdStates,
@@ -288,9 +265,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
     ? negotiatorLabel(namedNegotiatorId, state.characters).name
     : "Castellan";
 
-  const gSoft = holdRuntime
-    ? normalizeGarrison(holdRuntime.garrison)
-    : null;
+  const gSoft = holdRuntime ? normalizeGarrison(holdRuntime.garrison) : null;
 
   async function openCastleParley() {
     if (!selectedHoldId) return;
@@ -299,850 +274,642 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
     if (error) setParleyError(error);
   }
 
-  const fateHere = choiceAtHold(state.pendingChoices, selectedHoldId);
+  const fateHere = selectedHoldId
+    ? choiceAtHold(state.pendingChoices, selectedHoldId)
+    : null;
   const myFateHere = fateHere && fateHere.faction === myFaction ? fateHere : null;
   const otherFates = blockingChoicesFor(state.pendingChoices, myFaction).filter(
     (c) => c.holdId !== selectedHoldId
   );
-  const holdPrisoners = prisonersAt(state.prisoners, selectedHoldId);
+  const holdPrisoners = selectedHoldId
+    ? prisonersAt(state.prisoners, selectedHoldId)
+    : [];
   const armyPrisoners = selectedArmies.flatMap((a) =>
     prisonersWith(state.prisoners, a.id)
   );
 
+  const showOrders = selectedArmies.length > 0 || canSally;
+  const lockedHint = "Orders are locked for this side.";
+  const notYoursHint = "Select one of your hosts to issue this order.";
+
   return (
-    <div
-      style={{
-        width: 320,
-        minWidth: 0,
-        maxWidth: 320,
-        height: "100%",
-        minHeight: 0,
-        alignSelf: "stretch",
-        flexShrink: 0,
-        borderLeft: "1px solid #1e1e1e",
-        background: "#0a0a0a",
-        display: "flex",
-        flexDirection: "column",
-        overflow: "hidden",
-        boxSizing: "border-box",
-      }}
-    >
-      {/* Hold header */}
-      <div
-        style={{
-          borderBottom: "1px solid #1e1e1e",
-          padding: "10px 14px",
-          flexShrink: 0,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            marginBottom: 2,
-          }}
-        >
-          <span
-            style={{
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 11,
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: "0.12em",
-              color: "#c8941a",
-            }}
-          >
-            {hold.name}
-          </span>
-          <button
+    <aside className="flex h-full w-[360px] min-w-0 shrink-0 flex-col self-stretch border-l border-border bg-card">
+      <div className="flex shrink-0 items-start justify-between gap-2 border-b border-border px-4 py-3">
+        <div className="min-w-0">
+          <div className="font-display text-xl font-semibold leading-tight text-foreground">
+            {hold?.name ?? "Theater"}
+          </div>
+          {hold ? (
+            <div className="mt-0.5 truncate text-[12px] text-muted-foreground">
+              {hold.house} · {hold.region}
+              {hold.lord ? ` · ${hold.lord}` : ""}
+            </div>
+          ) : (
+            <div className="mt-0.5 text-[12px] text-muted-foreground">
+              Nothing selected
+            </div>
+          )}
+        </div>
+        {selectedHoldId && (
+          <Button
             type="button"
+            variant="ghost"
+            size="icon"
+            className="size-7 shrink-0 text-muted-foreground"
+            title="Close this seat"
             onClick={() => dispatch({ type: "SELECT_HOLD", holdId: null })}
-            style={{
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 10,
-              color: "#333",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: 0,
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#888")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#333")}
           >
-            ✕
-          </button>
-        </div>
-        <div
-          style={{
-            fontFamily: "var(--font-mono), monospace",
-            fontSize: 9,
-            color: "#555",
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
-          }}
-        >
-          {hold.house} · {hold.region}
-        </div>
-        <div
-          style={{
-            fontFamily: "var(--font-mono), monospace",
-            fontSize: 9,
-            color: "#444",
-            marginTop: 2,
-            fontStyle: "italic",
-          }}
-        >
-          {hold.lord}
-        </div>
+            <X className="size-4" />
+          </Button>
+        )}
       </div>
 
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          overflowX: "hidden",
-          overflowY: "auto",
-        }}
-      >
-        {otherFates.length > 0 && (
-          <div style={{ padding: "8px 14px", borderBottom: "1px solid #1e1e1e" }}>
-            {otherFates.map((c) => (
-              <button
-                key={c.id}
-                type="button"
-                onClick={() => dispatch({ type: "SELECT_HOLD", holdId: c.holdId })}
-                style={{
-                  display: "block",
-                  width: "100%",
-                  marginBottom: 6,
-                  fontFamily: "var(--font-mono), monospace",
-                  fontSize: 8,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.08em",
-                  color: "#c8941a",
-                  background: "#1a1406",
-                  border: "1px solid #3a2a00",
-                  padding: "6px 8px",
-                  cursor: "pointer",
-                  textAlign: "left",
-                  boxSizing: "border-box",
-                }}
-              >
-                Fate unpaid — {c.headline}
-              </button>
-            ))}
-          </div>
-        )}
-
-        <Collapse title="Country" hint={trait.name} defaultOpen={false}>
-          <div
-            style={{
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 8,
-              color: "#333",
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-            }}
+      {state.phase === "planning" && (
+        <div className="flex shrink-0 border-b border-border">
+          <button
+            type="button"
+            onClick={() =>
+              talkOpen ? dispatch({ type: "TOGGLE_TALK_PICKER" }) : undefined
+            }
+            className={cn(
+              "flex-1 px-3 py-2 text-[12px] font-medium",
+              !talkOpen
+                ? "border-b-2 border-primary text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            )}
           >
-            Roads
-          </div>
-          <div
-            style={{
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 9,
-              color: "#555",
-              lineHeight: 1.45,
-              marginTop: 3,
+            {hold ? "This seat" : "Theater"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              if (!talkOpen) dispatch({ type: "TOGGLE_TALK_PICKER" });
             }}
+            className={cn(
+              "flex-1 px-3 py-2 text-[12px] font-medium",
+              talkOpen
+                ? "border-b-2 border-primary text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            )}
           >
-            {hold.links.map((id) => {
-              const name = HOLDS_MAP.get(id)?.name ?? id;
-              return (
-                <div key={id}>
-                  {name} — {forageOnPath(state.forage, hold.id, id)}
-                </div>
-              );
-            })}
-          </div>
-          <div
-            style={{
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 8,
-              color: "#555",
-              textTransform: "uppercase",
-              letterSpacing: "0.12em",
-              marginTop: 8,
-              marginBottom: 3,
-            }}
-          >
-            {trait.name}
-          </div>
-          <div
-            style={{
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 9,
-              color: "#6a6a6a",
-              lineHeight: 1.5,
-            }}
-          >
-            {trait.blurb}
-          </div>
-          <div
-            style={{
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 8,
-              color: "#555",
-              textTransform: "uppercase",
-              letterSpacing: "0.12em",
-              marginTop: 8,
-              marginBottom: 3,
-            }}
-          >
-            Forage
-          </div>
-          <div
-            style={{
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 9,
-              color: "#6a6a6a",
-              lineHeight: 1.5,
-            }}
-          >
-            {forageAtHold(state.forage, hold.id)}
-          </div>
-        </Collapse>
-
-      {/* Castle / garrison overview */}
-      {garrisonable && holdRuntime && (
-        <Collapse
-          title="Seat"
-          hint={
-            holdRuntime.siege
-              ? `Garrison ${garrisonMen.toLocaleString()} · siege`
-              : `Garrison ${garrisonMen.toLocaleString()}`
-          }
-          defaultOpen={
-            !!holdRuntime.siege ||
-            !!myFateHere ||
-            holdPrisoners.length > 0 ||
-            armyPrisoners.length > 0 ||
-            !!openPledge
-          }
-          accent={!!myFateHere || !!holdRuntime.siege}
-        >
-          <div
-            style={{
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 8,
-              color: "#555",
-              textTransform: "uppercase",
-              letterSpacing: "0.12em",
-              marginBottom: 6,
-            }}
-          >
-            {castleSeed.siteKind} · controller{" "}
-            {holdRuntime.controller ?? "none"} · home{" "}
-            {holdRuntime.homeFaction}
-          </div>
-          <div
-            style={{
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 11,
-              color: "#ccc",
-              marginBottom: 4,
-            }}
-          >
-            Garrison {garrisonMen.toLocaleString()} /{" "}
-            {castleSeed.capacity.toLocaleString()}
-          </div>
-          <div
-            style={{
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 9,
-              color: "#666",
-              marginBottom: 6,
-            }}
-          >
-            default {castleSeed.defaultGarrison.toLocaleString()} · free{" "}
-            {freeSlots.toLocaleString()}
-          </div>
-          {holdRuntime.garrison.leaders.length > 0 && (
-            <div
-              style={{
-                fontFamily: "var(--font-mono), monospace",
-                fontSize: 9,
-                color: "#888",
-                marginBottom: 4,
-              }}
-            >
-              Cmd:{" "}
-              {holdRuntime.garrison.leaders.map((l) => l.name).join(", ")}
-            </div>
-          )}
-          <div
-            style={{
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 9,
-              color: "#777",
-              fontStyle: "italic",
-              marginBottom: 4,
-            }}
-          >
-            {holdRuntime.supplies}
-          </div>
-          {gSoft && garrisonMen > 0 && (
-            <div
-              style={{
-                fontFamily: "var(--font-mono), monospace",
-                fontSize: 9,
-                color: "#666",
-                marginBottom: 6,
-                lineHeight: 1.45,
-              }}
-            >
-              <div>Morale: {gSoft.morale}</div>
-              <div>Condition: {gSoft.tiredness}</div>
-              <div>Stance: {gSoft.stance}</div>
-            </div>
-          )}
-          {holdRuntime.foodDaysRemaining != null && (
-            <div
-              style={{
-                fontFamily: "var(--font-mono), monospace",
-                fontSize: 9,
-                color: "#666",
-              }}
-            >
-              Food ~{holdRuntime.foodDaysRemaining} days
-            </div>
-          )}
-          {holdRuntime.siege && (
-            <div
-              style={{
-                fontFamily: "var(--font-mono), monospace",
-                fontSize: 9,
-                color: "#c05050",
-                marginTop: 6,
-                textTransform: "uppercase",
-                letterSpacing: "0.08em",
-              }}
-            >
-              Under siege · turn {holdRuntime.siege.turns} ·{" "}
-              {holdRuntime.siege.besiegerFaction}
-            </div>
-          )}
-          {holdRuntime.postSiegeTurnsLeft > 0 && !holdRuntime.siege && (
-            <div
-              style={{
-                fontFamily: "var(--font-mono), monospace",
-                fontSize: 8,
-                color: "#555",
-                marginTop: 4,
-              }}
-            >
-              Post-siege recovery ({holdRuntime.postSiegeTurnsLeft})
-            </div>
-          )}
-          {wallsBrokenOpen && (
-            <div
-              style={{
-                fontFamily: "var(--font-mono), monospace",
-                fontSize: 9,
-                color: "#c8941a",
-                marginTop: 6,
-              }}
-            >
-              Walls broken — gates forced
-            </div>
-          )}
-          {openPledge && (
-            <div
-              style={{
-                fontFamily: "var(--font-mono), monospace",
-                fontSize: 9,
-                color: "#f0b429",
-                border: "1px solid #5a4210",
-                background: "#1a1200",
-                padding: "6px 8px",
-                marginTop: 8,
-                lineHeight: 1.5,
-              }}
-            >
-              Seat taken — walls empty
-              <div style={{ color: "#a4762a", marginTop: 3 }}>
-                Posting at least {openPledge.minimumMen.toLocaleString()} men
-                is optional. The host may still rest, fortify, speak, or
-                march.
-              </div>
-            </div>
-          )}
-          {underStrengthSiege && (
-            <div
-              style={{
-                fontFamily: "var(--font-mono), monospace",
-                fontSize: 9,
-                color: "#c07030",
-                border: "1px solid #4a2a10",
-                background: "#150c04",
-                padding: "6px 8px",
-                marginTop: 8,
-                lineHeight: 1.5,
-              }}
-            >
-              Too few to besiege
-              <div style={{ color: "#7a5230", marginTop: 3 }}>
-                {underStrengthSiege.men.toLocaleString()} men cannot ring a
-                garrison of {garrisonMen.toLocaleString()}.{" "}
-                {underStrengthSiege.required.toLocaleString()} are needed to
-                open or hold an investment.
-              </div>
-            </div>
-          )}
-          {holdRuntime.siege && (
-            <TermsBlock
-              state={state}
-              dispatch={dispatch}
-              holdId={selectedHoldId}
-              faction={myFaction}
-            />
-          )}
-          {myFateHere && (
-            <div style={{ marginTop: 8 }}>
-              <SeatFatePanel
-                state={state}
-                dispatch={dispatch}
-                viewerFaction={myFaction}
-                embedded
-                holdId={selectedHoldId}
-              />
-            </div>
-          )}
-          {holdPrisoners.map((g) => (
-            <PrisonerCard key={g.id} group={g} state={state} dispatch={dispatch} />
-          ))}
-          {armyPrisoners.map((g) => (
-            <PrisonerCard key={g.id} group={g} state={state} dispatch={dispatch} />
-          ))}
-          {selectedArmies.some(
-            (a) =>
-              (adminMode || a.faction === myFaction) &&
-              canRaze(a, selectedHoldId, holdRuntime).ok
-          ) && (
-            <button
-              type="button"
-              onClick={() => {
-                const army = selectedArmies.find((a) => canRaze(a, selectedHoldId, holdRuntime).ok);
-                if (!army) return;
-                const active = (state[army.faction].razeOrders ?? []).some(
-                  (o) => o.armyId === army.id
-                );
-                dispatch({
-                  type: "SET_RAZE_ORDER",
-                  armyId: army.id,
-                  holdId: selectedHoldId,
-                  active: !active,
-                });
-              }}
-              style={{
-                marginTop: 8,
-                width: "100%",
-                fontFamily: "var(--font-mono), monospace",
-                fontSize: 9,
-                textTransform: "uppercase",
-                color: "#d07050",
-                background: "#170a04",
-                border: "1px solid #4a2010",
-                padding: "6px 8px",
-                cursor: "pointer",
-              }}
-            >
-              {(state[myFaction].razeOrders ?? []).some((o) => o.holdId === selectedHoldId)
-                ? "Cancel raze"
-                : "Raze this seat"}
-            </button>
-          )}
-          {(canUngarrison || canParley) && (
-            <div
-              style={{
-                marginTop: 8,
-                display: "flex",
-                flexWrap: "wrap",
-                gap: 6,
-              }}
-            >
-              {canUngarrison && (
-                <ActionButton
-                  label="Ungarrison"
-                  disabled={false}
-                  onClick={() =>
-                    dispatch({
-                      type: "OPEN_GARRISON_PANEL",
-                      holdId: selectedHoldId,
-                      mode: "withdraw",
-                      armyId: garrisonSelected
-                        ? null
-                        : singleSelected?.id ?? null,
-                    })
-                  }
-                />
-              )}
-              {canParley && (
-                <ActionButton
-                  label={`Talk · ${parleyLabel}`}
-                  disabled={false}
-                  onClick={() => void openCastleParley()}
-                  accent
-                />
-              )}
-            </div>
-          )}
-          {parleyError && (
-            <div
-              style={{
-                fontFamily: "var(--font-mono), monospace",
-                fontSize: 9,
-                color: "#c05050",
-                marginTop: 6,
-              }}
-            >
-              {parleyError}
-            </div>
-          )}
-        </Collapse>
+            Talk
+            {state.openConversationIds.length > 0
+              ? ` (${state.openConversationIds.length})`
+              : ""}
+          </button>
+        </div>
       )}
 
-      {/* Action bar */}
-      {(selectedArmies.length > 0 || canSally) && (
-        <Collapse title="Orders" hint="Move · rest · walls" defaultOpen>
-        {selectedArmies.length > 0 && (
-        <div
-          style={{
-            display: "flex",
-            gap: 6,
-            flexWrap: "wrap",
-          }}
-        >
-          {!moveMode.active ? (
-            <>
-              <ActionButton
-                label="Move"
-                disabled={!canMove}
-                onClick={() => dispatch({ type: "BEGIN_MOVE" })}
-                accent
-              />
-              {canCombine && (
-                <ActionButton
-                  label="Combine"
-                  disabled={false}
-                  onClick={() => dispatch({ type: "COMBINE_ARMIES" })}
-                />
-              )}
-              {canSplit && (
-                <ActionButton
-                  label="Split"
-                  disabled={false}
-                  onClick={() => dispatch({ type: "OPEN_SPLIT", armyId: singleSelected!.id })}
-                />
-              )}
-              {canChangeCommander && (
-                <ActionButton
-                  label="Commander"
-                  disabled={false}
+      {talkOpen ? (
+        <ConversationDock state={state} dispatch={dispatch} />
+      ) : !selectedHoldId || !hold ? (
+        <TheaterOverview
+          state={state}
+          dispatch={dispatch}
+          viewerFaction={viewerFaction}
+        />
+      ) : (
+        <>
+          <ScrollArea className="min-h-0 flex-1">
+            {otherFates.length > 0 && (
+              <div className="space-y-2 border-b border-border px-4 py-3">
+                {otherFates.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => dispatch({ type: "SELECT_HOLD", holdId: c.holdId })}
+                    className="block w-full rounded-sm border border-primary/40 bg-primary/10 px-3 py-2 text-left text-[12px] text-primary"
+                  >
+                    Fate unpaid — {c.headline}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {showOrders && (
+              <section className="space-y-3 border-b border-border px-4 py-3">
+                <div className="text-[11px] font-medium text-muted-foreground">
+                  Orders
+                </div>
+                {moveMode.active ? (
+                  <div className="flex items-center gap-2">
+                    <p className="flex-1 text-[13px] text-primary">
+                      Click a highlighted hold on the map.
+                    </p>
+                    <OrderButton
+                      label="Cancel"
+                      hint="Stop choosing a destination"
+                      onClick={() => dispatch({ type: "CANCEL_MOVE" })}
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {selectedArmies.length > 0 && (
+                      <>
+                        <OrderGroup title="March">
+                          <OrderButton
+                            label="Move"
+                            hint="March the selected host to an adjacent hold. Then click the destination on the map."
+                            disabledHint={
+                              isLocked
+                                ? lockedHint
+                                : garrisonSelected
+                                  ? "Men on the walls cannot march. Ungarrison them first."
+                                  : notYoursHint
+                            }
+                            disabled={!canMove}
+                            accent
+                            onClick={() => dispatch({ type: "BEGIN_MOVE" })}
+                          />
+                        </OrderGroup>
+                        <OrderGroup title="Camp">
+                          {canIssueStance && (
+                            <OrderButton
+                              label="Rest"
+                              hint="Spend the turn recovering condition. The host will not march."
+                              active={singleArmyStanceOrder === "rest"}
+                              onClick={() =>
+                                dispatch({
+                                  type: "SET_STANCE_ORDER",
+                                  armyId: singleSelected!.id,
+                                  order: singleArmyStanceOrder === "rest" ? null : "rest",
+                                })
+                              }
+                            />
+                          )}
+                          {canIssueStance && (
+                            <OrderButton
+                              label={
+                                singleSelected &&
+                                holdRuntime?.siege?.besiegerFaction ===
+                                  singleSelected.faction
+                                  ? "Dig in"
+                                  : "Fortify"
+                              }
+                              hint={
+                                singleSelected &&
+                                holdRuntime?.siege?.besiegerFaction ===
+                                  singleSelected.faction
+                                  ? "Defend the siege camp, not the keep. If a host friendly to the garrison attacks the camp, the garrison will sally."
+                                  : "Dig in at this seat. The host will not march."
+                              }
+                              active={singleArmyStanceOrder === "fortify"}
+                              onClick={() =>
+                                dispatch({
+                                  type: "SET_STANCE_ORDER",
+                                  armyId: singleSelected!.id,
+                                  order:
+                                    singleArmyStanceOrder === "fortify" ? null : "fortify",
+                                })
+                              }
+                            />
+                          )}
+                          {canIssueStance && (
+                            <OrderButton
+                              label="Speech"
+                              hint="Address the men to raise morale. Once per host per turn."
+                              disabledHint="This host already heard a speech this turn."
+                              disabled={state.speechesThisTurn.includes(singleSelected!.id)}
+                              active={state.speechArmyId === singleSelected!.id}
+                              onClick={() =>
+                                state.speechArmyId === singleSelected!.id
+                                  ? dispatch({ type: "CLOSE_SPEECH" })
+                                  : dispatch({
+                                      type: "OPEN_SPEECH",
+                                      armyId: singleSelected!.id,
+                                    })
+                              }
+                            />
+                          )}
+                        </OrderGroup>
+                        <OrderGroup title="Walls">
+                          {canGarrison && (
+                            <OrderButton
+                              label="Garrison"
+                              hint="Post men from this host onto the walls."
+                              onClick={() =>
+                                dispatch({
+                                  type: "OPEN_GARRISON_PANEL",
+                                  holdId: selectedHoldId,
+                                  mode: "deposit",
+                                  armyId: singleSelected!.id,
+                                })
+                              }
+                            />
+                          )}
+                          {canAbandon && (
+                            <OrderButton
+                              label="Abandon"
+                              hint="Leave this conquered seat empty and take the garrison with you."
+                              onClick={() =>
+                                dispatch({
+                                  type: "OPEN_GARRISON_PANEL",
+                                  holdId: selectedHoldId,
+                                  mode: "abandon",
+                                  armyId: garrisonSelected
+                                    ? null
+                                    : singleSelected?.id ?? null,
+                                })
+                              }
+                            />
+                          )}
+                          {canStorm && (
+                            <OrderButton
+                              label="Storm"
+                              hint="Assault the walls this turn instead of starving them out."
+                              active={stormActive}
+                              onClick={() =>
+                                dispatch({
+                                  type: "SET_STORM_ORDER",
+                                  armyId: singleSelected!.id,
+                                  active: !stormActive,
+                                })
+                              }
+                            />
+                          )}
+                          {selectedArmies.some(
+                            (a) =>
+                              (adminMode || a.faction === myFaction) &&
+                              canRaze(a, selectedHoldId, holdRuntime).ok
+                          ) && (
+                            <OrderButton
+                              label={
+                                (state[myFaction].razeOrders ?? []).some(
+                                  (o) => o.holdId === selectedHoldId
+                                )
+                                  ? "Cancel raze"
+                                  : "Raze"
+                              }
+                              hint="Burn this seat. It will not feed or shelter anyone after."
+                              onClick={() => {
+                                const army = selectedArmies.find((a) =>
+                                  canRaze(a, selectedHoldId, holdRuntime).ok
+                                );
+                                if (!army) return;
+                                const active = (state[army.faction].razeOrders ?? []).some(
+                                  (o) => o.armyId === army.id
+                                );
+                                dispatch({
+                                  type: "SET_RAZE_ORDER",
+                                  armyId: army.id,
+                                  holdId: selectedHoldId,
+                                  active: !active,
+                                });
+                              }}
+                            />
+                          )}
+                        </OrderGroup>
+                        <OrderGroup title="Host">
+                          {canCombine && (
+                            <OrderButton
+                              label="Combine"
+                              hint="Merge the selected hosts at this seat into one."
+                              onClick={() => dispatch({ type: "COMBINE_ARMIES" })}
+                            />
+                          )}
+                          {canSplit && (
+                            <OrderButton
+                              label="Split"
+                              hint="Divide this host into two, and assign men and captains."
+                              onClick={() =>
+                                dispatch({
+                                  type: "OPEN_SPLIT",
+                                  armyId: singleSelected!.id,
+                                })
+                              }
+                            />
+                          )}
+                          {canChangeCommander && (
+                            <OrderButton
+                              label="Commander"
+                              hint="Change who leads this host."
+                              onClick={() =>
+                                dispatch({
+                                  type: "OPEN_COMMANDER_CHANGE",
+                                  armyId: singleSelected!.id,
+                                })
+                              }
+                            />
+                          )}
+                          <OrderButton
+                            label="Deselect"
+                            hint="Clear the host selection. The seat stays open."
+                            onClick={() =>
+                              dispatch({ type: "SELECT_HOLD", holdId: selectedHoldId })
+                            }
+                          />
+                        </OrderGroup>
+                      </>
+                    )}
+                    {canSally && (
+                      <OrderGroup title="Garrison">
+                        <OrderButton
+                          label="Sally out"
+                          hint="The garrison rides out against the besiegers this turn."
+                          active={sallyActive}
+                          accent
+                          onClick={() =>
+                            dispatch({
+                              type: "SET_SALLY_ORDER",
+                              holdId: selectedHoldId,
+                              active: !sallyActive,
+                            })
+                          }
+                        />
+                      </OrderGroup>
+                    )}
+                  </div>
+                )}
+              </section>
+            )}
+
+            {garrisonable && holdRuntime && castleSeed && (
+              <PanelSection
+                title="Seat"
+                hint={
+                  holdRuntime.siege
+                    ? `Garrison ${garrisonMen.toLocaleString()} · siege`
+                    : `Garrison ${garrisonMen.toLocaleString()}`
+                }
+                defaultOpen={
+                  !!holdRuntime.siege ||
+                  !!myFateHere ||
+                  holdPrisoners.length > 0 ||
+                  armyPrisoners.length > 0 ||
+                  !!openPledge
+                }
+                accent={!!myFateHere || !!holdRuntime.siege}
+              >
+                <p className="text-[12px] text-muted-foreground">
+                  {castleSeed.siteKind} · held by{" "}
+                  {holdRuntime.controller ?? "no one"} · home{" "}
+                  {holdRuntime.homeFaction}
+                </p>
+                <p className="mt-1 font-mono text-[13px] text-foreground">
+                  Garrison {garrisonMen.toLocaleString()} /{" "}
+                  {castleSeed.capacity.toLocaleString()}
+                </p>
+                <p className="mt-0.5 text-[12px] text-muted-foreground">
+                  Usual strength {castleSeed.defaultGarrison.toLocaleString()} ·{" "}
+                  {freeSlots.toLocaleString()} free
+                </p>
+                {holdRuntime.garrison.leaders.length > 0 && (
+                  <p className="mt-1 text-[12px] text-muted-foreground">
+                    Command:{" "}
+                    {holdRuntime.garrison.leaders.map((l) => l.name).join(", ")}
+                  </p>
+                )}
+                <p className="mt-1 text-[13px] italic leading-relaxed text-muted-foreground">
+                  {holdRuntime.supplies}
+                </p>
+                {gSoft && garrisonMen > 0 && (
+                  <div className="mt-2 space-y-0.5 text-[12px] text-muted-foreground">
+                    <div>Morale: {gSoft.morale}</div>
+                    <div>Condition: {gSoft.tiredness}</div>
+                    <div>Stance: {gSoft.stance}</div>
+                  </div>
+                )}
+                {holdRuntime.foodDaysRemaining != null && (
+                  <p className="mt-1 text-[12px] text-muted-foreground">
+                    Food ~{holdRuntime.foodDaysRemaining} days
+                  </p>
+                )}
+                {holdRuntime.siege && (
+                  <p className="mt-2 text-[12px] font-medium text-bad">
+                    Under siege · turn {holdRuntime.siege.turns} ·{" "}
+                    {holdRuntime.siege.besiegerFaction === "north"
+                      ? "the North"
+                      : "the Westerlands"}
+                  </p>
+                )}
+                {holdRuntime.postSiegeTurnsLeft > 0 && !holdRuntime.siege && (
+                  <p className="mt-1 text-[12px] text-muted-foreground">
+                    Post-siege recovery ({holdRuntime.postSiegeTurnsLeft})
+                  </p>
+                )}
+                {wallsBrokenOpen && (
+                  <p className="mt-2 text-[13px] text-primary">
+                    Walls broken — gates forced
+                  </p>
+                )}
+                {openPledge && (
+                  <div className="mt-2 rounded-sm border border-primary/40 bg-primary/10 px-2.5 py-2 text-[12px] leading-relaxed text-primary">
+                    Seat taken — walls empty.
+                    <div className="mt-1 text-primary/80">
+                      Posting at least {openPledge.minimumMen.toLocaleString()} men
+                      is optional. The host may still rest, fortify, speak, or
+                      march.
+                    </div>
+                  </div>
+                )}
+                {underStrengthSiege && (
+                  <div className="mt-2 rounded-sm border border-bad/40 bg-bad/10 px-2.5 py-2 text-[12px] leading-relaxed text-bad">
+                    Too few to besiege.
+                    <div className="mt-1 opacity-80">
+                      {underStrengthSiege.men.toLocaleString()} men cannot ring a
+                      garrison of {garrisonMen.toLocaleString()}.{" "}
+                      {underStrengthSiege.required.toLocaleString()} are needed.
+                    </div>
+                  </div>
+                )}
+                {holdRuntime.siege && (
+                  <div className="mt-2">
+                    <TermsBlock
+                      state={state}
+                      dispatch={dispatch}
+                      holdId={selectedHoldId}
+                      faction={myFaction}
+                    />
+                  </div>
+                )}
+                {myFateHere && (
+                  <div className="mt-2">
+                    <SeatFatePanel
+                      state={state}
+                      dispatch={dispatch}
+                      viewerFaction={myFaction}
+                      embedded
+                      holdId={selectedHoldId}
+                    />
+                  </div>
+                )}
+                {holdPrisoners.map((g) => (
+                  <PrisonerCard
+                    key={g.id}
+                    group={g}
+                    state={state}
+                    dispatch={dispatch}
+                  />
+                ))}
+                {armyPrisoners.map((g) => (
+                  <PrisonerCard
+                    key={g.id}
+                    group={g}
+                    state={state}
+                    dispatch={dispatch}
+                  />
+                ))}
+                {(canUngarrison || canParley) && (
+                  <div className="mt-2 flex flex-wrap gap-1.5">
+                    {canUngarrison && (
+                      <OrderButton
+                        label="Ungarrison"
+                        hint="Draw men off the walls into a field host."
+                        onClick={() =>
+                          dispatch({
+                            type: "OPEN_GARRISON_PANEL",
+                            holdId: selectedHoldId,
+                            mode: "withdraw",
+                            armyId: garrisonSelected
+                              ? null
+                              : singleSelected?.id ?? null,
+                          })
+                        }
+                      />
+                    )}
+                    {canParley && (
+                      <OrderButton
+                        label={`Talk · ${parleyLabel}`}
+                        hint={`Open a parley with ${parleyLabel}.`}
+                        accent
+                        onClick={() => void openCastleParley()}
+                      />
+                    )}
+                  </div>
+                )}
+                {parleyError && (
+                  <p className="mt-2 text-[12px] text-bad">{parleyError}</p>
+                )}
+              </PanelSection>
+            )}
+
+            {controllableArmies.length > 1 && !moveMode.active && (
+              <div className="border-b border-border px-4 py-2">
+                <button
+                  type="button"
                   onClick={() =>
-                    dispatch({ type: "OPEN_COMMANDER_CHANGE", armyId: singleSelected!.id })
-                  }
-                />
-              )}
-              {canIssueStance && (
-                <ActionButton
-                  label="Rest"
-                  disabled={false}
-                  active={singleArmyStanceOrder === "rest"}
-                  onClick={() =>
-                    dispatch({
-                      type: "SET_STANCE_ORDER",
-                      armyId: singleSelected!.id,
-                      order: singleArmyStanceOrder === "rest" ? null : "rest",
-                    })
-                  }
-                />
-              )}
-              {canIssueStance && (
-                <ActionButton
-                  label={
-                    singleSelected &&
-                    holdRuntime?.siege?.besiegerFaction === singleSelected.faction
-                      ? "Dig in"
-                      : "Fortify"
-                  }
-                  title={
-                    singleSelected &&
-                    holdRuntime?.siege?.besiegerFaction === singleSelected.faction
-                      ? "Defend the siege camp against anyone who hits the lines — not occupying the keep. If a host friendly to the garrison attacks the camp, the garrison will sally to help."
-                      : undefined
-                  }
-                  disabled={false}
-                  active={singleArmyStanceOrder === "fortify"}
-                  onClick={() =>
-                    dispatch({
-                      type: "SET_STANCE_ORDER",
-                      armyId: singleSelected!.id,
-                      order: singleArmyStanceOrder === "fortify" ? null : "fortify",
-                    })
-                  }
-                />
-              )}
-              {canIssueStance && (
-                <ActionButton
-                  label="Speech"
-                  disabled={state.speechesThisTurn.includes(singleSelected!.id)}
-                  active={state.speechArmyId === singleSelected!.id}
-                  onClick={() =>
-                    state.speechArmyId === singleSelected!.id
-                      ? dispatch({ type: "CLOSE_SPEECH" })
+                    allControllableSelected
+                      ? dispatch({ type: "SELECT_HOLD", holdId: selectedHoldId })
                       : dispatch({
-                          type: "OPEN_SPEECH",
-                          armyId: singleSelected!.id,
+                          type: "SELECT_ALL_AT_HOLD",
+                          holdId: selectedHoldId,
                         })
                   }
-                />
-              )}
-              {canGarrison && (
-                <ActionButton
-                  label="Garrison"
-                  disabled={false}
-                  onClick={() =>
-                    dispatch({
-                      type: "OPEN_GARRISON_PANEL",
-                      holdId: selectedHoldId,
-                      mode: "deposit",
-                      armyId: singleSelected!.id,
-                    })
-                  }
-                />
-              )}
-              {canAbandon && (
-                <ActionButton
-                  label="Abandon"
-                  disabled={false}
-                  onClick={() =>
-                    dispatch({
-                      type: "OPEN_GARRISON_PANEL",
-                      holdId: selectedHoldId,
-                      mode: "abandon",
-                      armyId: garrisonSelected
-                        ? null
-                        : singleSelected!.id,
-                    })
-                  }
-                />
-              )}
-              {canStorm && (
-                <ActionButton
-                  label="Storm"
-                  disabled={false}
-                  active={stormActive}
-                  onClick={() =>
-                    dispatch({
-                      type: "SET_STORM_ORDER",
-                      armyId: singleSelected!.id,
-                      active: !stormActive,
-                    })
-                  }
-                />
-              )}
-              <ActionButton
-                label="Deselect"
-                disabled={false}
-                onClick={() => dispatch({ type: "SELECT_HOLD", holdId: selectedHoldId })}
-              />
-            </>
-          ) : (
-            <>
-              <div
-                style={{
-                  fontFamily: "var(--font-mono), monospace",
-                  fontSize: 9,
-                  color: "#c8941a",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  alignSelf: "center",
-                  flex: 1,
-                }}
-              >
-                Select destination on map
+                  className="text-[12px] text-muted-foreground hover:text-foreground"
+                >
+                  {allControllableSelected
+                    ? "Clear host selection"
+                    : "Select all of your hosts here"}
+                </button>
               </div>
-              <ActionButton
-                label="Cancel"
-                disabled={false}
-                onClick={() => dispatch({ type: "CANCEL_MOVE" })}
-              />
-            </>
-          )}
-        </div>
-        )}
-      {canSally && (
-        <div
-          style={{
-            display: "flex",
-            gap: 6,
-            flexWrap: "wrap",
-            marginTop: 8,
-          }}
-        >
-          <ActionButton
-            label="Sally Out"
-            disabled={false}
-            active={sallyActive}
-            onClick={() =>
-              dispatch({
-                type: "SET_SALLY_ORDER",
-                holdId: selectedHoldId,
-                active: !sallyActive,
-              })
-            }
-            accent
-          />
-        </div>
-      )}
-        </Collapse>
-      )}
-
-      {/* Select all */}
-      {controllableArmies.length > 1 && !moveMode.active && (
-        <div
-          style={{
-            borderBottom: "1px solid #1a1a1a",
-            padding: "5px 14px",
-          }}
-        >
-          <button
-            type="button"
-            onClick={() =>
-              allControllableSelected
-                ? dispatch({ type: "SELECT_HOLD", holdId: selectedHoldId })
-                : dispatch({ type: "SELECT_ALL_AT_HOLD", holdId: selectedHoldId })
-            }
-            style={{
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 8,
-              color: allControllableSelected ? "#c8941a" : "#555",
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              background: "none",
-              border: "none",
-              cursor: "pointer",
-              padding: 0,
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#888")}
-            onMouseLeave={(e) =>
-              (e.currentTarget.style.color = allControllableSelected ? "#c8941a" : "#555")
-            }
-          >
-            {allControllableSelected ? "✓ All selected" : "Select all armies here"}
-          </button>
-        </div>
-      )}
-
-      {/* Army lists */}
-      <Collapse
-        title="Hosts"
-        hint={
-          northHere.length + westHere.length > 0
-            ? `${northHere.length + westHere.length} here`
-            : "none"
-        }
-        defaultOpen
-      >
-        {northHere.length === 0 && westHere.length === 0 ? (
-          <div
-            style={{
-              padding: "24px 14px",
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 9,
-              color: "#2a2a2a",
-              textTransform: "uppercase",
-              letterSpacing: "0.15em",
-              textAlign: "center",
-            }}
-          >
-            No armies present
-          </div>
-        ) : (
-          <>
-            {northHere.length > 0 && (
-              <Section label={FACTION_LABEL.north}>
-                {northHere.map((army) => {
-                  const hasOrder = state.north.orders.some((o) => o.armyId === army.id);
-                  const stanceOrder = state.north.stanceOrders[army.id] ?? null;
-                  return (
-                    <ArmyCard
-                      key={army.id}
-                      army={army}
-                      isSelected={selectedArmyIds.includes(army.id)}
-                      hasOrder={hasOrder}
-                      stanceOrder={stanceOrder}
-                      hadSpeech={state.speechesThisTurn.includes(army.id)}
-                      isLocked={state.north.submitted}
-                      onTheWalls={isGarrisonArmyId(army.id)}
-                      onClick={(id, shift) =>
-                        dispatch({ type: "SELECT_ARMY", armyId: id, shift })
-                      }
-                    />
-                  );
-                })}
-              </Section>
             )}
-            {westHere.length > 0 && (
-              <Section label={FACTION_LABEL.westerlands}>
-                {westHere.map((army) => {
-                  const hasOrder = state.westerlands.orders.some((o) => o.armyId === army.id);
-                  const stanceOrder = state.westerlands.stanceOrders[army.id] ?? null;
-                  return (
-                    <ArmyCard
-                      key={army.id}
-                      army={army}
-                      isSelected={selectedArmyIds.includes(army.id)}
-                      hasOrder={hasOrder}
-                      stanceOrder={stanceOrder}
-                      hadSpeech={state.speechesThisTurn.includes(army.id)}
-                      isLocked={state.westerlands.submitted}
-                      onTheWalls={isGarrisonArmyId(army.id)}
-                      onClick={(id, shift) =>
-                        dispatch({ type: "SELECT_ARMY", armyId: id, shift })
-                      }
-                    />
-                  );
-                })}
-              </Section>
-            )}
-          </>
-        )}
-      </Collapse>
-      </div>
 
-      {singleSelected &&
-        state.speechArmyId === singleSelected.id &&
-        (adminMode || singleSelected.faction === activeFaction) && (
-          <div
-            style={{
-              flexShrink: 0,
-              maxHeight: "36%",
-              minHeight: 0,
-              overflowY: "auto",
-              overflowX: "hidden",
-              borderTop: "1px solid #1e1e1e",
-            }}
-          >
-            <SpeechComposer army={singleSelected} state={state} dispatch={dispatch} />
-          </div>
-        )}
-    </div>
+            <PanelSection
+              title="Hosts"
+              hint={
+                northHere.length + westHere.length > 0
+                  ? `${northHere.length + westHere.length} here`
+                  : "none"
+              }
+              defaultOpen
+            >
+              {northHere.length === 0 && westHere.length === 0 ? (
+                <p className="py-4 text-center text-[13px] text-muted-foreground">
+                  No armies present
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {northHere.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-[11px] text-north">{FACTION_LABEL.north}</div>
+                      {northHere.map((army) => (
+                        <ArmyCard
+                          key={army.id}
+                          army={army}
+                          isSelected={selectedArmyIds.includes(army.id)}
+                          hasOrder={state.north.orders.some((o) => o.armyId === army.id)}
+                          stanceOrder={state.north.stanceOrders[army.id] ?? null}
+                          hadSpeech={state.speechesThisTurn.includes(army.id)}
+                          isLocked={state.north.submitted}
+                          onTheWalls={isGarrisonArmyId(army.id)}
+                          onClick={(id, shift) =>
+                            dispatch({ type: "SELECT_ARMY", armyId: id, shift })
+                          }
+                        />
+                      ))}
+                    </div>
+                  )}
+                  {westHere.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="text-[11px] text-west">
+                        {FACTION_LABEL.westerlands}
+                      </div>
+                      {westHere.map((army) => (
+                        <ArmyCard
+                          key={army.id}
+                          army={army}
+                          isSelected={selectedArmyIds.includes(army.id)}
+                          hasOrder={state.westerlands.orders.some(
+                            (o) => o.armyId === army.id
+                          )}
+                          stanceOrder={state.westerlands.stanceOrders[army.id] ?? null}
+                          hadSpeech={state.speechesThisTurn.includes(army.id)}
+                          isLocked={state.westerlands.submitted}
+                          onTheWalls={isGarrisonArmyId(army.id)}
+                          onClick={(id, shift) =>
+                            dispatch({ type: "SELECT_ARMY", armyId: id, shift })
+                          }
+                        />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </PanelSection>
+
+            {trait && (
+              <PanelSection title="Country" hint={trait.name} defaultOpen={false}>
+                <div className="text-[11px] text-muted-foreground">Roads</div>
+                <div className="mt-1 space-y-1 text-[12px] leading-relaxed text-muted-foreground">
+                  {hold.links.map((id) => {
+                    const name = HOLDS_MAP.get(id)?.name ?? id;
+                    return (
+                      <div key={id}>
+                        {name} — {forageOnPath(state.forage, hold.id, id)}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-3 text-[11px] text-muted-foreground">{trait.name}</div>
+                <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+                  {trait.blurb}
+                </p>
+                <div className="mt-3 text-[11px] text-muted-foreground">Forage</div>
+                <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+                  {forageAtHold(state.forage, hold.id)}
+                </p>
+              </PanelSection>
+            )}
+          </ScrollArea>
+
+          {singleSelected &&
+            state.speechArmyId === singleSelected.id &&
+            (adminMode || singleSelected.faction === activeFaction) && (
+              <div className="max-h-[36%] min-h-0 shrink-0 overflow-y-auto border-t border-border">
+                <SpeechComposer
+                  army={singleSelected}
+                  state={state}
+                  dispatch={dispatch}
+                />
+              </div>
+            )}
+        </>
+      )}
+    </aside>
   );
 }
 
-function Collapse({
+function PanelSection({
   title,
   hint,
   defaultOpen = false,
@@ -1157,154 +924,20 @@ function Collapse({
 }) {
   const [open, setOpen] = useState(defaultOpen);
   return (
-    <div style={{ borderBottom: "1px solid #1e1e1e" }}>
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          width: "100%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-          padding: "8px 14px",
-          fontFamily: "var(--font-mono), monospace",
-          fontSize: 8,
-          fontWeight: 700,
-          textTransform: "uppercase",
-          letterSpacing: "0.12em",
-          color: accent ? "#c8941a" : "#888",
-          background: open ? "#0d0d0d" : "transparent",
-          border: "none",
-          cursor: "pointer",
-          textAlign: "left",
-          boxSizing: "border-box",
-        }}
-      >
-        <span>
-          {open ? "▾" : "▸"} {title}
-        </span>
-        {!open && hint && (
-          <span
-            style={{
-              color: "#444",
-              fontWeight: 400,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-              maxWidth: 160,
-            }}
-          >
+    <details
+      open={open}
+      onToggle={(e) => setOpen(e.currentTarget.open)}
+      className="group border-b border-border"
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-2.5 text-[12px] font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+        <span className={cn(accent && "text-primary")}>{title}</span>
+        {hint && (
+          <span className="max-w-[180px] truncate text-[11px] font-normal text-muted-foreground/70 group-open:hidden">
             {hint}
           </span>
         )}
-      </button>
-      {open && (
-        <div
-          style={{
-            padding: "4px 14px 12px",
-            boxSizing: "border-box",
-            maxWidth: "100%",
-            overflowX: "hidden",
-          }}
-        >
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function Section({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <div
-        style={{
-          padding: "6px 14px 4px",
-          fontFamily: "var(--font-mono), monospace",
-          fontSize: 8,
-          color: "#333",
-          textTransform: "uppercase",
-          letterSpacing: "0.15em",
-          borderBottom: "1px solid #141414",
-        }}
-      >
-        {label}
-      </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 1, padding: "6px 8px" }}>
-        {children}
-      </div>
-    </div>
-  );
-}
-
-function ActionButton({
-  label,
-  disabled,
-  onClick,
-  accent,
-  active,
-  title,
-}: {
-  label: string;
-  disabled: boolean;
-  onClick: () => void;
-  accent?: boolean;
-  active?: boolean;
-  title?: string;
-}) {
-  const isActive = active ?? false;
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      title={title}
-      style={{
-        fontFamily: "var(--font-mono), monospace",
-        fontSize: 9,
-        fontWeight: 700,
-        textTransform: "uppercase",
-        letterSpacing: "0.1em",
-        padding: "4px 10px",
-        cursor: disabled ? "default" : "pointer",
-        border: accent
-          ? "1px solid #3a2a00"
-          : isActive
-            ? "1px solid #c8941a"
-            : "1px solid #2a2a2a",
-        background: accent ? "#1a1200" : isActive ? "#2a1800" : "#0a0a0a",
-        color: disabled
-          ? "#333"
-          : accent
-            ? "#c8941a"
-            : isActive
-              ? "#f0b429"
-              : "#666",
-        transition: "border-color 0.12s, color 0.12s",
-      }}
-      onMouseEnter={(e) => {
-        if (!disabled) {
-          e.currentTarget.style.borderColor = accent || isActive ? "#c8941a" : "#555";
-          e.currentTarget.style.color = accent || isActive ? "#f0b429" : "#aaa";
-        }
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = accent
-          ? "#3a2a00"
-          : isActive
-            ? "#c8941a"
-            : "#2a2a2a";
-        e.currentTarget.style.color = disabled
-          ? "#333"
-          : accent
-            ? "#c8941a"
-            : isActive
-              ? "#f0b429"
-              : "#666";
-      }}
-    >
-      {label}
-    </button>
+      </summary>
+      <div className="px-4 pb-3">{children}</div>
+    </details>
   );
 }

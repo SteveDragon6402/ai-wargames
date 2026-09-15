@@ -1,19 +1,11 @@
 "use client";
 
 import type { Army, UnitType } from "../types";
+import { Badge } from "@/components/ui/badge";
+import { Hint } from "@/components/ui/hint";
+import { cn } from "@/lib/utils";
 
 type StanceOrder = "rest" | "fortify" | null;
-
-const FACTION_COLORS = {
-  north: { border: "#1a3a5a", accent: "#3a6ea8", text: "#6aaad8" },
-  westerlands: { border: "#5a1a1a", accent: "#b03030", text: "#d87070" },
-};
-
-const UNIT_ICONS: Record<UnitType, string> = {
-  cavalry: "⚔",
-  infantry: "🛡",
-  archers: "🏹",
-};
 
 const UNIT_LABELS: Record<UnitType, string> = {
   cavalry: "Cavalry",
@@ -26,10 +18,8 @@ interface Props {
   isSelected: boolean;
   hasOrder: boolean;
   stanceOrder?: StanceOrder;
-  /** True if this host already received a speech command this turn */
   hadSpeech?: boolean;
   isLocked: boolean;
-  /** Posted on the walls rather than a field host. */
   onTheWalls?: boolean;
   onClick: (armyId: string, shift: boolean) => void;
 }
@@ -44,286 +34,139 @@ export default function ArmyCard({
   onTheWalls,
   onClick,
 }: Props) {
-  const colors = FACTION_COLORS[army.faction];
-
+  const isNorth = army.faction === "north";
   const totalUnits = army.units.reduce((s, u) => s + u.count, 0);
-
-  // Group units by type for display
-  const byType = army.units.reduce<Partial<Record<UnitType, { houses: string; count: number }[]>>>(
+  const commander = army.leaders[0];
+  const byType = army.units.reduce<Partial<Record<UnitType, number>>>(
     (acc, unit) => {
-      if (!acc[unit.type]) acc[unit.type] = [];
-      acc[unit.type]!.push({ houses: unit.house, count: unit.count });
+      acc[unit.type] = (acc[unit.type] ?? 0) + unit.count;
       return acc;
     },
     {}
   );
 
+  const status =
+    onTheWalls
+      ? "On the walls"
+      : stanceOrder === "rest"
+        ? "Resting"
+        : stanceOrder === "fortify"
+          ? "Fortifying"
+          : hadSpeech
+            ? "Speech given"
+            : hasOrder
+              ? "Marching"
+              : null;
+
   return (
-    <div
-      onClick={(e) => !isLocked && onClick(army.id, e.shiftKey)}
-      style={{
-        border: `1px solid ${isSelected ? colors.accent : colors.border}`,
-        background: isSelected ? `${colors.accent}18` : "#0a0a0a",
-        padding: "8px 10px",
-        cursor: isLocked ? "default" : "pointer",
-        transition: "border-color 0.12s, background 0.12s",
-        opacity: isLocked && !isSelected ? 0.6 : 1,
-        position: "relative",
-      }}
-      onMouseEnter={(e) => {
-        if (!isSelected && !isLocked)
-          e.currentTarget.style.borderColor = colors.accent;
-      }}
-      onMouseLeave={(e) => {
-        if (!isSelected)
-          e.currentTarget.style.borderColor = colors.border;
-      }}
+    <Hint
+      label={
+        isLocked
+          ? "Orders locked — this host cannot be changed"
+          : "Click to select. Shift-click to add or remove."
+      }
     >
-      {/* Header row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-        <div
-          style={{
-            width: 8,
-            height: 8,
-            borderRadius: "50%",
-            background: colors.accent,
-            flexShrink: 0,
-          }}
-        />
-        <span
-          style={{
-            fontFamily: "var(--font-mono), monospace",
-            fontSize: 10,
-            fontWeight: 700,
-            textTransform: "uppercase",
-            letterSpacing: "0.08em",
-            color: isSelected ? colors.text : "#aaa",
-            flex: 1,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          }}
-        >
-          {army.name}
-        </span>
-        {onTheWalls && (
-          <span style={orderBadgeStyle("#2a2a1a", "#8a7a4a")}>WALLS</span>
+      <div
+        role="button"
+        tabIndex={isLocked ? -1 : 0}
+        onClick={(e) => !isLocked && onClick(army.id, e.shiftKey)}
+        onKeyDown={(e) => {
+          if (isLocked) return;
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            onClick(army.id, e.shiftKey);
+          }
+        }}
+        className={cn(
+          "rounded-sm border px-3 py-2.5 transition-colors",
+          isNorth ? "border-north/25" : "border-west/25",
+          isSelected
+            ? isNorth
+              ? "bg-north-deep/80 ring-1 ring-north/60"
+              : "bg-west-deep/80 ring-1 ring-west/60"
+            : "bg-background/40 hover:bg-accent",
+          isLocked && !isSelected && "opacity-60"
         )}
-        {hadSpeech && (
-          <span style={orderBadgeStyle("#2a3a2a", "#6a8a6a")}>SPEECH</span>
-        )}
-        {stanceOrder === "rest" && (
-          <span style={orderBadgeStyle("#2a4a2a", "#4a8a4a")}>REST</span>
-        )}
-        {stanceOrder === "fortify" && (
-          <span style={orderBadgeStyle("#1a2a4a", "#4a6aaa")}>FORTIFY</span>
-        )}
-        {hasOrder && !stanceOrder && !hadSpeech && (
-          <span style={orderBadgeStyle("#3a2a00", "#c8941a")}>ORDERED</span>
-        )}
-      </div>
-
-      {/* Leaders */}
-      <div style={{ marginBottom: 6 }}>
-        {army.leaders.map((l) => (
-          <div
-            key={l.name}
-            style={{
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 9,
-              color: "#666",
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-            }}
-          >
-            {l.title ? `${l.name} — ${l.title}` : l.name}
+      >
+        <div className="flex items-start justify-between gap-2">
+          <div className="min-w-0">
+            <div
+              className={cn(
+                "truncate text-[13px] font-medium",
+                isSelected
+                  ? isNorth
+                    ? "text-north"
+                    : "text-west"
+                  : "text-foreground"
+              )}
+            >
+              {army.name}
+            </div>
+            {commander && (
+              <div className="truncate text-[12px] text-muted-foreground">
+                {commander.title
+                  ? `${commander.name} — ${commander.title}`
+                  : commander.name}
+              </div>
+            )}
           </div>
-        ))}
-      </div>
-
-      {/* Notables */}
-      {army.notables && army.notables.length > 0 && (
-        <div style={{ marginBottom: 8 }}>
-          <div
-            style={{
-              fontFamily: "var(--font-mono), monospace",
-              fontSize: 8,
-              color: "#444",
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              marginBottom: 4,
-              borderBottom: "1px solid #181818",
-              paddingBottom: 3,
-            }}
-          >
-            Notable figures
+          <div className="shrink-0 text-right">
+            <div className="font-mono text-[13px] text-foreground">
+              {totalUnits.toLocaleString()}
+            </div>
+            {status && (
+              <Badge
+                variant="outline"
+                className="mt-1 h-5 px-1.5 text-[10px] font-normal"
+              >
+                {status}
+              </Badge>
+            )}
           </div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        </div>
+
+        <div className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+          {(["cavalry", "infantry", "archers"] as UnitType[]).map((type) => {
+            const n = byType[type];
+            if (!n) return null;
+            return (
+              <span key={type}>
+                {UNIT_LABELS[type]} {n.toLocaleString()}
+              </span>
+            );
+          })}
+        </div>
+
+        <div className="mt-2 space-y-0.5 text-[12px] leading-snug text-muted-foreground">
+          <div>
+            <span className="text-muted-foreground/70">Morale </span>
+            {army.morale}
+          </div>
+          <div>
+            <span className="text-muted-foreground/70">Condition </span>
+            {army.tiredness}
+          </div>
+          {army.stance && (
+            <div>
+              <span className="text-muted-foreground/70">Stance </span>
+              {army.stance}
+            </div>
+          )}
+        </div>
+
+        {army.notables && army.notables.length > 0 && (
+          <div className="mt-2 border-t border-border/60 pt-2">
             {army.notables.map((n) => (
-              <div key={n.name}>
-                <span
-                  style={{
-                    fontFamily: "var(--font-mono), monospace",
-                    fontSize: 9,
-                    fontWeight: 700,
-                    color: "#888",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.06em",
-                  }}
-                >
-                  {n.name}
-                </span>
-                <span
-                  style={{
-                    fontFamily: "var(--font-mono), monospace",
-                    fontSize: 8,
-                    color: "#555",
-                    display: "block",
-                    marginTop: 1,
-                    fontStyle: "italic",
-                    lineHeight: 1.5,
-                  }}
-                >
+              <div key={n.name} className="mb-1 last:mb-0">
+                <div className="text-[12px] text-foreground/80">{n.name}</div>
+                <div className="text-[11px] italic leading-snug text-muted-foreground">
                   {n.description}
-                </span>
+                </div>
               </div>
             ))}
           </div>
-        </div>
-      )}
-
-      {/* Unit breakdown */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 3, marginBottom: 6 }}>
-        {(["cavalry", "infantry", "archers"] as UnitType[]).map((type) => {
-          const rows = byType[type];
-          if (!rows?.length) return null;
-          return (
-            <div key={type}>
-              <div
-                style={{
-                  fontFamily: "var(--font-mono), monospace",
-                  fontSize: 8,
-                  color: "#444",
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
-                  marginBottom: 1,
-                }}
-              >
-                {UNIT_ICONS[type]} {UNIT_LABELS[type]}
-              </div>
-              {rows.map((row) => (
-                <div
-                  key={row.houses}
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    fontFamily: "var(--font-mono), monospace",
-                    fontSize: 9,
-                    color: "#777",
-                    paddingLeft: 12,
-                  }}
-                >
-                  <span>{row.houses} men</span>
-                  <span style={{ color: "#aaa" }}>{row.count.toLocaleString()}</span>
-                </div>
-              ))}
-            </div>
-          );
-        })}
+        )}
       </div>
-
-      {/* Total */}
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          borderTop: "1px solid #1a1a1a",
-          paddingTop: 4,
-          marginBottom: 6,
-        }}
-      >
-        <span
-          style={{
-            fontFamily: "var(--font-mono), monospace",
-            fontSize: 8,
-            color: "#444",
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
-          }}
-        >
-          Total strength
-        </span>
-        <span
-          style={{
-            fontFamily: "var(--font-mono), monospace",
-            fontSize: 9,
-            color: colors.text,
-            fontWeight: 700,
-          }}
-        >
-          {totalUnits.toLocaleString()}
-        </span>
-      </div>
-
-      {/* Morale, Tiredness & Stance */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        <QualitativeRow label="Morale" value={army.morale} />
-        <QualitativeRow label="Condition" value={army.tiredness} />
-        {army.stance && <QualitativeRow label="Stance" value={army.stance} />}
-      </div>
-
-      {/* Selected ring */}
-      {isSelected && (
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            border: `1px solid ${colors.accent}`,
-            pointerEvents: "none",
-          }}
-        />
-      )}
-    </div>
+    </Hint>
   );
-}
-
-function QualitativeRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <span
-        style={{
-          fontFamily: "var(--font-mono), monospace",
-          fontSize: 8,
-          color: "#444",
-          textTransform: "uppercase",
-          letterSpacing: "0.1em",
-        }}
-      >
-        {label} ·{" "}
-      </span>
-      <span
-        style={{
-          fontFamily: "var(--font-mono), monospace",
-          fontSize: 9,
-          color: "#666",
-          fontStyle: "italic",
-        }}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function orderBadgeStyle(borderColor: string, textColor: string): React.CSSProperties {
-  return {
-    fontSize: 8,
-    fontWeight: 700,
-    textTransform: "uppercase" as const,
-    letterSpacing: "0.1em",
-    color: textColor,
-    border: `1px solid ${borderColor}`,
-    padding: "1px 4px",
-    flexShrink: 0,
-  };
 }

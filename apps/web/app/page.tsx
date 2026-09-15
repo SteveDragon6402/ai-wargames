@@ -2,6 +2,9 @@
 
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { cn } from "@/lib/utils";
 
 async function safeJson(res: Response): Promise<Record<string, unknown>> {
   try {
@@ -11,17 +14,16 @@ async function safeJson(res: Response): Promise<Record<string, unknown>> {
   }
 }
 
-/** Which GOT campaign the uplink creates/joins. Each has its own api namespace. */
 const CAMPAIGNS = {
   "got-houses-v2": {
-    label: "Riverlands Campaign",
+    label: "Riverlands",
     title: "The Riverlands Campaign",
-    tagline: "Four regions · North · Riverlands · Westerlands · Crownlands",
+    tagline: "North and Westerlands meet in the river country.",
   },
   "got-houses": {
-    label: "War of the Five Kings",
+    label: "Five Kings",
     title: "War of the Five Kings",
-    tagline: "AI-adjudicated · node warfare · Westeros theatre",
+    tagline: "The older theatre — kept for the record.",
   },
 } as const;
 
@@ -89,410 +91,149 @@ export default function HomePage() {
   }
 
   return (
-    <main
-      style={{
-        minHeight: "100dvh",
-        background: "#060606",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 24,
-        fontFamily: "var(--font-mono), monospace",
-      }}
-    >
-      {/* Campaign menu */}
-      <nav
-        style={{
-          display: "flex",
-          gap: 8,
-          marginBottom: 36,
-          border: "1px solid #1e1e1e",
-          padding: 4,
-        }}
-      >
-        {(Object.keys(CAMPAIGNS) as CampaignId[]).map((id) => {
-          const selected = id === campaign;
-          return (
-            <button
-              key={id}
-              type="button"
-              onClick={() => setCampaign(id)}
-              style={{
-                padding: "8px 16px",
-                fontSize: 10,
-                fontWeight: 700,
-                textTransform: "uppercase",
-                letterSpacing: "0.12em",
-                fontFamily: "inherit",
-                cursor: selected ? "default" : "pointer",
-                color: selected ? "#c8941a" : "#c8c0b0",
-                background: selected ? "#1a1200" : "transparent",
-                border: `1px solid ${selected ? "#3a2a00" : "#2a241c"}`,
-              }}
-            >
-              {CAMPAIGNS[id].label}
-            </button>
-          );
-        })}
+    <main className="flex min-h-dvh flex-col items-center justify-center px-6 py-16">
+      <nav className="mb-10 flex gap-1 rounded-sm border border-border p-1">
+        {(Object.keys(CAMPAIGNS) as CampaignId[]).map((id) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => setCampaign(id)}
+            className={cn(
+              "rounded-sm px-3 py-1.5 text-[13px]",
+              id === campaign
+                ? "bg-secondary text-foreground"
+                : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            {CAMPAIGNS[id].label}
+          </button>
+        ))}
         <a
           href="/secret-test"
-          style={{
-            padding: "8px 16px",
-            fontSize: 10,
-            fontWeight: 700,
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
-            color: "#c8c0b0",
-            textDecoration: "none",
-            border: "1px solid #2a241c",
-          }}
+          className="rounded-sm px-3 py-1.5 text-[13px] text-muted-foreground hover:text-foreground"
         >
           Secret Test
         </a>
       </nav>
 
-      {/* House sigils */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 20,
-          marginBottom: 32,
-        }}
-      >
-        <div style={{ textAlign: "center" }}>
-          <div
-            style={{
-              width: 56,
-              height: 56,
-              border: "1px solid #1a3a5a",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 26,
-              marginBottom: 6,
-            }}
-          >
+      <div className="mb-8 flex items-center gap-8">
+        <div className="text-center">
+          <div className="mx-auto flex size-16 items-center justify-center border border-north/40 bg-north-deep font-display text-3xl text-north">
             ☾
           </div>
-          <div style={{ fontSize: 9, color: "#3a6a8a", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-            The North
-          </div>
+          <div className="mt-2 text-[13px] text-north">The North</div>
         </div>
-
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-          <div style={{ fontSize: 10, color: "#2a2a2a", textTransform: "uppercase", letterSpacing: "0.2em" }}>
-            vs
-          </div>
-        </div>
-
-        <div style={{ textAlign: "center" }}>
-          <div
-            style={{
-              width: 56,
-              height: 56,
-              border: "1px solid #5a1a1a",
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              fontSize: 26,
-              marginBottom: 6,
-            }}
-          >
+        <div className="font-display text-lg text-muted-foreground">against</div>
+        <div className="text-center">
+          <div className="mx-auto flex size-16 items-center justify-center border border-west/40 bg-west-deep font-display text-3xl text-west">
             ♟
           </div>
-          <div style={{ fontSize: 9, color: "#8a3a3a", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-            Westerlands
-          </div>
+          <div className="mt-2 text-[13px] text-west">The Westerlands</div>
         </div>
       </div>
 
-      {/* Title */}
-      <div style={{ textAlign: "center", marginBottom: 32 }}>
-        <h1
-          style={{
-            fontSize: 20,
-            fontWeight: 400,
-            color: "#c8941a",
-            textTransform: "uppercase",
-            letterSpacing: "0.25em",
-            marginBottom: 6,
-          }}
-        >
+      <div className="mb-10 max-w-lg text-center">
+        <h1 className="font-display text-4xl font-semibold tracking-wide text-foreground sm:text-5xl">
           {active.title}
         </h1>
-        <p style={{ fontSize: 9, color: "#2a2a2a", textTransform: "uppercase", letterSpacing: "0.2em" }}>
-          {active.tagline}
+        <p className="mt-3 text-[15px] leading-relaxed text-muted-foreground">
+          {active.tagline} Take a seat, lock your marches, and let the field be judged.
         </p>
       </div>
 
-      {/* Main panel */}
-      <div
-        style={{
-          width: "100%",
-          maxWidth: 360,
-          border: "1px solid #1e1e1e",
-          background: "#080808",
-        }}
-      >
-        {/* Panel header */}
-        <div
-          style={{
-            borderBottom: "1px solid #1e1e1e",
-            padding: "8px 16px",
-            fontSize: 9,
-            fontWeight: 700,
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
-            color: "#2a2a2a",
-          }}
-        >
-          Command Uplink
+      <div className="w-full max-w-md rounded-sm border border-border bg-card">
+        <div className="border-b border-border px-5 py-3 text-[13px] text-muted-foreground">
+          Open the table
         </div>
-
-        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16 }}>
-          {/* Commander name */}
+        <div className="space-y-4 p-5">
           <div>
-            <label
-              style={{
-                display: "block",
-                fontSize: 9,
-                fontWeight: 700,
-                textTransform: "uppercase",
-                letterSpacing: "0.1em",
-                color: "#555",
-                marginBottom: 6,
-              }}
-            >
+            <label htmlFor="commander" className="mb-1.5 block text-[13px] text-muted-foreground">
               Commander name
             </label>
-            <input
-              style={{
-                width: "100%",
-                background: "#0a0a0a",
-                border: "1px solid #1e1e1e",
-                padding: "8px 12px",
-                fontSize: 13,
-                color: "#ccc",
-                outline: "none",
-                boxSizing: "border-box",
-                fontFamily: "inherit",
-                transition: "border-color 0.12s",
-              }}
+            <Input
+              id="commander"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Enter your name"
+              placeholder="Your name at the table"
               maxLength={32}
               onKeyDown={(e) => e.key === "Enter" && createRoom()}
-              onFocus={(e) => (e.currentTarget.style.borderColor = "#c8941a")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "#1e1e1e")}
+              className="h-10 bg-background"
             />
           </div>
 
-          {/* Faction info */}
-          <div
-            style={{
-              display: "grid",
-              gridTemplateColumns: "1fr 1fr",
-              gap: 8,
-            }}
-          >
-            <div
-              style={{
-                border: "1px solid #1a3a5a",
-                padding: "10px 12px",
-                background: "#050a12",
-              }}
-            >
-              <div style={{ fontSize: 9, color: "#6aaad8", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
-                Host → The North
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-sm border border-north/30 bg-north-deep/50 px-3 py-2.5">
+              <div className="text-[12px] font-medium text-north">Host · North</div>
+              <div className="mt-0.5 text-[12px] text-muted-foreground">
+                Robb Stark, five hosts
               </div>
-              <div style={{ fontSize: 9, color: "#2a4a6a" }}>Robb Stark, 5 armies</div>
             </div>
-            <div
-              style={{
-                border: "1px solid #5a1a1a",
-                padding: "10px 12px",
-                background: "#120505",
-              }}
-            >
-              <div style={{ fontSize: 9, color: "#d87070", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>
-                Joiner → Westerlands
+            <div className="rounded-sm border border-west/30 bg-west-deep/50 px-3 py-2.5">
+              <div className="text-[12px] font-medium text-west">Joiner · West</div>
+              <div className="mt-0.5 text-[12px] text-muted-foreground">
+                Tywin Lannister, two hosts
               </div>
-              <div style={{ fontSize: 9, color: "#6a2a2a" }}>Tywin Lannister, 2 armies</div>
             </div>
           </div>
 
-          {/* Create button */}
-          <button
+          <Button
             type="button"
             disabled={loading}
             onClick={createRoom}
-            style={{
-              width: "100%",
-              padding: "10px 16px",
-              background: "#1a1200",
-              border: "1px solid #3a2a00",
-              color: "#c8941a",
-              fontSize: 11,
-              fontWeight: 700,
-              textTransform: "uppercase",
-              letterSpacing: "0.15em",
-              cursor: loading ? "wait" : "pointer",
-              fontFamily: "inherit",
-              transition: "border-color 0.12s, color 0.12s",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = "#c8941a";
-              e.currentTarget.style.color = "#f0b429";
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = "#3a2a00";
-              e.currentTarget.style.color = "#c8941a";
-            }}
+            className="h-10 w-full text-[13px] font-semibold"
           >
-            {loading ? "Establishing uplink…" : "Raise your banners →"}
-          </button>
+            {loading ? "Raising banners…" : "Raise your banners"}
+          </Button>
 
-          {/* Divider */}
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ flex: 1, height: 1, background: "#1a1a1a" }} />
-            <span style={{ fontSize: 9, color: "#2a2a2a", textTransform: "uppercase", letterSpacing: "0.1em" }}>
-              or join existing
-            </span>
-            <div style={{ flex: 1, height: 1, background: "#1a1a1a" }} />
+          <div className="flex items-center gap-3 text-[12px] text-muted-foreground">
+            <div className="h-px flex-1 bg-border" />
+            or join with a code
+            <div className="h-px flex-1 bg-border" />
           </div>
 
-          {/* Join code */}
-          <div style={{ display: "flex", gap: 8 }}>
-            <input
+          <div className="flex gap-2">
+            <Input
               ref={codeRef}
-              style={{
-                flex: 1,
-                background: "#0a0a0a",
-                border: "1px solid #1e1e1e",
-                padding: "8px 12px",
-                fontSize: 18,
-                color: "#ccc",
-                textAlign: "center",
-                textTransform: "uppercase",
-                letterSpacing: "0.3em",
-                outline: "none",
-                fontFamily: "inherit",
-                transition: "border-color 0.12s",
-              }}
               value={code}
-              onChange={(e) => setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))}
+              onChange={(e) =>
+                setCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ""))
+              }
               placeholder="XXXXXX"
               maxLength={6}
               onKeyDown={(e) => e.key === "Enter" && joinRoom()}
-              onFocus={(e) => (e.currentTarget.style.borderColor = "#c8941a")}
-              onBlur={(e) => (e.currentTarget.style.borderColor = "#1e1e1e")}
+              className="h-10 flex-1 bg-background text-center font-mono text-lg tracking-[0.3em]"
             />
-            <button
+            <Button
               type="button"
+              variant="outline"
               disabled={loading || code.length !== 6}
               onClick={joinRoom}
-              style={{
-                padding: "8px 20px",
-                background: "transparent",
-                border: "1px solid #1e1e1e",
-                color: code.length === 6 ? "#888" : "#2a2a2a",
-                fontSize: 10,
-                fontWeight: 700,
-                textTransform: "uppercase",
-                letterSpacing: "0.1em",
-                cursor: code.length === 6 ? "pointer" : "default",
-                fontFamily: "inherit",
-                transition: "border-color 0.12s, color 0.12s",
-              }}
-              onMouseEnter={(e) => {
-                if (code.length === 6) {
-                  e.currentTarget.style.borderColor = "#888";
-                  e.currentTarget.style.color = "#ccc";
-                }
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.style.borderColor = "#1e1e1e";
-                e.currentTarget.style.color = code.length === 6 ? "#888" : "#2a2a2a";
-              }}
+              className="h-10 px-5"
             >
               Join
-            </button>
+            </Button>
           </div>
         </div>
 
-        {/* Error */}
         {error && (
-          <div
-            style={{
-              margin: "0 20px 16px",
-              padding: "8px 12px",
-              border: "1px solid #5a1a1a",
-              background: "#120505",
-              fontSize: 11,
-              color: "#d87070",
-            }}
-          >
+          <div className="mx-5 mb-4 rounded-sm border border-bad/40 bg-bad/10 px-3 py-2 text-[13px] text-bad">
             {error}
           </div>
         )}
 
-        {/* Standalone link */}
-        <div
-          style={{
-            borderTop: "1px solid #1a1a1a",
-            padding: "8px 16px",
-            textAlign: "center",
-          }}
-        >
+        <div className="border-t border-border px-5 py-3 text-center">
           <a
             href={`/${campaign}`}
-            style={{
-              fontSize: 9,
-              color: "#2a2a2a",
-              textTransform: "uppercase",
-              letterSpacing: "0.1em",
-              textDecoration: "none",
-              transition: "color 0.12s",
-            }}
-            onMouseEnter={(e) => (e.currentTarget.style.color = "#555")}
-            onMouseLeave={(e) => (e.currentTarget.style.color = "#2a2a2a")}
+            className="text-[13px] text-muted-foreground hover:text-foreground"
           >
-            Play standalone (no room)
+            Play standalone, no room
           </a>
         </div>
       </div>
 
-      {/* Footer */}
-      <div
-        style={{
-          marginTop: 32,
-          fontSize: 9,
-          color: "#1a1a1a",
-          textTransform: "uppercase",
-          letterSpacing: "0.15em",
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: 10,
-        }}
-      >
-        <span>AI-adjudicated node warfare · secure channel</span>
-        <a
-          href="/secret-test"
-          style={{
-            fontSize: 11,
-            color: "#c8941a",
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
-            textDecoration: "none",
-          }}
-        >
-          Secret Test — The Wars of the Roses
-        </a>
-      </div>
+      <p className="mt-10 text-[12px] text-muted-foreground">
+        AI-adjudicated node warfare
+      </p>
     </main>
   );
 }

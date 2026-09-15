@@ -798,15 +798,7 @@ export default function GameCore({
   const totalBattles = (state.pendingBattles ?? []).length;
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100dvh",
-        overflow: "hidden",
-        background: "#080808",
-      }}
-    >
+    <div className="flex h-dvh flex-col overflow-hidden bg-background">
       <TopBar
         state={state}
         dispatch={dispatch}
@@ -824,94 +816,27 @@ export default function GameCore({
               state.phase === "planning" &&
               state.north.submitted &&
               state.westerlands.submitted && (
-              <div
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  background: "rgba(0,0,0,0.55)",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  zIndex: 28,
-                  gap: 12,
-                }}
-              >
-                <div
-                  style={{
-                    fontFamily: "var(--font-mono), monospace",
-                    fontSize: 12,
-                    fontWeight: 700,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.28em",
-                    color: "#c8941a",
-                  }}
-                >
+              <div className="absolute inset-0 z-[28] flex flex-col items-center justify-center gap-3 bg-background/70">
+                <div className="font-display text-2xl text-primary">
                   Both sides have marched
                 </div>
-                <div
-                  style={{
-                    fontFamily: "var(--font-mono), monospace",
-                    fontSize: 9,
-                    color: "#666",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.18em",
-                  }}
-                >
+                <div className="text-sm text-muted-foreground">
                   Waiting for the turn to resolve…
                 </div>
               </div>
             )}
 
-            {/* Resolving overlay */}
             {isResolving && (
-              <div
-                style={{
-                  position: "absolute",
-                  inset: 0,
-                  background: "rgba(0,0,0,0.72)",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  zIndex: 30,
-                  gap: 16,
-                }}
-              >
-                <div
-                  style={{
-                    fontFamily: "var(--font-mono), monospace",
-                    fontSize: 13,
-                    fontWeight: 700,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.3em",
-                    color: "#c8941a",
-                  }}
-                >
+              <div className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-background/80">
+                <div className="font-display text-2xl text-primary">
                   Adjudicating
                 </div>
-                <div
-                  style={{
-                    fontFamily: "var(--font-mono), monospace",
-                    fontSize: 9,
-                    color: "#555",
-                    textTransform: "uppercase",
-                    letterSpacing: "0.2em",
-                  }}
-                >
+                <div className="text-sm text-muted-foreground">
                   {totalBattles > 0
-                    ? `${totalBattleArmies} arm${totalBattleArmies !== 1 ? "ies" : "y"} · ${totalBattles} battle${totalBattles !== 1 ? "s" : ""} being adjudicated`
+                    ? `${totalBattleArmies} ${totalBattleArmies !== 1 ? "hosts" : "host"} · ${totalBattles} ${totalBattles !== 1 ? "battles" : "battle"}`
                     : "Updating conditions…"}
                 </div>
-                <div
-                  style={{
-                    width: 40,
-                    height: 2,
-                    background: "#c8941a",
-                    animation: "pulse 1.2s ease-in-out infinite",
-                    opacity: 0.6,
-                  }}
-                />
+                <div className="h-0.5 w-10 animate-pulse bg-primary" />
               </div>
             )}
 
@@ -958,13 +883,6 @@ export default function GameCore({
       {/* Split army overlay */}
       {state.splitPanelArmyId && <SplitPanel state={state} dispatch={dispatch} />}
       {state.garrisonPanel && <GarrisonPanel state={state} dispatch={dispatch} />}
-
-      <style>{`
-        @keyframes pulse {
-          0%, 100% { opacity: 0.3; transform: scaleX(0.6); }
-          50% { opacity: 1; transform: scaleX(1); }
-        }
-      `}</style>
     </div>
   );
 }

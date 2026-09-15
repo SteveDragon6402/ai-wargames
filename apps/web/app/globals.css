@@ -2,37 +2,77 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  /* Voltagent brand chrome */
-  --color-bg: #101010;
-  --color-surface: #1a1a1a;
-  --color-border: #3d3a39;
-  --color-border-dim: #2a2827;
-  --color-primary: #00d992;
-  --color-primary-soft: #2fd6a1;
-  --color-primary-deep: #10b981;
-  --color-ink: #f2f2f2;
-  --color-ink-strong: #ffffff;
-  --color-body: #bdbdbd;
-  --color-mute: #8b949e;
+@layer base {
+  :root {
+    /* Campaign table — oak, parchment, wax, iron */
+    --background: 30 22% 7%;
+    --foreground: 38 42% 88%;
+    --card: 30 24% 10%;
+    --card-foreground: 38 42% 88%;
+    --popover: 30 22% 9%;
+    --popover-foreground: 38 42% 88%;
+    --primary: 40 47% 56%;
+    --primary-foreground: 30 22% 10%;
+    --secondary: 30 18% 16%;
+    --secondary-foreground: 38 30% 80%;
+    --muted: 30 16% 14%;
+    --muted-foreground: 32 14% 58%;
+    --accent: 30 18% 18%;
+    --accent-foreground: 38 42% 88%;
+    --destructive: 8 52% 42%;
+    --destructive-foreground: 38 42% 92%;
+    --border: 30 16% 18%;
+    --input: 30 16% 18%;
+    --ring: 40 47% 56%;
+    --radius: 0.3rem;
 
-  /* Game-semantic colors — fixed regardless of brand chrome */
-  --faction-rohan: #5ecb6b;
-  --faction-rohan-deep: #2d6a35;
-  --faction-isengard: #e05555;
-  --faction-isengard-deep: #8b1a1a;
-  --stat-good: #5ecb6b;
-  --stat-warn: #c8941a;
-  --stat-bad: #e05555;
-  --status-contested: #c8941a;
-  --status-contested-deep: #8b6914;
-}
+    --north: 205 38% 54%;
+    --north-deep: 205 48% 18%;
+    --west: 8 48% 52%;
+    --west-deep: 8 52% 14%;
+    --good: 142 38% 48%;
+    --warn: 40 47% 56%;
+    --bad: 8 58% 52%;
 
-body {
-  background-color: var(--color-bg);
-  color: var(--color-body);
-  font-family: var(--font-sans), Inter, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-  -webkit-font-smoothing: antialiased;
+    --color-bg: hsl(var(--background));
+    --color-surface: hsl(var(--card));
+    --color-border: hsl(var(--border));
+    --color-border-dim: hsl(30 16% 14%);
+    --color-primary: hsl(var(--primary));
+    --color-primary-soft: hsl(40 52% 66%);
+    --color-primary-deep: hsl(40 42% 42%);
+    --color-ink: hsl(var(--foreground));
+    --color-ink-strong: hsl(38 50% 94%);
+    --color-body: hsl(38 18% 72%);
+    --color-mute: hsl(var(--muted-foreground));
+
+    --faction-rohan: hsl(var(--north));
+    --faction-rohan-deep: hsl(var(--north-deep));
+    --faction-isengard: hsl(var(--west));
+    --faction-isengard-deep: hsl(var(--west-deep));
+    --stat-good: hsl(var(--good));
+    --stat-warn: hsl(var(--warn));
+    --stat-bad: hsl(var(--bad));
+    --status-contested: hsl(var(--warn));
+    --status-contested-deep: 40 42% 32%;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  html,
+  body {
+    @apply bg-background text-foreground antialiased;
+  }
+
+  body {
+    font-family: var(--font-sans), Inter, system-ui, sans-serif;
+    background-image:
+      radial-gradient(1200px 600px at 50% -10%, hsl(40 30% 18% / 0.18), transparent 55%),
+      linear-gradient(180deg, hsl(30 22% 8%) 0%, hsl(30 22% 6%) 100%);
+    min-height: 100dvh;
+  }
 }
 
 @layer components {
@@ -41,118 +81,50 @@ body {
     height: 100dvh;
     flex-direction: column;
     overflow: hidden;
-    background-color: var(--color-bg);
+    background-color: hsl(var(--background));
   }
 
   .game-scroll {
     @apply min-h-0 flex-1 overflow-y-auto overscroll-contain;
   }
 
-  /* Tactical label style — uppercase tracked, now Inter */
-  .game-label {
-    font-family: var(--font-sans), Inter, sans-serif;
-    font-size: 9px;
-    font-weight: 600;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--color-mute);
-  }
-
-  .game-text {
-    font-family: var(--font-sans), Inter, sans-serif;
-    font-size: 11px;
-    color: var(--color-body);
-  }
-
-  .game-panel {
-    border: 1px solid var(--color-border);
-    background-color: var(--color-surface);
-    border-radius: 8px;
-  }
-
-  /* Narrative text (debrief) — Inter italic, no separate serif face */
   .font-narrative {
-    font-family: var(--font-sans), Inter, sans-serif;
+    font-family: var(--font-display), Georgia, serif;
     font-style: italic;
-  }
-
-  /* Primary CTA button — Voltagent electric-green */
-  .btn-primary {
-    @apply font-sans uppercase tracking-wider;
-    background-color: var(--color-primary);
-    color: #101010;
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    padding: 10px 20px;
-    font-size: 11px;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: background-color 0.15s;
-  }
-  .btn-primary:hover {
-    background-color: var(--color-primary-soft);
-  }
-  .btn-primary:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  /* Hairline outline button */
-  .btn-outline {
-    @apply font-sans uppercase tracking-wider;
-    border: 1px solid var(--color-border);
-    color: var(--color-mute);
-    font-weight: 600;
-    letter-spacing: 0.06em;
-    padding: 10px 20px;
-    font-size: 11px;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: border-color 0.15s, color 0.15s;
-  }
-  .btn-outline:hover {
-    border-color: var(--color-primary);
-    color: var(--color-primary);
-  }
-  .btn-outline:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
   }
 }
 
-/* React Flow — wargame map */
+/* React Flow — campaign map */
 .game-map {
   @apply absolute inset-0;
-  background-color: var(--color-bg);
+  background-color: hsl(var(--background));
 }
 
 .game-map .react-flow {
   width: 100%;
   height: 100%;
-  background-color: var(--color-bg);
+  background-color: hsl(var(--background));
 }
 
 .game-map .react-flow__renderer {
-  background-color: var(--color-bg);
+  background-color: hsl(var(--background));
 }
 
 .game-map .react-flow__background {
-  background-color: var(--color-bg);
+  background-color: hsl(var(--background));
 }
 
-/* Road edges get the marching animation on the centre highlight stripe */
 .game-map .react-flow__edge.animated path:last-of-type {
   animation: march-dash 1.4s linear infinite;
 }
 
-/* All edges: subtle shadow for depth */
 .game-map .react-flow__edge-path {
-  filter: drop-shadow(0 1px 3px rgb(0 0 0 / 0.6));
+  filter: drop-shadow(0 1px 3px rgb(0 0 0 / 0.55));
 }
 
 .game-map .react-flow__edge.selected .react-flow__edge-path,
 .game-map .react-flow__edge:hover .react-flow__edge-path {
-  filter: drop-shadow(0 0 5px rgb(255 255 255 / 0.15));
+  filter: drop-shadow(0 0 5px hsl(40 47% 56% / 0.28));
 }
 
 @keyframes march-dash {
@@ -166,9 +138,9 @@ body {
   right: 8px;
   width: 108px !important;
   height: 76px !important;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background-color: var(--color-surface) !important;
+  border: 1px solid hsl(var(--border));
+  border-radius: var(--radius);
+  background-color: hsl(var(--card)) !important;
 }
 
 .game-map .react-flow__controls {
@@ -176,7 +148,12 @@ body {
   left: 8px;
 }
 
-/* Handles are invisible — layout only */
+.game-map .react-flow__controls-button {
+  background: hsl(var(--card)) !important;
+  border-bottom: 1px solid hsl(var(--border)) !important;
+  fill: hsl(var(--muted-foreground)) !important;
+}
+
 .game-map .react-flow__handle {
   opacity: 0 !important;
   pointer-events: none !important;
@@ -187,10 +164,12 @@ body {
   border: none !important;
 }
 
-/* Pick-mode hint overlay */
 .pick-hint {
-  @apply pointer-events-none absolute left-2 top-2 z-10 max-w-[200px] rounded-md border px-2 py-1.5 text-[11px] leading-snug shadow-lg backdrop-blur;
-  border-color: rgba(0, 217, 146, 0.4);
-  background-color: rgba(16, 16, 16, 0.95);
-  color: var(--color-primary-soft);
+  @apply pointer-events-none absolute left-2 top-2 z-10 max-w-[240px] rounded-md border border-primary/40 bg-background/95 px-3 py-2 text-sm leading-snug text-primary shadow-lg backdrop-blur;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .game-map .react-flow__edge.animated path:last-of-type {
+    animation: none;
+  }
 }

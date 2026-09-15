@@ -7,6 +7,8 @@ import {
   activeLordId,
   pendingInvitesForFaction,
 } from "../lib/converse-client";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 interface Props {
   state: GameState;
@@ -47,82 +49,26 @@ export default function ConversationDock({ state, dispatch }: Props) {
     : null;
 
   const showCompose = !focused;
-  const isCouncil = focused?.kind === "war_council";
-  const width = isCouncil ? 380 : 340;
 
   return (
-    <div
-      style={{
-        width,
-        maxWidth: width,
-        flexShrink: 0,
-        height: "100%",
-        minHeight: 0,
-        overflow: "hidden",
-        borderLeft: "1px solid #1e1e1e",
-        background: "#0a0a0a",
-        display: "flex",
-        flexDirection: "column",
-        fontFamily: "var(--font-mono), monospace",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "10px 14px",
-          borderBottom: "1px solid #1e1e1e",
-          flexShrink: 0,
-          background: "#0c0c0c",
-        }}
-      >
-        <div
-          style={{
-            color: "#c8941a",
-            fontSize: 10,
-            fontWeight: 700,
-            textTransform: "uppercase",
-            letterSpacing: "0.16em",
-          }}
-        >
-          Talk
-        </div>
-        <div style={{ display: "flex", gap: 8 }}>
-          <button
+    <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+      <div className="flex shrink-0 items-center justify-between border-b border-border px-3 py-2">
+        <div className="text-[12px] font-medium text-muted-foreground">Conversations</div>
+        <div className="flex gap-1.5">
+          <Button
             type="button"
-            onClick={() =>
-              dispatch({ type: "FOCUS_CONVERSATION", threadId: null })
-            }
-            style={{
-              ...chipBtn,
-              color: showCompose ? "#c8941a" : "#666",
-              borderColor: showCompose ? "#3a2a00" : "#2a2a2a",
-            }}
+            size="sm"
+            variant={showCompose ? "secondary" : "outline"}
+            className="h-7 px-2 text-[12px]"
+            onClick={() => dispatch({ type: "FOCUS_CONVERSATION", threadId: null })}
           >
             New
-          </button>
-          <button
-            type="button"
-            onClick={() => dispatch({ type: "TOGGLE_TALK_PICKER" })}
-            style={chipBtn}
-          >
-            Close
-          </button>
+          </Button>
         </div>
       </div>
 
       {threads.length > 0 && (
-        <div
-          style={{
-            display: "flex",
-            gap: 6,
-            padding: "8px 10px",
-            borderBottom: "1px solid #1a1a1a",
-            overflowX: "auto",
-            flexShrink: 0,
-          }}
-        >
+        <div className="flex shrink-0 gap-1.5 overflow-x-auto border-b border-border px-2.5 py-2">
           {threads.map((t) => {
             const active = t.id === focusedId && !showCompose;
             const pending =
@@ -135,42 +81,16 @@ export default function ConversationDock({ state, dispatch }: Props) {
                 onClick={() =>
                   dispatch({ type: "FOCUS_CONVERSATION", threadId: t.id })
                 }
-                style={{
-                  flexShrink: 0,
-                  background: active
+                className={cn(
+                  "min-w-[100px] shrink-0 rounded-sm border px-2.5 py-1.5 text-left text-[12px]",
+                  active
                     ? t.kind === "war_council"
-                      ? "#1a1510"
-                      : "#141820"
-                    : "#101010",
-                  border: `1px solid ${
-                    active
-                      ? t.kind === "war_council"
-                        ? "#3a2a00"
-                        : "#2a3a4a"
-                      : "#222"
-                  }`,
-                  color: active ? "#ddd" : "#777",
-                  padding: "6px 10px",
-                  cursor: "pointer",
-                  fontFamily: "inherit",
-                  fontSize: 10,
-                  textAlign: "left",
-                  minWidth: 100,
-                }}
+                      ? "border-primary/40 bg-primary/10 text-foreground"
+                      : "border-north/40 bg-north-deep text-foreground"
+                    : "border-border bg-background text-muted-foreground"
+                )}
               >
-                <div
-                  style={{
-                    color: active
-                      ? t.kind === "war_council"
-                        ? "#c8941a"
-                        : "#8ab"
-                      : "#666",
-                    fontSize: 8,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.1em",
-                    marginBottom: 2,
-                  }}
-                >
+                <div className="text-[10px] text-muted-foreground">
                   {t.kind === "war_council"
                     ? "Council"
                     : pending
@@ -184,14 +104,7 @@ export default function ConversationDock({ state, dispatch }: Props) {
         </div>
       )}
 
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          display: "flex",
-          flexDirection: "column",
-        }}
-      >
+      <div className="flex min-h-0 flex-1 flex-col">
         {showCompose || !focused ? (
           <CharacterPicker state={state} dispatch={dispatch} embedded />
         ) : (
@@ -206,15 +119,3 @@ export default function ConversationDock({ state, dispatch }: Props) {
     </div>
   );
 }
-
-const chipBtn: React.CSSProperties = {
-  background: "transparent",
-  border: "1px solid #2a2a2a",
-  color: "#666",
-  fontSize: 9,
-  cursor: "pointer",
-  padding: "4px 8px",
-  fontFamily: "inherit",
-  textTransform: "uppercase",
-  letterSpacing: "0.1em",
-};

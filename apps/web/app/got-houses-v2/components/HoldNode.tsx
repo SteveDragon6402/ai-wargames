@@ -255,12 +255,11 @@ function HoldNode({ data }: { data: HoldNodeData }) {
         {/* Hold name */}
         <div
           style={{
-            fontFamily: MONO,
-            fontSize: 9,
-            fontWeight: 700,
-            textTransform: "uppercase",
-            letterSpacing: "0.08em",
-            color: isSelected ? "#c8941a" : isMoveTarget ? "#f0b429" : "#aaa",
+            fontFamily: "var(--font-display), Georgia, serif",
+            fontSize: 13,
+            fontWeight: 600,
+            letterSpacing: "0.01em",
+            color: isSelected ? "#c4a35a" : isMoveTarget ? "#e0c07a" : "#d8cbb4",
             lineHeight: 1.3,
             whiteSpace: "nowrap",
             overflow: "hidden",
