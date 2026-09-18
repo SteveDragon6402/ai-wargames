@@ -1864,6 +1864,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           continue;
         }
 
+        if ((battle.engagement ?? "field") === "storm") {
+          // A storm is one fight at the walls. Leftover hosts stay in camp or
+          // take the seat — they do not get a second field battle the same day.
+          continue;
+        }
+
         newLastStandHolds.add(battle.holdId);
         if (lastStandBattles.some((b) => b.holdId === battle.holdId)) continue;
         lastStandBattles.push({
@@ -1874,6 +1880,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           westFromHoldId: battle.westFromHoldId,
           armyApproaches: battle.armyApproaches,
           armyOrders: battle.armyOrders,
+          engagement: battle.engagement,
+          garrisonHoldId: battle.garrisonHoldId,
+          wallsStand: battle.wallsStand,
+          combinedAssault: battle.combinedAssault,
+          seatLine: battle.seatLine,
           lastStand: true,
         });
       }
@@ -2931,6 +2942,13 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case "OPEN_GARRISON_PANEL": {
+      const hs = state.holdStates?.[action.holdId];
+      if (
+        action.mode === "deposit" &&
+        !isGarrisonable(getCastleSeed(action.holdId), hs)
+      ) {
+        return state;
+      }
       return {
         ...state,
         garrisonPanel: {
@@ -3504,9 +3522,10 @@ function applyGarrisonTransfer(
   transfer: GarrisonTransfer
 ): GameState {
   const seed = getCastleSeed(transfer.holdId);
-  if (!isGarrisonable(seed)) return state;
   const hs = state.holdStates?.[transfer.holdId];
   if (!hs) return state;
+  if (transfer.mode === "deposit" && !isGarrisonable(seed, hs)) return state;
+  if (!isGarrisonable(seed) && !hs.razed) return state;
 
   const takeMen = transfer.units.reduce((s, u) => s + u.count, 0);
   if (takeMen <= 0 && transfer.leaderNames.length === 0 && transfer.notableNames.length === 0) {

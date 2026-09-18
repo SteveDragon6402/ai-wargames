@@ -14,6 +14,7 @@ import {
   presenceNote,
   reconcilePledges,
   resolveSelectableArmy,
+  tickSieges,
 } from "./siege";
 import { army, holdRuntime } from "./test-helpers";
 
@@ -269,6 +270,92 @@ describe("foldSiegeIntoBattles", () => {
     );
     assert.equal(out.length, 1);
     assert.equal(out[0].engagement, "storm");
+    assert.equal(out[0].combinedAssault, false);
+    const gid = garrisonArmyId(holdId);
+    assert.ok(out[0].northArmies.some((a) => a.id === gid));
+    assert.equal(out[0].armyOrders?.[gid], "fortify");
+  });
+
+  it("keeps the garrison on the walls for a storm with no friendly field host", () => {
+    const holdId = "16";
+    const west = army({ id: "army-tywin", faction: "westerlands", holdId });
+    const hs = holdRuntime({
+      homeFaction: "north",
+      controller: "north",
+      garrison: {
+        faction: "north",
+        units: [{ house: "Tully", type: "infantry", count: 2000 }],
+        leaders: [],
+        notables: [],
+        morale: "Holding",
+        tiredness: "Tired",
+        stance: "On the walls",
+      },
+      siege: {
+        besiegerFaction: "westerlands",
+        armyIds: ["army-tywin"],
+        turns: 2,
+        terms: null,
+      },
+    });
+    const out = foldSiegeIntoBattles(
+      [],
+      [west],
+      { [holdId]: hs },
+      ["army-tywin"],
+      [],
+      {}
+    );
+    assert.equal(out.length, 1);
+    assert.equal(out[0].engagement, "storm");
+    assert.equal(out[0].combinedAssault, false);
+    const gid = garrisonArmyId(holdId);
+    assert.ok(out[0].northArmies.some((a) => a.id === gid));
+    assert.ok(!out[0].northArmies.some((a) => a.id === "army-robb"));
+    assert.equal(out[0].armyOrders?.[gid], "fortify");
+  });
+
+  it("collapses a field clash and a storm at the same seat into one battle", () => {
+    const holdId = "16";
+    const north = army({ id: "army-robb", faction: "north", holdId });
+    const west = army({ id: "army-tywin", faction: "westerlands", holdId });
+    const hs = holdRuntime({
+      homeFaction: "north",
+      controller: "north",
+      garrison: {
+        faction: "north",
+        units: [{ house: "Tully", type: "infantry", count: 2000 }],
+        leaders: [],
+        notables: [],
+        morale: "Holding",
+        tiredness: "Tired",
+        stance: "On the walls",
+      },
+      siege: {
+        besiegerFaction: "westerlands",
+        armyIds: ["army-tywin"],
+        turns: 2,
+        terms: null,
+      },
+    });
+    const field = {
+      holdId,
+      northArmies: [north],
+      westArmies: [west],
+      engagement: "field" as const,
+    };
+    const out = foldSiegeIntoBattles(
+      [field, { ...field }],
+      [north, west],
+      { [holdId]: hs },
+      ["army-tywin"],
+      [],
+      {}
+    );
+    assert.equal(out.length, 1);
+    assert.equal(out[0].engagement, "storm");
+    assert.equal(out[0].combinedAssault, true);
+    assert.equal(out[0].armyOrders?.[garrisonArmyId(holdId)], "march");
   });
 
   it("leaves a field fight outside a living garrison as field-only", () => {
@@ -337,8 +424,53 @@ describe("foldSiegeIntoBattles", () => {
     assert.equal(out[0].engagement, "sally");
     assert.equal(out[0].combinedAssault, true);
     assert.ok(out[0].northArmies.some((a) => a.id.startsWith("garrison:")));
+    assert.equal(out[0].armyOrders?.[garrisonArmyId(holdId)], "march");
   });
 });
+
+describe("tickSieges contested field", () => {
+  it("does not lift a living investment just because a relief host arrived", () => {
+    const holdId = "16";
+    const garrisonCount = 2000;
+    const west = army({
+      id: "army-tywin",
+      faction: "westerlands",
+      holdId,
+      units: [
+        {
+          house: "Lannister",
+          type: "infantry",
+          count: minimumSiegeForce(garrisonCount),
+        },
+      ],
+    });
+    const north = army({ id: "army-robb", faction: "north", holdId });
+    const hs = holdRuntime({
+      homeFaction: "north",
+      controller: "north",
+      garrison: {
+        faction: "north",
+        units: [{ house: "Tully", type: "infantry", count: garrisonCount }],
+        leaders: [],
+        notables: [],
+        morale: "Holding",
+        tiredness: "Tired",
+        stance: "On the walls",
+      },
+      siege: {
+        besiegerFaction: "westerlands",
+        armyIds: ["army-tywin"],
+        turns: 3,
+        terms: null,
+      },
+    });
+    const ticked = tickSieges(4, [west, north], { [holdId]: hs }, { [holdId]: hs });
+    assert.ok(ticked.holdStates[holdId].siege);
+    assert.equal(ticked.holdStates[holdId].siege?.besiegerFaction, "westerlands");
+    assert.ok(!ticked.events.some((e) => /lifted/i.test(e.summary)));
+  });
+});
+
 
 describe("resolveSelectableArmy", () => {
   it("returns the posted garrison as a selectable host", () => {

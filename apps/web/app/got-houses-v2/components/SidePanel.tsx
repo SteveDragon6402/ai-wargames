@@ -1,10 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { X } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronRight, PanelRightClose, X } from "lucide-react";
 import type { GameState, GameAction, Army, Faction } from "../types";
 import { HOLDS_MAP } from "../data/holds";
-import { getCastleSeed } from "../data/castles";
 import { regionTrait } from "../data/regions";
 import {
   freeCapacity,
@@ -35,7 +34,7 @@ import SeatFatePanel from "./SeatFatePanel";
 import TheaterOverview from "./TheaterOverview";
 import { OrderButton, OrderGroup } from "./chrome/OrderButton";
 import { prisonersAt, prisonersWith } from "../lib/prisoners";
-import { canRaze } from "../lib/raze";
+import { canRaze, effectiveCastleSeed } from "../lib/raze";
 import { blockingChoicesFor, choiceAtHold } from "../lib/pending-choices";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -54,6 +53,7 @@ const FACTION_LABEL: Record<Faction, string> = {
 
 export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
   const [parleyError, setParleyError] = useState<string | null>(null);
+  const [railOpen, setRailOpen] = useState(true);
   const { selectedHoldId, selectedArmyIds, moveMode, armies, activeFaction, adminMode } = state;
   const talkOpen = state.talkPickerOpen && state.phase === "planning";
 
@@ -147,8 +147,10 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
   const canIssueStance = !!singleSelected && ownsSelection && !isLocked;
 
   const holdRuntime = selectedHoldId ? state.holdStates?.[selectedHoldId] : undefined;
-  const castleSeed = selectedHoldId ? getCastleSeed(selectedHoldId) : undefined;
-  const garrisonable = !!castleSeed && isGarrisonable(castleSeed);
+  const castleSeed = selectedHoldId
+    ? effectiveCastleSeed(selectedHoldId, holdRuntime)
+    : undefined;
+  const garrisonable = !!castleSeed && isGarrisonable(castleSeed, holdRuntime);
   const garrisonMen = holdRuntime ? garrisonHeadcount(holdRuntime.garrison) : 0;
   const freeSlots = holdRuntime && selectedHoldId
     ? freeCapacity(selectedHoldId, holdRuntime)
@@ -292,11 +294,47 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
   const lockedHint = "Orders are locked for this side.";
   const notYoursHint = "Select one of your hosts to issue this order.";
 
+  useEffect(() => {
+    try {
+      if (localStorage.getItem("wargame-rail") === "0") setRailOpen(false);
+    } catch {
+      /* ignore */
+    }
+  }, []);
+
+  function toggleRail() {
+    setRailOpen((open) => {
+      const next = !open;
+      try {
+        localStorage.setItem("wargame-rail", next ? "1" : "0");
+      } catch {
+        /* ignore */
+      }
+      return next;
+    });
+  }
+
+  if (!railOpen) {
+    return (
+      <aside className="flex h-full w-10 shrink-0 flex-col border-l border-border bg-card">
+        <button
+          type="button"
+          onClick={toggleRail}
+          title="Open inspector"
+          className="flex h-full flex-col items-center gap-3 px-1 py-3 text-muted-foreground hover:bg-accent hover:text-foreground"
+        >
+          <ChevronRight className="size-4" />
+          <span className="text-[11px] [writing-mode:vertical-rl]">Inspect</span>
+        </button>
+      </aside>
+    );
+  }
+
   return (
-    <aside className="flex h-full w-[360px] min-w-0 shrink-0 flex-col self-stretch border-l border-border bg-card">
+    <aside className="flex h-full w-[min(360px,100%)] min-w-0 max-w-full shrink-0 flex-col self-stretch overflow-hidden border-l border-border bg-card">
       <div className="flex shrink-0 items-start justify-between gap-2 border-b border-border px-4 py-3">
-        <div className="min-w-0">
-          <div className="font-display text-xl font-semibold leading-tight text-foreground">
+        <div className="min-w-0 overflow-hidden">
+          <div className="truncate font-display text-xl font-semibold leading-tight text-foreground">
             {hold?.name ?? "Theater"}
           </div>
           {hold ? (
@@ -310,18 +348,30 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
             </div>
           )}
         </div>
-        {selectedHoldId && (
+        <div className="flex shrink-0 items-center gap-0.5">
+          {selectedHoldId && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="size-7 text-muted-foreground"
+              title="Close this seat"
+              onClick={() => dispatch({ type: "SELECT_HOLD", holdId: null })}
+            >
+              <X className="size-4" />
+            </Button>
+          )}
           <Button
             type="button"
             variant="ghost"
             size="icon"
-            className="size-7 shrink-0 text-muted-foreground"
-            title="Close this seat"
-            onClick={() => dispatch({ type: "SELECT_HOLD", holdId: null })}
+            className="size-7 text-muted-foreground"
+            title="Collapse inspector"
+            onClick={toggleRail}
           >
-            <X className="size-4" />
+            <PanelRightClose className="size-4" />
           </Button>
-        )}
+        </div>
       </div>
 
       {state.phase === "planning" && (
@@ -378,7 +428,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                     key={c.id}
                     type="button"
                     onClick={() => dispatch({ type: "SELECT_HOLD", holdId: c.holdId })}
-                    className="block w-full rounded-sm border border-primary/40 bg-primary/10 px-3 py-2 text-left text-[12px] text-primary"
+                    className="block w-full break-words rounded-sm border border-primary/40 bg-primary/10 px-3 py-2 text-left text-[12px] text-primary"
                   >
                     Fate unpaid — {c.headline}
                   </button>
@@ -387,9 +437,21 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
             )}
 
             {showOrders && (
-              <section className="space-y-3 border-b border-border px-4 py-3">
-                <div className="text-[11px] font-medium text-muted-foreground">
-                  Orders
+              <section className="min-w-0 space-y-3 overflow-hidden border-b border-border px-4 py-3">
+                <div className="flex items-baseline justify-between gap-2">
+                  <div className="text-[11px] font-medium text-muted-foreground">
+                    Orders
+                  </div>
+                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                    <span className="inline-flex items-center gap-1">
+                      <span className="size-1.5 rounded-full bg-primary" />
+                      this turn
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      <span className="size-1.5 rounded-full border border-muted-foreground" />
+                      free
+                    </span>
+                  </div>
                 </div>
                 {moveMode.active ? (
                   <div className="flex items-center gap-2">
@@ -419,6 +481,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                             }
                             disabled={!canMove}
                             accent
+                            spendsTurn
                             onClick={() => dispatch({ type: "BEGIN_MOVE" })}
                           />
                         </OrderGroup>
@@ -428,6 +491,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                               label="Rest"
                               hint="Spend the turn recovering condition. The host will not march."
                               active={singleArmyStanceOrder === "rest"}
+                              spendsTurn
                               onClick={() =>
                                 dispatch({
                                   type: "SET_STANCE_ORDER",
@@ -454,6 +518,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                                   : "Dig in at this seat. The host will not march."
                               }
                               active={singleArmyStanceOrder === "fortify"}
+                              spendsTurn
                               onClick={() =>
                                 dispatch({
                                   type: "SET_STANCE_ORDER",
@@ -467,7 +532,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                           {canIssueStance && (
                             <OrderButton
                               label="Speech"
-                              hint="Address the men to raise morale. Once per host per turn."
+                              hint="Address the men to raise morale. Once per host per turn — it does not stop a march."
                               disabledHint="This host already heard a speech this turn."
                               disabled={state.speechesThisTurn.includes(singleSelected!.id)}
                               active={state.speechArmyId === singleSelected!.id}
@@ -518,6 +583,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                               label="Storm"
                               hint="Assault the walls this turn instead of starving them out."
                               active={stormActive}
+                              spendsTurn
                               onClick={() =>
                                 dispatch({
                                   type: "SET_STORM_ORDER",
@@ -540,7 +606,8 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                                   ? "Cancel raze"
                                   : "Raze"
                               }
-                              hint="Burn this seat. It will not feed or shelter anyone after."
+                              hint="Burn this seat this turn. It will not feed or shelter anyone after."
+                              spendsTurn
                               onClick={() => {
                                 const army = selectedArmies.find((a) =>
                                   canRaze(a, selectedHoldId, holdRuntime).ok
@@ -608,6 +675,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                           hint="The garrison rides out against the besiegers this turn."
                           active={sallyActive}
                           accent
+                          spendsTurn
                           onClick={() =>
                             dispatch({
                               type: "SET_SALLY_ORDER",
@@ -623,11 +691,13 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
               </section>
             )}
 
-            {garrisonable && holdRuntime && castleSeed && (
+            {castleSeed && castleSeed.siteKind !== "open" && holdRuntime && (
               <PanelSection
                 title="Seat"
                 hint={
-                  holdRuntime.siege
+                  holdRuntime.razed
+                    ? "Burned ruin"
+                    : holdRuntime.siege
                     ? `Garrison ${garrisonMen.toLocaleString()} · siege`
                     : `Garrison ${garrisonMen.toLocaleString()}`
                 }
@@ -636,42 +706,22 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                   !!myFateHere ||
                   holdPrisoners.length > 0 ||
                   armyPrisoners.length > 0 ||
-                  !!openPledge
+                  !!openPledge ||
+                  !!holdRuntime.razed
                 }
                 accent={!!myFateHere || !!holdRuntime.siege}
               >
-                <p className="text-[12px] text-muted-foreground">
-                  {castleSeed.siteKind} · held by{" "}
-                  {holdRuntime.controller ?? "no one"} · home{" "}
-                  {holdRuntime.homeFaction}
-                </p>
-                <p className="mt-1 font-mono text-[13px] text-foreground">
-                  Garrison {garrisonMen.toLocaleString()} /{" "}
-                  {castleSeed.capacity.toLocaleString()}
-                </p>
-                <p className="mt-0.5 text-[12px] text-muted-foreground">
-                  Usual strength {castleSeed.defaultGarrison.toLocaleString()} ·{" "}
-                  {freeSlots.toLocaleString()} free
-                </p>
-                {holdRuntime.garrison.leaders.length > 0 && (
-                  <p className="mt-1 text-[12px] text-muted-foreground">
-                    Command:{" "}
-                    {holdRuntime.garrison.leaders.map((l) => l.name).join(", ")}
+                <div className="flex items-baseline justify-between gap-2">
+                  <p className="min-w-0 truncate text-[12px] text-muted-foreground">
+                    {castleSeed.siteKind} · {holdRuntime.controller ?? "unheld"}
                   </p>
-                )}
-                <p className="mt-1 text-[13px] italic leading-relaxed text-muted-foreground">
-                  {holdRuntime.supplies}
-                </p>
-                {gSoft && garrisonMen > 0 && (
-                  <div className="mt-2 space-y-0.5 text-[12px] text-muted-foreground">
-                    <div>Morale: {gSoft.morale}</div>
-                    <div>Condition: {gSoft.tiredness}</div>
-                    <div>Stance: {gSoft.stance}</div>
-                  </div>
-                )}
-                {holdRuntime.foodDaysRemaining != null && (
-                  <p className="mt-1 text-[12px] text-muted-foreground">
-                    Food ~{holdRuntime.foodDaysRemaining} days
+                  <p className="shrink-0 font-mono text-[13px] text-foreground">
+                    {garrisonMen.toLocaleString()} / {castleSeed.capacity.toLocaleString()}
+                  </p>
+                </div>
+                {holdRuntime.razed && (
+                  <p className="mt-2 text-[13px] text-bad">
+                    Put to the torch — no garrison can be posted here.
                   </p>
                 )}
                 {holdRuntime.siege && (
@@ -682,16 +732,44 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                       : "the Westerlands"}
                   </p>
                 )}
-                {holdRuntime.postSiegeTurnsLeft > 0 && !holdRuntime.siege && (
-                  <p className="mt-1 text-[12px] text-muted-foreground">
-                    Post-siege recovery ({holdRuntime.postSiegeTurnsLeft})
-                  </p>
-                )}
                 {wallsBrokenOpen && (
                   <p className="mt-2 text-[13px] text-primary">
                     Walls broken — gates forced
                   </p>
                 )}
+                <MoreDetails>
+                  <p className="text-[12px] text-muted-foreground">
+                    Home {holdRuntime.homeFaction} · usual{" "}
+                    {castleSeed.defaultGarrison.toLocaleString()} ·{" "}
+                    {freeSlots.toLocaleString()} free
+                  </p>
+                  {holdRuntime.garrison.leaders.length > 0 && (
+                    <p className="mt-1 truncate text-[12px] text-muted-foreground">
+                      Command:{" "}
+                      {holdRuntime.garrison.leaders.map((l) => l.name).join(", ")}
+                    </p>
+                  )}
+                  <p className="mt-1 break-words text-[13px] italic leading-relaxed text-muted-foreground">
+                    {holdRuntime.supplies}
+                  </p>
+                  {gSoft && garrisonMen > 0 && (
+                    <div className="mt-2 space-y-0.5 break-words text-[12px] text-muted-foreground">
+                      <div>Morale: {gSoft.morale}</div>
+                      <div>Condition: {gSoft.tiredness}</div>
+                      <div>Stance: {gSoft.stance}</div>
+                    </div>
+                  )}
+                  {holdRuntime.foodDaysRemaining != null && (
+                    <p className="mt-1 text-[12px] text-muted-foreground">
+                      Food ~{holdRuntime.foodDaysRemaining} days
+                    </p>
+                  )}
+                  {holdRuntime.postSiegeTurnsLeft > 0 && !holdRuntime.siege && (
+                    <p className="mt-1 text-[12px] text-muted-foreground">
+                      Post-siege recovery ({holdRuntime.postSiegeTurnsLeft})
+                    </p>
+                  )}
+                </MoreDetails>
                 {openPledge && (
                   <div className="mt-2 rounded-sm border border-primary/40 bg-primary/10 px-2.5 py-2 text-[12px] leading-relaxed text-primary">
                     Seat taken — walls empty.
@@ -906,6 +984,18 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
         </>
       )}
     </aside>
+  );
+}
+
+function MoreDetails({ children }: { children: React.ReactNode }) {
+  return (
+    <details className="group/more mt-2">
+      <summary className="cursor-pointer list-none text-[11px] font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+        <span className="group-open/more:hidden">More</span>
+        <span className="hidden group-open/more:inline">Less</span>
+      </summary>
+      <div className="mt-1">{children}</div>
+    </details>
   );
 }
 

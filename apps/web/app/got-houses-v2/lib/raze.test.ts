@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { getCastleSeed } from "../data/castles";
 import { army, holdRuntime } from "./test-helpers";
 import { buildInitialForage } from "./forage";
-import { recoverNativeGarrisons, refillToDefault, freeCapacity } from "./hold-runtime";
+import { recoverNativeGarrisons, refillToDefault, freeCapacity, isGarrisonable } from "./hold-runtime";
+import { applyPresenceControl } from "./siege";
 import {
   applyRaze,
   beginRaze,
@@ -89,10 +90,16 @@ describe("a razed seat does not regrow", () => {
     assert.equal(recovered["16"].razed, true);
   });
 
-  it("holds half as many men", () => {
-    const raw = getCastleSeed("16");
+  it("cannot take a garrison — the walls are gone", () => {
     const razed = applyRaze("16", holdRuntime(), "north");
-    assert.equal(freeCapacity("16", razed), Math.floor(raw.capacity * 0.5));
+    assert.equal(freeCapacity("16", razed), 0);
+    assert.equal(isGarrisonable(effectiveCastleSeed("16", razed), razed), false);
+  });
+
+  it("still lets you man a native ruin", () => {
+    const seed = getCastleSeed("18");
+    assert.equal(isGarrisonable(seed), true);
+    assert.equal(isGarrisonable(seed, holdRuntime({ razed: false })), true);
   });
 });
 
@@ -157,5 +164,25 @@ describe("razed seats count for nobody", () => {
       northPrize: { holdId: "30", turnsHeld: 2 },
     });
     assert.equal(t3.outcome, null);
+  });
+});
+
+describe("presence on a razed seat", () => {
+  it("lets a host camp the ruin without opening a garrison pledge", () => {
+    const razed = applyRaze(
+      "16",
+      holdRuntime({ homeFaction: "north", controller: "north" }),
+      "north"
+    );
+    const west = army({
+      id: "w1",
+      faction: "westerlands",
+      holdId: "16",
+      units: [{ house: "Lannister", type: "infantry", count: 2000 }],
+    });
+    const out = applyPresenceControl(3, [west], { "16": razed });
+    assert.equal(out.pledges.length, 0);
+    assert.equal(out.holdStates["16"].controller, "westerlands");
+    assert.equal(out.holdStates["16"].garrison.units.length, 0);
   });
 });

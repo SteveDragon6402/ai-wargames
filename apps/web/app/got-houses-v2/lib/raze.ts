@@ -63,8 +63,8 @@ export function razeScar(holdName: string): string {
  * Tear the place down.
  *
  * The garrison is turned out, the stores are gone, and the scar is permanent.
- * Whoever ordered it keeps the ground — a razed seat is still occupiable, just
- * worthless as a prize.
+ * Whoever ordered it keeps the ground — a field host can still camp the ruin,
+ * but there are no walls left to garrison, and it counts for nobody's prize.
  */
 export function applyRaze(
   holdId: string,

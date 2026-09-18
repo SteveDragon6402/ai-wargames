@@ -344,7 +344,7 @@ export function yieldHold(opts: {
   const seed = getCastleSeed(holdId);
   const holdName = HOLDS_MAP.get(holdId)?.name ?? holdId;
 
-  if (!hs.siege || !isGarrisonable(seed)) {
+  if (!hs.siege || !isGarrisonable(seed, hs)) {
     return {
       holdStates: opts.holdStates,
       characters: opts.characters,

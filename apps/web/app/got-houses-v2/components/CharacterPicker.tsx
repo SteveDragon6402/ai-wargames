@@ -66,7 +66,7 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
   const castleTalkTargets: { holdId: string; label: string; sub: string }[] = [];
   for (const [holdId, hs] of Object.entries(state.holdStates ?? {})) {
     const seed = getCastleSeed(holdId);
-    if (!isGarrisonable(seed)) continue;
+    if (!isGarrisonable(seed, hs)) continue;
     const men = garrisonHeadcount(hs.garrison);
     if (men <= 0) continue;
 

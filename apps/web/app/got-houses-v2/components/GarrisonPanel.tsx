@@ -14,6 +14,7 @@ import {
   freeCapacity,
   garrisonHeadcount,
   isFriendlyTo,
+  isGarrisonable,
 } from "../lib/hold-runtime";
 import { minimumHoldingGarrison } from "../lib/siege";
 import { HOLDS_MAP } from "../data/holds";
@@ -123,6 +124,7 @@ function GarrisonPanelInner({
   const budget = mode === "deposit" ? free : maxWithdraw;
 
   let canConfirm = takeMen > 0 || leaderNames.length > 0 || notableNames.length > 0;
+  if (mode === "deposit" && !isGarrisonable(seed, hs)) canConfirm = false;
   if (mode === "deposit" && takeMen > free) canConfirm = false;
   if (mode === "withdraw" && takeMen > maxWithdraw) canConfirm = false;
 

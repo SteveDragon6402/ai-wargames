@@ -10,7 +10,6 @@ import type {
   HoldGarrison,
   HoldRuntime,
 } from "../types";
-import { getCastleSeed } from "../data/castles";
 import { effectiveCastleSeed } from "./raze";
 import { HOLDS_MAP } from "../data/holds";
 import {
@@ -314,10 +313,9 @@ function applySiegePresence(
   }
 
   for (const holdId of Object.keys(next)) {
-    // A razed seat reads as a ruin, which can still be manned and so can still
-    // be invested — you just are not besieging much of a castle.
+    // A razed seat cannot be manned, so it cannot be invested.
     const seed = effectiveCastleSeed(holdId, next[holdId]);
-    if (!isGarrisonable(seed)) {
+    if (!isGarrisonable(seed, next[holdId])) {
       if (next[holdId].siege) {
         next[holdId] = { ...next[holdId], siege: null };
       }
@@ -335,9 +333,16 @@ function applySiegePresence(
       armies.some((a) => a.holdId === holdId && a.faction === "north") &&
       armies.some((a) => a.holdId === holdId && a.faction === "westerlands");
 
-    // No invest: empty garrison, contested field, friendly sole presence, or a
-    // besieging force too thin to close the ring.
-    if (men <= 0 || contested || !investor) {
+    // No invest: empty garrison, friendly sole presence, or a force too thin
+    // to close the ring. A contested field at a *living* siege is a battle,
+    // not a lift — folding storms/sallies happens after this tick, and lifting
+    // here used to drop the investment so a storm resolved as a field fight
+    // (garrison rushing out) plus a leftover siege battle.
+    if (men <= 0 || !investor) {
+      if (contested && men > 0 && hs.siege) {
+        next[holdId] = { ...hs, skipUpdates: false };
+        continue;
+      }
       if (hs.siege) {
         const holdName = HOLDS_MAP.get(holdId)?.name ?? holdId;
         events.push(...eventsFromSiegeTick(turn, holdId, hs.siege, "lifted"));
@@ -461,7 +466,7 @@ export function minimumHoldingGarrison(
   hs?: HoldRuntime
 ): number {
   const seed = effectiveCastleSeed(holdId, hs);
-  if (!isGarrisonable(seed)) return 0;
+  if (!isGarrisonable(seed, hs)) return 0;
   const base = Math.min(
     seed.capacity,
     Math.max(150, Math.ceil(seed.defaultGarrison * 0.25))
@@ -498,7 +503,29 @@ export function applyPresenceControl(
   for (const [holdId, raw] of Object.entries(holdStates)) {
     const hs = normalizeHoldRuntime(raw);
     const seed = effectiveCastleSeed(holdId, hs);
-    if (!isGarrisonable(seed)) continue;
+    if (hs.razed) {
+      if (garrisonHeadcount(hs.garrison) > 0) continue;
+      const sole = soleFieldFaction(armies, holdId);
+      if (!sole || hs.controller === sole.faction) continue;
+      const holdName = HOLDS_MAP.get(holdId)?.name ?? holdId;
+      next[holdId] = {
+        ...hs,
+        controller: sole.faction,
+        siege: null,
+        skipUpdates: false,
+      };
+      events.push({
+        id: eid("ev"),
+        turn,
+        faction: sole.faction,
+        kind: "claim",
+        holdIds: [holdId],
+        summary: `${holdName} occupied`,
+        detail: `Turn ${turn}: ${sole.faction} camped the ruin of ${holdName}. There are no walls left to garrison.`,
+      });
+      continue;
+    }
+    if (!isGarrisonable(seed, hs)) continue;
     if (garrisonHeadcount(hs.garrison) > 0) continue;
 
     const sole = soleFieldFaction(armies, holdId);
@@ -568,6 +595,8 @@ export function reconcilePledges(
 
     // Someone else took it back, or it was never ours — the pledge is moot.
     if (!hs || hs.controller !== pledge.faction) continue;
+    // Burned while the pledge was still open: nothing left to man.
+    if (hs.razed) continue;
 
     const men = garrisonHeadcount(hs.garrison);
     if (men >= pledge.minimumMen) {
@@ -643,7 +672,7 @@ export function selectGarrisonsForConditionUpdate(
   for (const [holdId, raw] of Object.entries(holdStates)) {
     const hs = normalizeHoldRuntime(raw);
     const seed = effectiveCastleSeed(holdId, hs);
-    if (!isGarrisonable(seed)) continue;
+    if (!isGarrisonable(seed, hs)) continue;
     if (garrisonHeadcount(hs.garrison) <= 0) continue;
 
     let phase: GarrisonConditionPhase | null = null;
@@ -696,7 +725,8 @@ export function defenderFactionFor(hs: HoldRuntime, besieger: Faction): Faction 
  * A field clash at a living garrison that is *not* invested stays a field
  * battle — the walls are not in it. If the hold is invested and a host
  * friendly to the garrison hits the siege camp, the garrison sallies to help
- * even when nobody ordered a sally.
+ * even when nobody ordered a sally. A storm without that relief keeps the
+ * garrison on the walls; they do not rush out.
  */
 export function foldSiegeIntoBattles(
   fieldBattles: BattleContext[],
@@ -719,6 +749,23 @@ export function foldSiegeIntoBattles(
   const usedHolds = new Set<string>();
   const out: BattleContext[] = [];
 
+  function withGarrisonOrder(
+    battle: BattleContext,
+    garrisonId: string,
+    engagement: "storm" | "sally",
+    combined: boolean
+  ): BattleContext {
+    const onTheWalls = engagement === "storm" && !combined;
+    return {
+      ...battle,
+      armyOrders: {
+        ...armyOrdersMap,
+        ...(battle.armyOrders ?? {}),
+        [garrisonId]: onTheWalls ? "fortify" : "march",
+      },
+    };
+  }
+
   function attachGarrison(
     battle: BattleContext,
     hs: HoldRuntime,
@@ -740,17 +787,21 @@ export function foldSiegeIntoBattles(
         westArmies = [...westArmies, garrisonArmy];
       }
     }
-    return {
-      ...battle,
-      northArmies,
-      westArmies,
-      armyOrders: armyOrdersMap,
+    return withGarrisonOrder(
+      {
+        ...battle,
+        northArmies,
+        westArmies,
+        engagement,
+        garrisonHoldId: battle.holdId,
+        wallsStand: false,
+        combinedAssault: combined,
+        seatLine: battle.seatLine ?? battleSeatLine(battle.holdId, hs),
+      },
+      garrisonArmy.id,
       engagement,
-      garrisonHoldId: battle.holdId,
-      wallsStand: false,
-      combinedAssault: combined,
-      seatLine: battle.seatLine ?? battleSeatLine(battle.holdId, hs),
-    };
+      combined
+    );
   }
 
   for (const b of fieldBattles) {
@@ -763,7 +814,10 @@ export function foldSiegeIntoBattles(
       livingSiege && fieldHasDefenderHost(b, hs);
     const canFold = livingSiege && (storm || sally || reliefJoinsGarrison);
     if (canFold) {
-      out.push(attachGarrison(b, hs, storm ? "storm" : "sally", true));
+      // Only a sally (or a storm that a friendly field host is joining) pulls
+      // the garrison off the walls. A pure storm keeps them on the gate.
+      const combined = reliefJoinsGarrison;
+      out.push(attachGarrison(b, hs, storm ? "storm" : "sally", combined));
     } else {
       const men = hs ? garrisonHeadcount(hs.garrison) : 0;
       out.push({
@@ -795,16 +849,25 @@ export function foldSiegeIntoBattles(
       : [];
     const garrisonArmy = garrisonAsArmy(holdId, hs, defenderFaction);
     const defenderArmies = [...relief, garrisonArmy];
-    out.push({
-      holdId,
-      northArmies: besieger === "north" ? besiegerArmies : defenderArmies,
-      westArmies: besieger === "westerlands" ? besiegerArmies : defenderArmies,
-      armyOrders: armyOrdersMap,
-      engagement,
-      garrisonHoldId: holdId,
-      wallsStand: false,
-      seatLine: battleSeatLine(holdId, hs),
-    });
+    const combined = relief.length > 0;
+    out.push(
+      withGarrisonOrder(
+        {
+          holdId,
+          northArmies: besieger === "north" ? besiegerArmies : defenderArmies,
+          westArmies: besieger === "westerlands" ? besiegerArmies : defenderArmies,
+          armyOrders: armyOrdersMap,
+          engagement,
+          garrisonHoldId: holdId,
+          wallsStand: false,
+          combinedAssault: combined,
+          seatLine: battleSeatLine(holdId, hs),
+        },
+        garrisonArmy.id,
+        engagement,
+        combined
+      )
+    );
     usedHolds.add(holdId);
   }
 
@@ -823,7 +886,52 @@ export function foldSiegeIntoBattles(
     pushSiegeOnly(holdId, hs, "sally", true);
   }
 
-  return out;
+  return collapseSiegeBattles(out);
+}
+
+/** Never emit two fights at the same seat — a storm plus a sally is one battle. */
+function collapseSiegeBattles(battles: BattleContext[]): BattleContext[] {
+  const rank = (e: BattleContext["engagement"]) =>
+    e === "storm" ? 2 : e === "sally" ? 1 : 0;
+  const byHold = new Map<string, BattleContext>();
+  for (const b of battles) {
+    const prev = byHold.get(b.holdId);
+    if (!prev) {
+      byHold.set(b.holdId, b);
+      continue;
+    }
+    const keep = rank(b.engagement) >= rank(prev.engagement) ? b : prev;
+    const drop = keep === b ? prev : b;
+    const ids = new Set(keep.northArmies.concat(keep.westArmies).map((a) => a.id));
+    const extraNorth = drop.northArmies.filter((a) => !ids.has(a.id));
+    const extraWest = drop.westArmies.filter((a) => !ids.has(a.id));
+    const merged: BattleContext = {
+      ...keep,
+      northArmies: extraNorth.length
+        ? [...keep.northArmies, ...extraNorth]
+        : keep.northArmies,
+      westArmies: extraWest.length
+        ? [...keep.westArmies, ...extraWest]
+        : keep.westArmies,
+      armyOrders: { ...drop.armyOrders, ...keep.armyOrders },
+    };
+    byHold.set(b.holdId, {
+      ...merged,
+      // Garrison + extra armies is not automatically a sally. Combined only
+      // if a non-garrison host of the garrison's faction is actually here.
+      combinedAssault: siegeHasDefenderFieldHost(merged),
+    });
+  }
+  return [...byHold.values()];
+}
+
+function siegeHasDefenderFieldHost(battle: BattleContext): boolean {
+  const all = battle.northArmies.concat(battle.westArmies);
+  const garrison = all.find((a) => a.id.startsWith("garrison:"));
+  if (!garrison) return false;
+  return all.some(
+    (a) => !a.id.startsWith("garrison:") && a.faction === garrison.faction
+  );
 }
 
 /** A field host of the garrison's side is on this tile, hitting the siege camp. */

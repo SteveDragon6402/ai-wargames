@@ -75,6 +75,13 @@ export function forageAtHold(forage: ForageState | undefined, holdId: string): s
   return state.holds[holdId]?.line ?? holdForageSeed(holdId);
 }
 
+export function forageStepAtHold(
+  forage: ForageState | undefined,
+  holdId: string
+): ForageStep {
+  return normalizeForage(forage).holds[holdId]?.step ?? 0;
+}
+
 export function forageOnPath(
   forage: ForageState | undefined,
   a: string,

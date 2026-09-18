@@ -7,6 +7,8 @@ import {
   retreatingArmyIdsForReport,
 } from "./useGameState";
 import { army, battle } from "../lib/test-helpers";
+import { applyRaze } from "../lib/raze";
+import { garrisonHeadcount } from "../lib/hold-runtime";
 import { INITIAL_GAME_STATE } from "../data/initial-state";
 import type { GameState, RetreatEntry } from "../types";
 
@@ -217,6 +219,56 @@ describe("retreat ownership", () => {
     assert.equal(
       next.retreats.find((r) => r.armyId === northArmy!.id)?.chosenHoldId,
       "07"
+    );
+  });
+});
+
+describe("razed seats cannot be garrisoned", () => {
+  const host = army({
+    id: "army-robb",
+    faction: "north",
+    holdId: "16",
+    units: [{ house: "Stark", type: "infantry", count: 500 }],
+  });
+
+  function razedState(): GameState {
+    const baseHs = INITIAL_GAME_STATE.holdStates["16"];
+    const razed = applyRaze("16", baseHs, "north");
+    return {
+      ...INITIAL_GAME_STATE,
+      holdStates: { ...INITIAL_GAME_STATE.holdStates, "16": razed },
+      armies: [host],
+      selectedHoldId: "16",
+      selectedArmyIds: [host.id],
+    };
+  }
+
+  it("does not open the garrison panel", () => {
+    const next = gameReducer(razedState(), {
+      type: "OPEN_GARRISON_PANEL",
+      holdId: "16",
+      mode: "deposit",
+      armyId: host.id,
+    });
+    assert.equal(next.garrisonPanel, null);
+  });
+
+  it("rejects posting men onto the ruin", () => {
+    const next = gameReducer(razedState(), {
+      type: "GARRISON_TRANSFER",
+      transfer: {
+        holdId: "16",
+        armyId: host.id,
+        mode: "deposit",
+        units: [{ house: "Stark", type: "infantry", count: 100 }],
+        leaderNames: [],
+        notableNames: [],
+      },
+    });
+    assert.equal(garrisonHeadcount(next.holdStates["16"].garrison), 0);
+    assert.equal(
+      next.armies.find((a) => a.id === host.id)?.units[0]?.count,
+      500
     );
   });
 });

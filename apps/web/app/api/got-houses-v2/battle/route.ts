@@ -108,16 +108,27 @@ function armyBlock(
   army: Army,
   hold: Hold | undefined
 ): string {
-    const order = battle.armyOrders?.[army.id] ?? "march";
-    const statusLine =
-      order === "rest"
+    const isGarrison = army.id.startsWith("garrison:");
+    const order =
+      battle.armyOrders?.[army.id] ??
+      (isGarrison && battle.engagement === "storm" && !battle.combinedAssault
+        ? "fortify"
+        : "march");
+    const garrisonSallies =
+      isGarrison &&
+      (battle.engagement === "sally" || !!battle.combinedAssault);
+    const statusLine = isGarrison
+      ? garrisonSallies
+        ? "Order: SALLY — this garrison has come off the walls to help a friendly host already fighting in the field. They are not storming out on their own."
+        : "Order: HOLD THE WALLS — this garrison stays on the fortifications. They do NOT sally, sortie, or rush into the field. Fight them from towers, gates and battlements."
+      : order === "rest"
         ? "Order: EXPLICITLY RESTING — encamped, off-guard, not expecting to fight"
         : order === "fortify"
-          ? army.id.startsWith("garrison:")
-            ? "Order: FORTIFYING — strengthening the works inside the walls"
-            : battle.engagement === "sally" || battle.engagement === "storm"
-              ? "Order: DIGGING IN — defending the siege camp against anyone who hits the lines. Fieldworks around the walls, not occupation of the keep. A host friendly to the garrison is joined by a sally from the walls."
-              : "Order: FORTIFYING — digging in, constructing field defences"
+          ? battle.engagement === "sally" || battle.engagement === "storm"
+            ? battle.combinedAssault
+              ? "Order: DIGGING IN — defending the siege camp against anyone who hits the lines. Fieldworks around the walls, not occupation of the keep. A host friendly to the garrison is in this fight; the garrison has sallied to join them."
+              : "Order: DIGGING IN — defending the siege camp. Fieldworks around the walls, not occupation of the keep. The garrison remains on the walls — they have not sallied."
+            : "Order: FORTIFYING — digging in, constructing field defences"
           : "Order: MARCHING / ENGAGING";
 
   const commanders =
@@ -212,13 +223,17 @@ function buildChroniclerMessage(
     ? `\nTHIS IS A FIELD BATTLE before the walls of ${locationName}. The castle/city is NOT being stormed and is NOT taken if this field is won. A living garrison still holds the seat. Do not write as if the city has fallen.`
     : "";
   const combinedNote = battle.combinedAssault
-    ? `\nTHIS FIGHT IS SIMULTANEOUS: a storm of the gates, a sally from the walls, and a field host arriving all collide in one engagement. Adjudicate them as one battle, not as separate days.`
-    : "";
+    ? engagement === "storm"
+      ? `\nTHIS FIGHT IS ONE BATTLE: a storm of the gates and a friendly field host hitting the siege camp at the same time. The garrison leaves the walls ONLY to join that friendly host. Do not split this into two battles or two days.`
+      : `\nTHIS FIGHT IS ONE BATTLE: the garrison sallies to join a friendly field host against the siege camp. Adjudicate them as one engagement, not as separate days.`
+    : engagement === "storm"
+      ? `\nThe garrison does NOT sally. There is no friendly field host for them to join. They hold the walls. Do not write a sortie, a rush from the gates, or a second battle in the field.`
+      : "";
   const engagementNote =
     engagement === "storm"
       ? `\nENGAGEMENT TYPE: STORM THE GATES — field armies assault the walls against a defending GARRISON (its army id starts with "garrison:"). The garrison fights from fortifications; treat walls, towers and gates as decisive advantages for the defenders unless numbers or leadership overwhelm them. A failed storm does NOT drive the attacker from the country: they fall back to their siege camp and the investment continues. They only leave if the garrison is broken and the gates are forced, or if they are shattered as a host.${combinedNote}`
       : engagement === "sally"
-        ? `\nENGAGEMENT TYPE: SALLY OUT — the defending GARRISON sorties to help. If a field host friendly to the garrison has hit the siege camp, this is that relief fight: the garrison comes off the walls to join it, whether or not anyone ordered a sally. Besiegers who were digging in are defending their camp, not the keep.${combinedNote}`
+        ? `\nENGAGEMENT TYPE: SALLY OUT — the defending GARRISON sorties ONLY because a field host friendly to them has hit the siege camp (or they were explicitly ordered to sally into that camp). Besiegers who were digging in are defending their camp, not the keep.${combinedNote}`
         : wallsNote;
 
   const briefs = battle.commanderBriefs ?? [];

@@ -27,8 +27,9 @@ import type {
   Faction,
   MoveOrder,
 } from "../types";
-import { getCastleSeed, homeFactionForRegion } from "../data/castles";
+import { homeFactionForRegion } from "../data/castles";
 import { holdSpineColor, isGarrisonable } from "../lib/hold-runtime";
+import { effectiveCastleSeed } from "../lib/raze";
 import { headcountOf, minimumSiegeForce } from "../lib/siege";
 import HoldNode, {
   type GarrisonBand,
@@ -136,8 +137,8 @@ function MapInner({ state, dispatch }: Props) {
       const hs = state.holdStates?.[hold.id];
       const garrisonMen =
         hs?.garrison?.units?.reduce((s, u) => s + u.count, 0) ?? 0;
-      const seed = getCastleSeed(hold.id);
-      const garrisonable = isGarrisonable(seed);
+      const seed = effectiveCastleSeed(hold.id, hs);
+      const garrisonable = isGarrisonable(seed, hs);
 
       // Banded against the seat's own default, so "3,000 men" reads as strong
       // at a watchtower and thin at Winterfell.
