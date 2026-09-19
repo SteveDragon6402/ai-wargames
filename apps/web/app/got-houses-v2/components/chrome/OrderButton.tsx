@@ -2,11 +2,7 @@
 
 import { Children, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { HoldTip } from "@/components/ui/hold-tip";
 import { cn } from "@/lib/utils";
 
 export function OrderButton({
@@ -31,56 +27,54 @@ export function OrderButton({
 }) {
   const body = disabled ? disabledHint ?? hint : hint;
   return (
-    <Tooltip delayDuration={480}>
-      <TooltipTrigger asChild>
-        <span className="inline-flex max-w-full">
-          <Button
-            type="button"
-            size="sm"
-            variant={accent ? "default" : active ? "secondary" : "outline"}
-            disabled={disabled}
-            onClick={onClick}
+    <HoldTip
+      side="left"
+      content={
+        <div className="space-y-1.5">
+          <div className="font-display text-[16px] leading-tight text-foreground">
+            {label}
+          </div>
+          <div
             className={cn(
-              "relative h-8 max-w-full overflow-hidden rounded-sm px-2.5 pr-3.5 text-[12px] font-medium tracking-normal",
-              active &&
-                !accent &&
-                "border-primary/70 bg-primary/15 text-primary hover:bg-primary/20 hover:text-primary"
+              "text-[11px] font-medium",
+              spendsTurn ? "text-primary" : "text-muted-foreground"
             )}
           >
-            <span className="truncate">{label}</span>
-            <span
-              aria-hidden
-              className={cn(
-                "pointer-events-none absolute bottom-0.5 right-0.5 size-2 rounded-full border",
-                spendsTurn
-                  ? "border-primary bg-primary shadow-[0_0_4px_hsl(var(--primary)/0.7)]"
-                  : "border-muted-foreground/80 bg-transparent"
-              )}
-            />
-          </Button>
-        </span>
-      </TooltipTrigger>
-      <TooltipContent
-        side="left"
-        align="center"
-        className="max-h-[min(360px,70vh)] space-y-1.5 overflow-y-auto p-3 text-left"
-      >
-        <div className="font-display text-[16px] leading-tight text-foreground">
-          {label}
+            {spendsTurn ? "Spends this host's turn" : "Does not spend the turn"}
+          </div>
+          <p className="text-[12px] font-normal leading-snug text-popover-foreground/90">
+            {body}
+          </p>
         </div>
-        <div
+      }
+    >
+      <span className={cn("inline-flex max-w-full", disabled && "cursor-not-allowed")}>
+        <Button
+          type="button"
+          size="sm"
+          variant={accent ? "default" : active ? "secondary" : "outline"}
+          disabled={disabled}
+          onClick={onClick}
           className={cn(
-            "text-[11px] font-medium",
-            spendsTurn ? "text-primary" : "text-muted-foreground"
+            "relative h-8 max-w-full overflow-hidden rounded-sm px-2.5 pr-3.5 text-[12px] font-medium tracking-normal",
+            active &&
+              !accent &&
+              "border-primary/70 bg-primary/15 text-primary hover:bg-primary/20 hover:text-primary"
           )}
         >
-          {spendsTurn ? "Spends this host's turn" : "Does not spend the turn"}
-        </div>
-        <p className="text-[12px] font-normal leading-snug text-popover-foreground/90">
-          {body}
-        </p>
-      </TooltipContent>
-    </Tooltip>
+          <span className="truncate">{label}</span>
+          <span
+            aria-hidden
+            className={cn(
+              "pointer-events-none absolute bottom-0.5 right-0.5 size-2 rounded-full border",
+              spendsTurn
+                ? "border-primary bg-primary shadow-[0_0_4px_hsl(var(--primary)/0.7)]"
+                : "border-muted-foreground/80 bg-transparent"
+            )}
+          />
+        </Button>
+      </span>
+    </HoldTip>
   );
 }
 

@@ -1,11 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { HoldTip } from "@/components/ui/hold-tip";
 import { cn } from "@/lib/utils";
 
 interface HintProps {
@@ -18,17 +14,12 @@ interface HintProps {
 export function Hint({ label, children, side = "top", className }: HintProps) {
   if (!label) return <>{children}</>;
   return (
-    <Tooltip delayDuration={480}>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
-      <TooltipContent
-        side={side}
-        className={cn(
-          "max-w-[260px] border border-border bg-popover px-3 py-2 text-left text-[13px] font-normal leading-snug text-popover-foreground shadow-lg",
-          className
-        )}
-      >
-        {label}
-      </TooltipContent>
-    </Tooltip>
+    <HoldTip
+      content={label}
+      side={side}
+      className={cn("px-3 py-2", className)}
+    >
+      {children}
+    </HoldTip>
   );
 }

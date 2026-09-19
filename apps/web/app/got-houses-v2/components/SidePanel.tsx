@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChevronRight, PanelRightClose, X } from "lucide-react";
 import type { GameState, GameAction, Army, Faction } from "../types";
 import { HOLDS_MAP } from "../data/holds";
@@ -55,6 +55,8 @@ const FACTION_LABEL: Record<Faction, string> = {
 export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
   const [parleyError, setParleyError] = useState<string | null>(null);
   const [railOpen, setRailOpen] = useState(true);
+  const [hostsOpen, setHostsOpen] = useState(true);
+  const prevHoldId = useRef<string | null>(null);
   const { selectedHoldId, selectedArmyIds, moveMode, armies, activeFaction, adminMode } = state;
   const talkOpen = state.talkPickerOpen && state.phase === "planning";
 
@@ -301,17 +303,37 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
     }
   }, []);
 
+  function persistRail(open: boolean) {
+    try {
+      localStorage.setItem("wargame-rail", open ? "1" : "0");
+    } catch {
+      /* ignore */
+    }
+  }
+
   function toggleRail() {
     setRailOpen((open) => {
       const next = !open;
-      try {
-        localStorage.setItem("wargame-rail", next ? "1" : "0");
-      } catch {
-        /* ignore */
-      }
+      persistRail(next);
       return next;
     });
   }
+
+  const armyKey = selectedArmyIds.join(",");
+  useEffect(() => {
+    if (selectedArmyIds.length === 0) return;
+    setRailOpen(true);
+    persistRail(true);
+    setHostsOpen(true);
+  }, [armyKey, selectedArmyIds.length]);
+
+  useEffect(() => {
+    if (selectedHoldId && selectedHoldId !== prevHoldId.current) {
+      setRailOpen(true);
+      persistRail(true);
+    }
+    prevHoldId.current = selectedHoldId;
+  }, [selectedHoldId]);
 
   if (!railOpen) {
     return (
@@ -323,6 +345,11 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
           className="flex h-full flex-col items-center gap-3 px-1 py-3 text-muted-foreground hover:bg-accent hover:text-foreground"
         >
           <ChevronRight className="size-4" />
+          {selectedArmyIds.length > 0 && (
+            <span className="font-mono text-[10px] text-primary">
+              {selectedArmyIds.length}
+            </span>
+          )}
           <span className="text-[11px] [writing-mode:vertical-rl]">Inspect</span>
         </button>
       </aside>
@@ -865,11 +892,15 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
             <PanelSection
               title="Hosts"
               hint={
-                northHere.length + westHere.length > 0
-                  ? `${northHere.length + westHere.length} here`
-                  : "none"
+                selectedArmyIds.length > 0
+                  ? `${selectedArmyIds.length} selected`
+                  : northHere.length + westHere.length > 0
+                    ? `${northHere.length + westHere.length} here`
+                    : "none"
               }
-              defaultOpen
+              open={hostsOpen}
+              onOpenChange={setHostsOpen}
+              accent={selectedArmyIds.length > 0}
             >
               {northHere.length === 0 && westHere.length === 0 ? (
                 <p className="py-4 text-center text-[13px] text-muted-foreground">
@@ -970,20 +1001,29 @@ function PanelSection({
   title,
   hint,
   defaultOpen = false,
+  open: openProp,
+  onOpenChange,
   accent,
   children,
 }: {
   title: string;
   hint?: string;
   defaultOpen?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   accent?: boolean;
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [uncontrolled, setUncontrolled] = useState(defaultOpen);
+  const open = openProp ?? uncontrolled;
   return (
     <details
       open={open}
-      onToggle={(e) => setOpen(e.currentTarget.open)}
+      onToggle={(e) => {
+        const next = e.currentTarget.open;
+        onOpenChange?.(next);
+        if (openProp === undefined) setUncontrolled(next);
+      }}
       className="group min-w-0 overflow-hidden border-b border-border"
     >
       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-2.5 text-[12px] font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">

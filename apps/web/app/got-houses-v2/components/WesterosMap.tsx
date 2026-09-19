@@ -33,11 +33,7 @@ import HoldNode, {
   type HoldNodeData,
   type MapView,
 } from "./HoldNode";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { HoldTip } from "@/components/ui/hold-tip";
 import { cn } from "@/lib/utils";
 
 // Scale factors: (x: 0–80) → rfX, (y: 0–100, north=up) → rfY
@@ -164,6 +160,38 @@ function MapInner({ state, dispatch }: Props) {
     [state.moveMode, dispatch]
   );
 
+  const handleArmyClick = useCallback(
+    (armyId: string, shift: boolean) => {
+      const army = state.armies.find((a) => a.id === armyId);
+      if (!army) return;
+      if (state.moveMode.active) {
+        handleHoldClick(army.holdId);
+        return;
+      }
+      const submitted =
+        army.faction === "north"
+          ? state.north.submitted
+          : state.westerlands.submitted;
+      const canSelect =
+        (state.adminMode || army.faction === state.activeFaction) && !submitted;
+      if (canSelect) {
+        dispatch({ type: "SELECT_ARMY", armyId, shift });
+      } else {
+        dispatch({ type: "SELECT_HOLD", holdId: army.holdId });
+      }
+    },
+    [
+      state.armies,
+      state.moveMode,
+      state.north.submitted,
+      state.westerlands.submitted,
+      state.adminMode,
+      state.activeFaction,
+      dispatch,
+      handleHoldClick,
+    ]
+  );
+
   const pledgedHoldIds = useMemo(
     () => new Set((state.capturePledges ?? []).map((p) => p.holdId)),
     [state.capturePledges]
@@ -239,6 +267,7 @@ function MapInner({ state, dispatch }: Props) {
           armies.some((a) => a.faction === "westerlands"),
         mapView,
         forageStep: forageStepAtHold(state.forage, hold.id),
+        onArmyClick: handleArmyClick,
       };
 
       return {
@@ -260,6 +289,7 @@ function MapInner({ state, dispatch }: Props) {
     state.forage,
     pledgedHoldIds,
     handleHoldClick,
+    handleArmyClick,
     mapView,
   ]);
 
@@ -369,26 +399,32 @@ function MapInner({ state, dispatch }: Props) {
       <Panel position="top-left" className="flex max-w-[min(280px,calc(100vw-24px))] flex-col gap-2">
         <div className="flex overflow-hidden rounded-sm border border-border bg-card/95 shadow-lg backdrop-blur">
           {MAP_VIEWS.map((view) => (
-            <Tooltip key={view.id} delayDuration={480}>
-              <TooltipTrigger asChild>
-                <button
-                  type="button"
-                  onClick={() => chooseView(view.id)}
-                  className={cn(
-                    "relative h-8 min-w-0 flex-1 px-2.5 text-[12px] font-medium",
-                    mapView === view.id
-                      ? "bg-primary/15 text-primary"
-                      : "text-muted-foreground hover:bg-accent hover:text-foreground"
-                  )}
-                >
-                  <span className="truncate">{view.label}</span>
-                </button>
-              </TooltipTrigger>
-              <TooltipContent side="bottom" className="max-w-[220px]">
-                <div className="font-display text-[15px] text-foreground">{view.label}</div>
-                <p className="mt-1 text-[12px] leading-snug">{view.hint}</p>
-              </TooltipContent>
-            </Tooltip>
+            <HoldTip
+              key={view.id}
+              side="bottom"
+              triggerClassName="min-w-0 flex-1"
+              content={
+                <div>
+                  <div className="font-display text-[15px] text-foreground">
+                    {view.label}
+                  </div>
+                  <p className="mt-1 text-[12px] leading-snug">{view.hint}</p>
+                </div>
+              }
+            >
+              <button
+                type="button"
+                onClick={() => chooseView(view.id)}
+                className={cn(
+                  "relative h-8 w-full min-w-0 px-2.5 text-[12px] font-medium",
+                  mapView === view.id
+                    ? "bg-primary/15 text-primary"
+                    : "text-muted-foreground hover:bg-accent hover:text-foreground"
+                )}
+              >
+                <span className="truncate">{view.label}</span>
+              </button>
+            </HoldTip>
           ))}
         </div>
         <details className="rounded-sm border border-border bg-card/95 shadow-lg backdrop-blur">

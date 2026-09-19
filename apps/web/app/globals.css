@@ -63,7 +63,7 @@
 
   html,
   body {
-    @apply overflow-x-hidden bg-background text-foreground antialiased;
+    @apply bg-background text-foreground antialiased;
   }
 
   body {

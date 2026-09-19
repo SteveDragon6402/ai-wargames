@@ -49,6 +49,7 @@ export interface HoldNodeData {
   awaitingGarrison?: boolean;
   /** Both factions have hosts here — a battle will be fought. */
   contested?: boolean;
+  onArmyClick?: (armyId: string, shift: boolean) => void;
   [key: string]: unknown;
 }
 
@@ -81,12 +82,14 @@ function ArmyDot({
   resting,
   investing,
   turnedHouses,
+  onArmyClick,
 }: {
   army: Army;
   fortified?: boolean;
   resting?: boolean;
   investing?: boolean;
   turnedHouses?: string[];
+  onArmyClick?: (armyId: string, shift: boolean) => void;
 }) {
   const men = strengthOf(army);
   const k = men >= 1000 ? `${Math.round(men / 1000)}` : "·";
@@ -106,9 +109,20 @@ function ArmyDot({
   const color = turned ? FACTION_COLORS.westerlands : FACTION_COLORS[army.faction];
   return (
     <span
+      role={onArmyClick ? "button" : undefined}
+      className={onArmyClick ? "nopan nodrag" : undefined}
       title={`${army.name} — ${men.toLocaleString()} men, ${activity}${
         turned ? " (turned cloak)" : ""
       }`}
+      onMouseDown={(e) => {
+        if (!onArmyClick) return;
+        e.stopPropagation();
+      }}
+      onClick={(e) => {
+        if (!onArmyClick) return;
+        e.stopPropagation();
+        onArmyClick(army.id, e.shiftKey);
+      }}
       style={{
         display: "inline-flex",
         alignItems: "center",
@@ -128,6 +142,7 @@ function ArmyDot({
         fontWeight: 700,
         color: "rgba(255,255,255,0.92)",
         lineHeight: 1,
+        cursor: onArmyClick ? "pointer" : "inherit",
       }}
     >
       {k}
@@ -189,6 +204,7 @@ function HoldNode({ data }: { data: HoldNodeData }) {
     contested,
     mapView = "hosts",
     forageStep = 0,
+    onArmyClick,
   } = data;
 
   const northArmies = armies.filter((a) => a.faction === "north");
@@ -313,6 +329,7 @@ function HoldNode({ data }: { data: HoldNodeData }) {
                 resting={(a.activity?.turnsResting ?? 0) > 0}
                 investing={underSiege && besiegerFaction === a.faction}
                 turnedHouses={turnedHouses}
+                onArmyClick={onArmyClick}
               />
             ))}
           </div>
