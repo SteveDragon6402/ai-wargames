@@ -94,6 +94,7 @@ SOFT MECHANICS — these are mechanical inputs, not decoration, and MUST shape t
 - Approach route: an army that marched in arrives shaped by that road (disordered from bog or pass, still formed from an easy road). An army already present holds the local ground
 - Homeland fit: men fighting in country they are not bred for are at a real disadvantage
 - Orders: an EXPLICITLY RESTING army is caught unprepared; a FORTIFYING army is dug in. Digging in around a castle under investment means defending the siege camp, not holding the keep.
+- A STORM is never a probe, a demonstration, or a raid to weaken the walls for later. It is an all-out assault to take the castle today: rams, ladders, every committed host thrown at the gate. The walls still help the garrison, but the question is only whether the gates are forced or the assault is thrown back. Both answers are bloody.
 
 You may cite numbers from the data or not, as you prefer — the force totals have already been computed for you, so never do arithmetic of your own.
 
@@ -129,7 +130,9 @@ function armyBlock(
               ? "Order: DIGGING IN — defending the siege camp against anyone who hits the lines. Fieldworks around the walls, not occupation of the keep. A host friendly to the garrison is in this fight; the garrison has sallied to join them."
               : "Order: DIGGING IN — defending the siege camp. Fieldworks around the walls, not occupation of the keep. The garrison remains on the walls — they have not sallied."
             : "Order: FORTIFYING — digging in, constructing field defences"
-          : "Order: MARCHING / ENGAGING";
+          : battle.engagement === "storm"
+            ? "Order: STORM — this host is committed to an all-out assault on the walls to TAKE the castle today. Rams, ladders, every company in. Not a probe, not a demonstration, not an attempt to weaken the works for later."
+            : "Order: MARCHING / ENGAGING";
 
   const commanders =
     army.leaders.map((l) => `${l.name}${l.title ? ` (${l.title})` : ""}`).join(", ") ||
@@ -231,7 +234,7 @@ function buildChroniclerMessage(
       : "";
   const engagementNote =
     engagement === "storm"
-      ? `\nENGAGEMENT TYPE: STORM THE GATES — field armies assault the walls against a defending GARRISON (its army id starts with "garrison:"). The garrison fights from fortifications; treat walls, towers and gates as decisive advantages for the defenders unless numbers or leadership overwhelm them. A failed storm does NOT drive the attacker from the country: they fall back to their siege camp and the investment continues. They only leave if the garrison is broken and the gates are forced, or if they are shattered as a host.${combinedNote}`
+      ? `\nENGAGEMENT TYPE: STORM THE GATES — an all-out assault to TAKE ${locationName} today. Field armies throw themselves at the walls against a defending GARRISON (army id starts with "garrison:"). This is not a probe, a raid, or an attempt to weaken the works for a later day. Ladders, ram, every committed host goes in. The garrison fights from fortifications, which still matter, but the only two endings are: the gates are forced and the seat falls, or the assault is thrown back into the siege camp. Both endings butcher men. Do not write a limited attack, a demonstration at the gate, or a fight whose purpose is "softening" the castle. A failed storm does NOT drive the attacker from the country: they fall back to camp and the investment continues. They only leave if the garrison is broken and the gates are forced, or if they are shattered as a host.${combinedNote}`
       : engagement === "sally"
         ? `\nENGAGEMENT TYPE: SALLY OUT — the defending GARRISON sorties ONLY because a field host friendly to them has hit the siege camp (or they were explicitly ordered to sally into that camp). Besiegers who were digging in are defending their camp, not the keep.${combinedNote}`
         : wallsNote;
@@ -301,8 +304,22 @@ how many men reached fighting range before one side broke, how long it lasted,
 whether there was a pursuit and how far it went, whether men scattered or deserted,
 whether any unit was already exhausted or badly led, and whether fortifications,
 ground, approach or homeland mismatch shielded one side. Do not anchor on
-percentages. A large army routing a small one costs almost nothing; a small force
-holding a chokepoint can bleed an army twice its size.
+percentages. A large army routing a small one in the field costs almost nothing; a
+small force holding a chokepoint can bleed an army twice its size.
+${
+    engagement === "storm"
+      ? `
+THIS IS A STORM, NOT A FIELD FIGHT. Ignore the "large army costs almost nothing"
+rule. Storming a castle is always expensive for the attackers and usually expensive
+for the garrison too. Prefer a PYRRHIC WIN if the gates are forced; a failed storm
+is a bloody throwing-back, not a tidy withdrawal after a light try. Do not write
+phases about testing the walls, feints whose purpose is to weaken, or breaking off
+once the outer works are damaged. The assault is meant to take the seat in this
+engagement. Maybe it does. Maybe it is thrown back. Either way it has to look like
+an enormous strike, not a siege-day skirmish.
+`
+      : ""
+  }
 
 In a rout or shattering, men who survive the fighting but scatter or desert are as
 lost to the army as the dead — say so in the report.
@@ -337,7 +354,7 @@ ${DEFEAT_TYPES.map((d) => `- ${OUTCOME_VOCABULARY[d]}`).join("\n")}
 
 ${
     engagement === "storm"
-      ? "A failed storm leaves both sides where they were: garrison on the walls, attacker in the siege camp. Do not write the attacker marching away from the investment merely because the assault failed. Only a forced gate, or a host so shattered it ceases to be an army, ends the siege."
+      ? "A STORM has two endings only: the attackers force the gates and take the seat, or they are thrown back to the siege camp. A failed storm leaves both sides where they were: garrison on the walls, attacker in camp. Do not write the attacker marching away from the investment merely because the assault failed. Only a forced gate, or a host so shattered it ceases to be an army, ends the siege. Do not write a result whose point was merely to weaken the castle."
       : "Someone must yield this hold — do not leave both sides sharing it unless both genuinely collapsed."
   }`;
 }
@@ -349,13 +366,13 @@ const EXECUTOR_SYSTEM = `You convert an already-written battle report into game 
 Rules:
 - Read the report's phases and its closing VERDICT line, and make the numbers match what it describes. If the report says a flank was annihilated, that unit type takes heavy losses. If it says a rear-guard withdrew in order, losses are light.
 - Use only the army ids, house names and unit types given in the force data. Never invent an id, a house or a character.
-- Casualty counts must be whole numbers greater than zero, and can never exceed the men that army actually has.
+- Casualty counts must be whole numbers greater than zero, and can never exceed the men that army actually has. A STORM is butcher's work: light losses on a committed storming host or on the garrison are almost always wrong.
 - An army marked HOLDS BACK must take substantially lighter losses than a committed host on the same side.
 - Only report a named figure as fallen if the report says or clearly implies they fell.
 - captured lists named figures taken alive. Prefer capture over death when the chronicle says they were taken, yielded, or overrun without being slain. Never list a player lord (Robb, Tywin) as captured or fallen.
 - prisonersTaken is rank-and-file taken alive, using the same army/house/unit rows as casualties. These men are already among the casualties (lost to their army) — prisonersTaken is the share now in the winner's hands, not extra losses. Read the TAKEN AND SLAIN block. If the report names a haul of captives, fill this. Empty prisonersTaken is almost always wrong after a real fight.
-- retreatingArmyIds must be exactly the losing side's army ids (all of them), or both sides' ids if the verdict was "Neither". Exception: a STORM that did not force the gates has an empty retreat list — the attacker remains camped and the siege continues.
-- conditionUpdates must contain one entry for every army in the battle, describing its state after the fight in one vivid sentence each. A routed army is shattered and desperate; an orderly retreat leaves it bruised but not broken; a pyrrhic winner is bloodied and wary.
+- retreatingArmyIds must be exactly the losing side's army ids (all of them), or both sides' ids if the verdict was "Neither". Exception: a STORM that did not force the gates has an empty retreat list — the attacker remains camped and the siege continues. A STORM that DID force the gates lists the defender's field hosts (not the garrison id).
+- conditionUpdates must contain one entry for every army in the battle, describing its state after the fight in one vivid sentence each. A routed army is shattered and desperate; an orderly retreat leaves it bruised but not broken; a pyrrhic winner is bloodied and wary. After a storm, even the winner should sound spent.
 
 Call the record_outcome tool exactly once. Do not write any prose.`;
 
@@ -375,7 +392,7 @@ const OUTCOME_TOOL: Anthropic.Messages.Tool = {
         type: "string",
         enum: ["north", "westerlands", "abandoned"],
         description:
-          "Who holds the field. 'abandoned' only when both coalitions genuinely broke.",
+          "Who holds the field, or after a STORM who holds the seat (gates forced vs thrown back). 'abandoned' only when both coalitions genuinely broke.",
       },
       casualties: {
         type: "array",

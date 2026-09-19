@@ -404,6 +404,7 @@ export interface ValidationNote {
     | "converted_death_to_capture"
     | "inferred_prisoners"
     | "inferred_named_capture"
+    | "raised_storm_cost"
     | "corrected_hold_result"
     | "corrected_retreats"
     | "dropped_unknown_condition";

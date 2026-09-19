@@ -607,7 +607,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                           {canStorm && (
                             <OrderButton
                               label="Storm"
-                              hint="Assault the walls this turn instead of starving them out."
+                              hint="Throw this host at the walls today to take the castle. Bloody either way — this is not a probe."
                               active={stormActive}
                               spendsTurn
                               onClick={() =>

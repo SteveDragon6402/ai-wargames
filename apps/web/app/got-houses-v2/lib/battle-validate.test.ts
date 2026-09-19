@@ -146,4 +146,35 @@ describe("validateBattleOutcome", () => {
     assert.equal(out.prisonersTaken[0].count, 50);
     assert.ok(!out.notes.some((n) => n.kind === "inferred_prisoners"));
   });
+
+  it("raises a cheap storm to a butcher's bill", () => {
+    const garrison = army({
+      id: "garrison:17",
+      faction: "north",
+      holdId: "17",
+      units: [{ house: "Tully", type: "infantry", count: 1000 }],
+    });
+    const storm = {
+      ...battle([north, garrison], [west], "17"),
+      engagement: "storm" as const,
+      garrisonHoldId: "17",
+    };
+    const out = validateBattleOutcome(storm, {
+      holdResult: "north",
+      casualties: [
+        { armyId: "w1", unitType: "infantry", house: "Lannister", count: 20 },
+        { armyId: "garrison:17", unitType: "infantry", house: "Tully", count: 10 },
+      ],
+    });
+    const westLoss = out.casualties
+      .filter((c) => c.armyId === "w1")
+      .reduce((s, c) => s + c.count, 0);
+    const gLoss = out.casualties
+      .filter((c) => c.armyId === "garrison:17")
+      .reduce((s, c) => s + c.count, 0);
+    assert.ok(westLoss >= Math.floor(1500 * 0.16));
+    assert.ok(gLoss >= Math.floor(1000 * 0.1));
+    assert.ok(out.notes.some((n) => n.kind === "raised_storm_cost"));
+    assert.deepEqual(out.retreatingArmyIds, []);
+  });
 });

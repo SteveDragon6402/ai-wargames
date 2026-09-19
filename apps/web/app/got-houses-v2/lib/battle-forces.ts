@@ -106,6 +106,10 @@ export function fallbackOutcome(
       return s + (battle.armyCommitments?.[a.id] === "hold_back" ? n * 0.4 : n);
     }, 0);
 
+  if ((battle.engagement ?? "field") === "storm") {
+    return stormFallback(battle, committed);
+  }
+
   const northScore = committed(battle.northArmies) * (1 + 0.12 * posture(battle.northArmies));
   const westScore = committed(battle.westArmies) * (1 + 0.12 * posture(battle.westArmies));
 
@@ -128,6 +132,49 @@ export function fallbackOutcome(
     lossShare: {
       [winner]: winnerLoss,
       [loser]: loserLoss,
+    } as Record<Faction, number>,
+  };
+}
+
+/**
+ * A storm is an all-out attempt to take the seat, not a field meeting.
+ * Walls still help the garrison; numbers can still force the gate. Both
+ * sides bleed — never a cheap win, never an indecisive "abandoned" at the walls.
+ */
+function stormFallback(
+  battle: BattleContext,
+  committed: (armies: Army[]) => number
+): { holdResult: Faction | "abandoned"; lossShare: Record<Faction, number> } {
+  const garrisonOnNorth = battle.northArmies.some((a) =>
+    a.id.startsWith("garrison:")
+  );
+  const attackers = garrisonOnNorth ? battle.westArmies : battle.northArmies;
+  const defenders = garrisonOnNorth ? battle.northArmies : battle.westArmies;
+  const attackerFaction: Faction = garrisonOnNorth ? "westerlands" : "north";
+  const defenderFaction: Faction = garrisonOnNorth ? "north" : "westerlands";
+
+  // Combined relief fights are closer to a field clash at the camp; a pure
+  // storm still has to climb the walls.
+  const wall = battle.combinedAssault ? 1.12 : 1.35;
+  const atk = committed(attackers);
+  const def = committed(defenders) * wall;
+  const taken = atk > def;
+  const holdResult: Faction = taken ? attackerFaction : defenderFaction;
+
+  if (taken) {
+    return {
+      holdResult,
+      lossShare: {
+        [attackerFaction]: 0.24,
+        [defenderFaction]: 0.32,
+      } as Record<Faction, number>,
+    };
+  }
+  return {
+    holdResult,
+    lossShare: {
+      [attackerFaction]: 0.28,
+      [defenderFaction]: 0.14,
     } as Record<Faction, number>,
   };
 }

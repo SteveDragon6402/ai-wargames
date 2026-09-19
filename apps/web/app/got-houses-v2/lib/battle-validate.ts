@@ -477,6 +477,81 @@ function validateConditions(
   return out;
 }
 
+/** A cheap storm is impossible — ladders and ram always butcher men. */
+export const STORM_ATTACKER_MIN_LOSS = 0.16;
+export const STORM_GARRISON_MIN_LOSS = 0.1;
+export const STORM_HOLD_BACK_MIN_LOSS = 0.05;
+
+function armyMen(army: Army): number {
+  return army.units.reduce((s, u) => s + u.count, 0);
+}
+
+function ensureStormCasualties(
+  battle: BattleContext,
+  casualties: Casualty[],
+  notes: ValidationNote[]
+): Casualty[] {
+  if ((battle.engagement ?? "field") !== "storm") return casualties;
+  const holdBack = battle.armyCommitments ?? {};
+  const extra: Casualty[] = [];
+
+  for (const army of [
+    ...battle.northArmies,
+    ...battle.westArmies,
+    ...(battle.rogueArmies ?? []),
+  ]) {
+    const men = armyMen(army);
+    if (men <= 0) continue;
+    const taken = casualties
+      .filter((c) => c.armyId === army.id)
+      .reduce((s, c) => s + c.count, 0);
+    const floorShare =
+      holdBack[army.id] === "hold_back"
+        ? STORM_HOLD_BACK_MIN_LOSS
+        : army.id.startsWith("garrison:")
+          ? STORM_GARRISON_MIN_LOSS
+          : STORM_ATTACKER_MIN_LOSS;
+    const need = Math.floor(men * floorShare) - taken;
+    if (need <= 0) continue;
+
+    const lost = new Map<string, number>();
+    for (const c of casualties.concat(extra).filter((c) => c.armyId === army.id)) {
+      const k = `${c.house}|${c.unitType}`;
+      lost.set(k, (lost.get(k) ?? 0) + c.count);
+    }
+    const remaining = army.units
+      .map((u) => ({
+        ...u,
+        count: Math.max(0, u.count - (lost.get(`${u.house}|${u.type}`) ?? 0)),
+      }))
+      .filter((u) => u.count > 0);
+    if (remaining.length === 0) continue;
+
+    const faction = factionOf(battle, army.id);
+    if (!faction) continue;
+    let added = 0;
+    for (const [unit, n] of distributeProportional(remaining, need)) {
+      if (n <= 0) continue;
+      extra.push({
+        faction,
+        armyId: army.id,
+        unitType: unit.type,
+        house: unit.house,
+        count: n,
+      });
+      added += n;
+    }
+    if (added > 0) {
+      notes.push({
+        kind: "raised_storm_cost",
+        detail: `${army.name} lost only ${taken.toLocaleString()} in a storm; raised by ${added.toLocaleString()} — an assault on walls is never that cheap`,
+      });
+    }
+  }
+
+  return extra.length ? [...casualties, ...extra] : casualties;
+}
+
 /** Run every Stage 3 check. Pure: same input always yields the same outcome. */
 export function validateBattleOutcome(
   battle: BattleContext,
@@ -484,7 +559,11 @@ export function validateBattleOutcome(
 ): ValidatedOutcome {
   const notes: ValidationNote[] = [];
 
-  const casualties = validateCasualties(battle, raw.casualties, notes);
+  const casualties = ensureStormCasualties(
+    battle,
+    validateCasualties(battle, raw.casualties, notes),
+    notes
+  );
   const fallen = validateFallen(battle, raw.fallen, notes);
   const captured = validateCaptured(
     battle,

@@ -54,6 +54,7 @@ export function buildFallbackReport(
   const groundNote = hold?.ground
     ? ` The ground told against nobody in particular — ${hold.ground.split(";")[0].trim()}.`
     : "";
+  const isStorm = (battle.engagement ?? "field") === "storm";
 
   const garrisonOnNorth = battle.northArmies.some((a) =>
     a.id.startsWith("garrison:")
@@ -83,19 +84,38 @@ export function buildFallbackReport(
     battle,
     casualties,
     holdResult,
-    battle.lastStand ? "last_stand" : "structured_withdrawal"
+    battle.lastStand
+      ? "last_stand"
+      : isStorm && !stormHeld
+        ? "pyrrhic_win"
+        : "structured_withdrawal"
   );
 
+  const seat = hold?.name ?? battle.holdId;
+  const stormNarrative = stormHeld
+    ? `INITIAL DEPLOYMENT: The investing host stormed the walls of ${seat}.${groundNote}\n\n` +
+      `PHASE 1 — ASSAULT: ${describeForceRatio(summary)}. Ladders and ram went in; the garrison held the gate.\n\n` +
+      `RESOLUTION: The assault was thrown back. ${winnerLabel} still holds ${seat}. The attackers fell back to their siege camp. No detailed account survives — the adjudicator was unreachable.`
+    : isStorm
+      ? `INITIAL DEPLOYMENT: The investing host stormed the walls of ${seat}.${groundNote}\n\n` +
+        `PHASE 1 — ASSAULT: ${describeForceRatio(summary)}. The attackers pressed the gate until it gave.\n\n` +
+        `RESOLUTION: The gates were forced. ${winnerLabel} took ${seat} at a bloody price. No detailed account survives — the adjudicator was unreachable.`
+      : `INITIAL DEPLOYMENT: The hosts met at ${seat}.${groundNote}\n\n` +
+        `PHASE 1 — CLASH: ${describeForceRatio(summary)}. The heavier side pressed and the lighter gave ground.\n\n` +
+        `RESOLUTION: ${winnerLabel} held the field. No detailed account of this engagement survives — the adjudicator was unreachable, so the outcome was settled on numbers and posture alone.`;
+
   return {
-    defeatType: battle.lastStand ? "last_stand" : "structured_withdrawal",
-    narrative:
-      `INITIAL DEPLOYMENT: The hosts met at ${hold?.name ?? "the contested hold"}.${groundNote}\n\n` +
-      `PHASE 1 — CLASH: ${describeForceRatio(summary)}. The heavier side pressed and the lighter gave ground.\n\n` +
-      `RESOLUTION: ${winnerLabel} held the field. No detailed account of this engagement survives — the adjudicator was unreachable, so the outcome was settled on numbers and posture alone.`,
-    shortSummary:
-      `${winnerLabel} held the field at ${hold?.name ?? battle.holdId}.\n` +
-      "The account is thin — this battle was settled on numbers, not on witness.\n" +
-      "Both sides counted their dead and moved on.",
+    defeatType: battle.lastStand
+      ? "last_stand"
+      : isStorm && !stormHeld
+        ? "pyrrhic_win"
+        : "structured_withdrawal",
+    narrative: stormNarrative,
+    shortSummary: isStorm
+      ? stormHeld
+        ? `${winnerLabel} threw the storm back at ${seat}.\nThe account is thin — settled on numbers, not witness.\nThe attackers remain camped.`
+        : `${winnerLabel} forced the gates at ${seat}.\nThe account is thin — settled on numbers, not witness.\nThe assault cost both sides dearly.`
+      : `${winnerLabel} held the field at ${seat}.\nThe account is thin — this battle was settled on numbers, not on witness.\nBoth sides counted their dead and moved on.`,
     holdResult,
     casualties,
     fallen: [],

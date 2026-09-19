@@ -1306,7 +1306,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           armyId,
           holdIds: [army.holdId],
           summary: `${army.name} storms the gates at ${hold}`,
-          detail: `Turn ${state.turn}: ${army.name} ordered to storm ${hold}.`,
+          detail: `Turn ${state.turn}: ${army.name} ordered to storm ${hold} — a full assault to take the seat, not to weaken it.`,
         });
       }
         for (const holdId of sallyHoldIds) {
