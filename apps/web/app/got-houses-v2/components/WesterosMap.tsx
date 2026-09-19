@@ -135,7 +135,7 @@ function MapInner({ state, dispatch }: Props) {
   }
   const armiesByHold = useMemo(() => {
     const map = new Map<string, Army[]>();
-    state.armies.forEach((army) => {
+    (state.armies ?? []).forEach((army) => {
       const list = map.get(army.holdId) ?? [];
       list.push(army);
       map.set(army.holdId, list);
@@ -162,7 +162,7 @@ function MapInner({ state, dispatch }: Props) {
 
   const handleArmyClick = useCallback(
     (armyId: string, shift: boolean) => {
-      const army = state.armies.find((a) => a.id === armyId);
+      const army = (state.armies ?? []).find((a) => a.id === armyId);
       if (!army) return;
       if (state.moveMode.active) {
         handleHoldClick(army.holdId);

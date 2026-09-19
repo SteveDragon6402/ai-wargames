@@ -131,6 +131,8 @@ import {
   unitsFromCasualties,
 } from "../lib/prisoners";
 import { tickTravellers } from "../lib/release";
+import { normalizeState } from "../lib/normalize-state";
+import { mergePlanningBoards } from "../lib/room-sync";
 import {
   applyRaze,
   armiesCommittedToRazing,
@@ -649,6 +651,30 @@ function setFactionOrders(
     return { ...state, north: { ...state.north, ...patch } };
   }
   return { ...state, westerlands: { ...state.westerlands, ...patch } };
+}
+
+function dropArmyOrders(fo: FactionOrders, ids: Set<string>): FactionOrders {
+  const stanceOrders = { ...fo.stanceOrders };
+  for (const id of ids) delete stanceOrders[id];
+  return {
+    ...fo,
+    orders: fo.orders.filter((o) => !ids.has(o.armyId)),
+    stanceOrders,
+    stormArmyIds: fo.stormArmyIds.filter((id) => !ids.has(id)),
+    razeOrders: (fo.razeOrders ?? []).filter((o) => !ids.has(o.armyId)),
+  };
+}
+
+function escortPrisonersTo(
+  groups: PrisonerGroup[] | undefined,
+  fromArmyIds: Set<string>,
+  toArmyId: string
+): PrisonerGroup[] {
+  return (groups ?? []).map((g) =>
+    g.location.kind === "army" && fromArmyIds.has(g.location.armyId)
+      ? { ...g, location: { kind: "army" as const, armyId: toArmyId } }
+      : g
+  );
 }
 
 /** After moves are applied, find holds with armies from both factions. */
@@ -2465,6 +2491,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       if (!selected.every((a) => a.holdId === holdId && a.faction === faction)) {
         return state;
       }
+      if (!canActAs(state, faction)) return state;
 
       const totalUnits = (a: Army) => a.units.reduce((s, u) => s + u.count, 0);
       const [base, ...rest] = [...selected].sort((a, b) => totalUnits(b) - totalUnits(a));
@@ -2521,6 +2548,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       return {
         ...state,
         armies: updatedArmies,
+        prisoners: escortPrisonersTo(state.prisoners, remainingIds, base.id),
+        north: dropArmyOrders(state.north, remainingIds),
+        westerlands: dropArmyOrders(state.westerlands, remainingIds),
         selectedArmyIds: [base.id],
         moveMode: { active: false, validTargets: [] },
       };
@@ -2538,6 +2568,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       const { config } = action;
       const sourceArmy = state.armies.find((a) => a.id === config.sourceArmyId);
       if (!sourceArmy) return state;
+      if (!canActAs(state, sourceArmy.faction)) return state;
 
       // Both halves need troops; commanders are optional
       const a1Troops = config.army1.units.reduce((s, u) => s + u.count, 0);
@@ -2590,10 +2621,19 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         .filter((a) => a.id !== config.sourceArmyId)
         .concat([army1, army2]);
 
+      const dropped = new Set([sourceArmy.id]);
+
       return {
         ...state,
         armies: updatedArmies,
         characters,
+        prisoners: escortPrisonersTo(
+          state.prisoners,
+          dropped,
+          army1.id
+        ),
+        north: dropArmyOrders(state.north, dropped),
+        westerlands: dropArmyOrders(state.westerlands, dropped),
         splitPanelArmyId: null,
         selectedArmyIds: [army1.id],
         moveMode: { active: false, validTargets: [] },
@@ -3330,34 +3370,67 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     case "PULL_RIVAL_ORDERS": {
       if (state.phase !== "planning") return state;
       const mine = action.faction;
+      const rival: Faction = mine === "north" ? "westerlands" : "north";
+      const remote: GameState = {
+        ...state,
+        north: action.north,
+        westerlands: action.westerlands,
+        armies: action.armies ?? state.armies,
+        characters: action.characters ?? state.characters,
+        holdStates: action.holdStates ?? state.holdStates,
+        prisoners: action.prisoners ?? state.prisoners,
+      };
+      const boards = mergePlanningBoards(state, remote, rival);
       return {
         ...state,
+        ...boards,
         north: mine === "north" ? state.north : action.north,
         westerlands: mine === "westerlands" ? state.westerlands : action.westerlands,
       };
     }
 
     case "HYDRATE_REMOTE": {
-      const remote = action.state;
-      // Per-browser chrome. The host's open fate panel / battle log must not
-      // mount on the joiner mid-adjudication — that used to change hook order
-      // in SeatFatePanel and white-screen the guest.
+      const remote = normalizeState(action.state);
+      const armyIds = new Set(remote.armies.map((a) => a.id));
+      const selectedArmyIds = state.selectedArmyIds.filter(
+        (id) => armyIds.has(id) || isGarrisonArmyId(id)
+      );
+      const splitPanelArmyId =
+        state.splitPanelArmyId && armyIds.has(state.splitPanelArmyId)
+          ? state.splitPanelArmyId
+          : null;
+      const garrisonPanel = (() => {
+        const panel = state.garrisonPanel;
+        if (!panel) return null;
+        if (!remote.holdStates[panel.holdId]) return null;
+        if (panel.mode === "deposit" && panel.armyId && !armyIds.has(panel.armyId)) {
+          return null;
+        }
+        return panel;
+      })();
+      const speechArmyId =
+        state.speechArmyId && armyIds.has(state.speechArmyId)
+          ? state.speechArmyId
+          : null;
       const localChoiceStillOpen =
         !!state.seatFatePanelId &&
         (remote.pendingChoices ?? []).some((c) => c.id === state.seatFatePanelId);
       return {
         ...remote,
         selectedHoldId: state.selectedHoldId,
-        selectedArmyIds: state.selectedArmyIds,
-        moveMode: state.moveMode,
+        selectedArmyIds,
+        moveMode:
+          selectedArmyIds.length === 0
+            ? { active: false, validTargets: [] }
+            : state.moveMode,
         talkPickerOpen: state.talkPickerOpen,
         openConversationIds: state.openConversationIds,
         focusedConversationId: state.focusedConversationId,
         adminMode: state.adminMode,
         activeFaction: state.activeFaction,
-        speechArmyId: state.speechArmyId,
-        garrisonPanel: state.garrisonPanel,
-        splitPanelArmyId: state.splitPanelArmyId,
+        speechArmyId,
+        garrisonPanel,
+        splitPanelArmyId,
         battleLogOpen: state.battleLogOpen,
         seatFatePanelId: localChoiceStillOpen ? state.seatFatePanelId : null,
       };

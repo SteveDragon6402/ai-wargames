@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { INITIAL_GAME_STATE } from "../data/initial-state";
-import { boardFingerprint, mergeRoomState, stateProgress } from "./room-sync";
+import { boardFingerprint, mergeRoomState, moveOrdersResolvable, stateProgress } from "./room-sync";
 import type { GameState, RetreatEntry } from "../types";
 
 function withOrders(
@@ -111,5 +111,79 @@ describe("boardFingerprint", () => {
     } as GameState;
     assert.doesNotThrow(() => boardFingerprint(sparse));
     assert.ok(boardFingerprint(sparse).includes("resolving"));
+  });
+});
+
+function westSplitBoard(state: GameState): GameState {
+  const jaime = state.armies.find((a) => a.id === "army-jaime");
+  if (!jaime) throw new Error("expected Jaime");
+  const a1 = { ...jaime, id: "west-a", units: jaime.units.slice(0, 1) };
+  const a2 = { ...jaime, id: "west-b", units: jaime.units.slice(1) };
+  return {
+    ...state,
+    armies: state.armies.filter((a) => a.id !== "army-jaime").concat([a1, a2]),
+    westerlands: {
+      ...state.westerlands,
+      submitted: true,
+      orders: [
+        { armyId: "west-a", fromHoldId: "16", toHoldId: "21" },
+        { armyId: "west-b", fromHoldId: "16", toHoldId: "17" },
+      ],
+    },
+  };
+}
+
+describe("planning board merge", () => {
+  it("does not let a North save restore an unsplit West host", () => {
+    const guest = westSplitBoard({
+      ...INITIAL_GAME_STATE,
+      activeFaction: "westerlands",
+    });
+    const host: GameState = { ...INITIAL_GAME_STATE, activeFaction: "north" };
+    const merged = mergeRoomState(guest, host, "north");
+    const westIds = merged.armies
+      .filter((a) => a.faction === "westerlands")
+      .map((a) => a.id);
+    assert.ok(westIds.includes("west-a"));
+    assert.ok(westIds.includes("west-b"));
+    assert.ok(!westIds.includes("army-jaime"));
+    assert.equal(merged.westerlands.orders.length, 2);
+    assert.ok(merged.armies.some((a) => a.id === "army-robb"));
+  });
+
+  it("does not let a West save restore an unsplit North host", () => {
+    const robb = INITIAL_GAME_STATE.armies.find((a) => a.id === "army-robb");
+    assert.ok(robb);
+    const hostSplit: GameState = {
+      ...INITIAL_GAME_STATE,
+      armies: INITIAL_GAME_STATE.armies
+        .filter((a) => a.id !== "army-robb")
+        .concat([
+          { ...robb, id: "north-a" },
+          { ...robb, id: "north-b" },
+        ]),
+    };
+    const guest = westSplitBoard({
+      ...INITIAL_GAME_STATE,
+      activeFaction: "westerlands",
+    });
+    const merged = mergeRoomState(hostSplit, guest, "westerlands");
+    assert.ok(merged.armies.some((a) => a.id === "north-a"));
+    assert.ok(merged.armies.some((a) => a.id === "west-a"));
+    assert.ok(!merged.armies.some((a) => a.id === "army-robb"));
+  });
+});
+
+describe("moveOrdersResolvable", () => {
+  it("is false while split marches name hosts the board does not have", () => {
+    const host: GameState = {
+      ...INITIAL_GAME_STATE,
+      westerlands: westSplitBoard(INITIAL_GAME_STATE).westerlands,
+    };
+    assert.equal(moveOrdersResolvable(host), false);
+  });
+
+  it("is true once the split children are on the board", () => {
+    assert.equal(moveOrdersResolvable(westSplitBoard(INITIAL_GAME_STATE)), true);
   });
 });

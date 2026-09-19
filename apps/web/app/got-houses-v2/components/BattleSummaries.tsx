@@ -591,8 +591,9 @@ function BattleModal({
 
 export default function BattleSummaries({ reports, onClose }: Props) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const list = reports ?? [];
 
-  const expandedReport = reports.find((r) => r.id === expandedId);
+  const expandedReport = list.find((r) => r.id === expandedId);
 
   return (
     <>
@@ -628,7 +629,7 @@ export default function BattleSummaries({ reports, onClose }: Props) {
               color: "#c8941a",
             }}
           >
-            Battle Log — {reports.length} engagement{reports.length !== 1 ? "s" : ""}
+            Battle Log — {list.length} engagement{list.length !== 1 ? "s" : ""}
           </span>
           <button
             type="button"
@@ -652,7 +653,7 @@ export default function BattleSummaries({ reports, onClose }: Props) {
 
         {/* Battle list */}
         <div style={{ overflowY: "auto", flex: 1 }}>
-          {reports.length === 0 ? (
+          {list.length === 0 ? (
             <div
               style={{
                 padding: "20px 14px",
@@ -667,7 +668,7 @@ export default function BattleSummaries({ reports, onClose }: Props) {
               No battles yet
             </div>
           ) : (
-            [...reports].reverse().map((report) => {
+            [...list].reverse().map((report) => {
               const hold = HOLDS_MAP.get(report.holdId);
               const resultColor = HOLD_RESULT_COLORS[report.holdResult];
               return (
@@ -710,7 +711,7 @@ export default function BattleSummaries({ reports, onClose }: Props) {
                       <span style={{ color: "#444" }}>T{report.turn} · </span>
                       {hold?.name ?? report.holdId}
                       <span style={{ color: resultColor, marginLeft: 8 }}>
-                        · {HOLD_RESULT_LABELS[report.holdResult]}
+                        · {HOLD_RESULT_LABELS[report.holdResult] ?? "Fought"}
                       </span>
                     </span>
                     {report.defeatType && (

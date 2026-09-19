@@ -31,7 +31,7 @@ export default function CommanderRenamePanel({ state, dispatch }: Props) {
     }
   }
 
-  const armies = state.pendingRenames
+  const armies = (state.pendingRenames ?? [])
     .map((id) => state.armies.find((a) => a.id === id))
     .filter(Boolean) as Army[];
 

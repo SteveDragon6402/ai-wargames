@@ -58,7 +58,7 @@ export default function SeatFatePanel({
         ? { kind: "army", armyId: ids[0] }
         : { kind: "hold", holdId: choice.holdId }
     );
-  }, [choice]);
+  }, [choice?.id]);
 
   if (!choice) return null;
 

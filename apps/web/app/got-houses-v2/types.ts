@@ -1261,13 +1261,17 @@ export type GameAction =
     }
   | {
       /**
-       * Take the rival's orders from the room save without touching ours.
-       * Used while both players are still planning.
+       * Take the rival's planning slice from the room save without touching ours.
+       * Orders, hosts, and the characters/prisoners that travel with them.
        */
       type: "PULL_RIVAL_ORDERS";
       faction: Faction;
       north: FactionOrders;
       westerlands: FactionOrders;
+      armies?: Army[];
+      characters?: Record<CharacterId, CharacterState>;
+      holdStates?: Record<string, HoldRuntime>;
+      prisoners?: PrisonerGroup[];
     }
   | {
       /** Take the other side's retreat picks without touching ours. */

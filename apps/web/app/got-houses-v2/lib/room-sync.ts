@@ -1,4 +1,14 @@
-import type { Faction, FactionOrders, GamePhase, GameState, RetreatEntry } from "../types";
+import type {
+  Army,
+  CharacterState,
+  Faction,
+  FactionOrders,
+  GamePhase,
+  GameState,
+  HoldRuntime,
+  PrisonerGroup,
+  RetreatEntry,
+} from "../types";
 
 export type RoomWriter = Faction | "both";
 
@@ -50,6 +60,109 @@ function mergeRetreats(
   });
 }
 
+function clipMoveOrders(fo: FactionOrders, armyIds: Set<string>): FactionOrders {
+  return {
+    ...fo,
+    orders: (fo.orders ?? []).filter((o) => armyIds.has(o.armyId)),
+  };
+}
+
+function holdTouchedByWriter(
+  holdId: string,
+  hs: HoldRuntime,
+  writer: Faction,
+  writerArmyHoldIds: Set<string>
+): boolean {
+  if (hs.controller === writer) return true;
+  if (hs.garrison?.faction === writer) return true;
+  if (hs.razeInProgress?.faction === writer) return true;
+  if (hs.siege?.besiegerFaction === writer) return true;
+  return writerArmyHoldIds.has(holdId);
+}
+
+function prisonerOnWriterBoard(
+  group: PrisonerGroup,
+  writer: Faction,
+  writerArmyIds: Set<string>
+): boolean {
+  if (group.captorFaction === writer) return true;
+  return group.location.kind === "army" && writerArmyIds.has(group.location.armyId);
+}
+
+/**
+ * Each client owns its faction's hosts. A North save must not restore a
+ * Westerlands army the West player just split, and the reverse.
+ */
+export function mergePlanningBoards(
+  current: GameState,
+  incoming: GameState,
+  writer: Faction
+): Pick<GameState, "armies" | "characters" | "holdStates" | "prisoners"> {
+  const currentArmies = current.armies ?? [];
+  const incomingArmies = incoming.armies ?? [];
+  const writerArmies = incomingArmies.filter((a) => a.faction === writer);
+  const otherArmies = currentArmies.filter((a) => a.faction !== writer);
+  const armies: Army[] = [...otherArmies, ...writerArmies];
+
+  const characters: Record<string, CharacterState> = {};
+  for (const [id, c] of Object.entries(current.characters ?? {})) {
+    if (c.faction !== writer) characters[id] = c;
+  }
+  for (const [id, c] of Object.entries(incoming.characters ?? {})) {
+    if (c.faction === writer) characters[id] = c;
+  }
+
+  const writerArmyHoldIds = new Set(
+    writerArmies.map((a) => a.holdId).filter((id): id is string => !!id)
+  );
+  const holdStates: Record<string, HoldRuntime> = { ...(current.holdStates ?? {}) };
+  for (const [id, hs] of Object.entries(incoming.holdStates ?? {})) {
+    if (holdTouchedByWriter(id, hs, writer, writerArmyHoldIds)) {
+      holdStates[id] = hs;
+    }
+  }
+
+  const writerArmyIds = new Set(writerArmies.map((a) => a.id));
+  const incomingPrisoners = incoming.prisoners ?? [];
+  const currentPrisoners = current.prisoners ?? [];
+  const fromWriter = incomingPrisoners.filter((p) =>
+    prisonerOnWriterBoard(p, writer, writerArmyIds)
+  );
+  const fromWriterIds = new Set(fromWriter.map((p) => p.id));
+  const fromOther = currentPrisoners.filter(
+    (p) => !fromWriterIds.has(p.id) && !prisonerOnWriterBoard(p, writer, writerArmyIds)
+  );
+  const prisoners: PrisonerGroup[] = [...fromOther, ...fromWriter];
+
+  return { armies, characters, holdStates, prisoners };
+}
+
+function armySliceKey(state: GameState, faction: Faction): string {
+  return JSON.stringify(
+    (state.armies ?? [])
+      .filter((a) => a.faction === faction)
+      .map((a) => [a.id, a.holdId, a.name, a.units, a.leaders, a.notables])
+  );
+}
+
+/** True when this client already has the rival's planning slice. */
+export function rivalPlanningSliceEqual(
+  local: GameState,
+  remote: GameState,
+  mine: Faction
+): boolean {
+  const rival: Faction = mine === "north" ? "westerlands" : "north";
+  if (!factionOrdersEqual(local[rival], remote[rival])) return false;
+  return armySliceKey(local, rival) === armySliceKey(remote, rival);
+}
+
+/** March orders that name a missing host cannot be resolved yet. */
+export function moveOrdersResolvable(state: GameState): boolean {
+  const ids = new Set((state.armies ?? []).map((a) => a.id));
+  const orders = [...(state.north?.orders ?? []), ...(state.westerlands?.orders ?? [])];
+  return orders.every((o) => ids.has(o.armyId));
+}
+
 /**
  * Merge two clients' full-state saves so they cannot overwrite each other.
  *
@@ -82,11 +195,14 @@ export function mergeRoomState(
         ? keepSubmitted(current.westerlands, incoming.westerlands)
         : keepSubmitted(incoming.westerlands, current.westerlands);
 
+    const boards = mergePlanningBoards(current, incoming, writer);
+    const armyIds = new Set(boards.armies.map((a) => a.id));
+
     return {
-      ...incoming,
-      north,
-      westerlands,
-      activeFaction: incoming.activeFaction,
+      ...current,
+      ...boards,
+      north: clipMoveOrders(north, armyIds),
+      westerlands: clipMoveOrders(westerlands, armyIds),
     };
   }
 

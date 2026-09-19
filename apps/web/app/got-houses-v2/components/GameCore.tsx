@@ -16,7 +16,7 @@ import { HOLDS, HOLDS_MAP } from "../data/holds";
 import { FACTION_HOMELAND } from "../data/homeland";
 import { regionSoftFor, regionTrait } from "../data/regions";
 import { getPathwayRoute } from "../data/pathways";
-import { forageAtHold, forageOnPath, normalizeForage } from "../lib/forage";
+import { forageAtHold, forageOnPath } from "../lib/forage";
 import type {
   BattleReport,
   TirednessRequest,
@@ -30,8 +30,7 @@ import type {
 } from "../types";
 import { INITIAL_GAME_STATE } from "../data/initial-state";
 import { snapshotForApi } from "../lib/converse-client";
-import { buildInitialCharacters } from "../data/characters";
-import { normalizeHoldRuntime } from "../lib/hold-runtime";
+import { normalizeState } from "../lib/normalize-state";
 import {
   armyFieldPresence,
   presenceNote,
@@ -45,7 +44,12 @@ import {
   applySurrenderDecision,
   holdsRipeForAiSurrender,
 } from "../lib/surrender";
-import { boardFingerprint, factionOrdersEqual, stateProgress } from "../lib/room-sync";
+import {
+  boardFingerprint,
+  moveOrdersResolvable,
+  rivalPlanningSliceEqual,
+  stateProgress,
+} from "../lib/room-sync";
 import {
   applyBriefsToBattle,
   collectBattleCharacterIds,
@@ -67,106 +71,6 @@ interface GameCoreProps {
   viewerFaction?: Faction;
   /** Latest room save from the poller. Ignored in solo / standalone. */
   remoteState?: GameState | null;
-}
-
-function normalizeState(raw: GameState): GameState {
-  const characters = raw.characters ?? buildInitialCharacters();
-  const normalizedCharacters = Object.fromEntries(
-    Object.entries(characters).map(([id, c]) => [
-      id,
-      c.kind === "npc"
-        ? { ...c, adviceGivenIds: c.adviceGivenIds ?? [] }
-        : c,
-    ])
-  );
-  return {
-    ...INITIAL_GAME_STATE,
-    ...raw,
-    characters: normalizedCharacters,
-    conversations: raw.conversations ?? [],
-    speechesThisTurn: raw.speechesThisTurn ?? [],
-    speechArmyId: raw.speechArmyId ?? null,
-    openConversationIds: raw.openConversationIds ?? [],
-    talkPickerOpen: raw.talkPickerOpen ?? false,
-    focusedConversationId: raw.focusedConversationId ?? null,
-    factionEvents: raw.factionEvents ?? [],
-    adviceLog: raw.adviceLog ?? [],
-    lastStandHoldIds: raw.lastStandHoldIds ?? [],
-    capturePledges: raw.capturePledges ?? [],
-    forage: normalizeForage(raw.forage),
-    outcome: raw.outcome ?? null,
-    northPrize: raw.northPrize ?? null,
-    armies: raw.armies ?? INITIAL_GAME_STATE.armies,
-    pendingBattles: raw.pendingBattles ?? [],
-    retreats: raw.retreats ?? [],
-    pendingRenames: raw.pendingRenames ?? [],
-    prisoners: raw.prisoners ?? [],
-    pendingChoices: raw.pendingChoices ?? [],
-    travellers: raw.travellers ?? [],
-    deeds: raw.deeds ?? [],
-    seatFatePanelId: raw.seatFatePanelId ?? null,
-    briefingOpen: raw.briefingOpen ?? false,
-    briefingShownFor: raw.briefingShownFor ?? null,
-    briefingShownTurn: raw.briefingShownTurn ?? null,
-    turnHistory: (raw.turnHistory ?? []).map((h) => ({
-      turn: h.turn,
-      // Pre-ledger saves stored only a moved flag, with no from/to.
-      armyMoves: (h.armyMoves ?? []).map((m) => ({
-        armyId: m.armyId,
-        armyName: m.armyName ?? m.armyId,
-        faction: m.faction ?? "north",
-        moved: m.moved,
-        fromHoldId: m.fromHoldId ?? "",
-        toHoldId: m.toHoldId ?? "",
-        order: m.order ?? (m.moved ? "march" : "rest"),
-        men: m.men ?? 0,
-      })),
-    })),
-    holdStates: Object.fromEntries(
-      Object.entries({
-        ...INITIAL_GAME_STATE.holdStates,
-        ...(raw.holdStates ?? {}),
-      }).map(([id, hs]) => [
-        id,
-        normalizeHoldRuntime(hs ?? INITIAL_GAME_STATE.holdStates[id]),
-      ])
-    ),
-    battleReports: (raw.battleReports ?? []).map((r) => ({
-      ...r,
-      shortSummary: r.shortSummary ?? "",
-      summaryError: r.summaryError,
-      fallen: r.fallen ?? [],
-      captured: r.captured ?? [],
-      prisonersTaken: r.prisonersTaken ?? [],
-      casualties: r.casualties ?? [],
-      narrative: r.narrative ?? "",
-      prisoners: r.prisoners ?? [],
-      factors: r.factors
-        ? {
-            ...r.factors,
-            commanderMoods: r.factors.commanderMoods ?? [],
-          }
-        : r.factors,
-    })),
-    garrisonPanel: raw.garrisonPanel ?? null,
-    turnedHouses: raw.turnedHouses ?? [],
-    north: {
-      orders: raw.north?.orders ?? [],
-      stanceOrders: raw.north?.stanceOrders ?? {},
-      stormArmyIds: raw.north?.stormArmyIds ?? [],
-      sallyHoldIds: raw.north?.sallyHoldIds ?? [],
-      razeOrders: raw.north?.razeOrders ?? [],
-      submitted: raw.north?.submitted ?? false,
-    },
-    westerlands: {
-      orders: raw.westerlands?.orders ?? [],
-      stanceOrders: raw.westerlands?.stanceOrders ?? {},
-      stormArmyIds: raw.westerlands?.stormArmyIds ?? [],
-      sallyHoldIds: raw.westerlands?.sallyHoldIds ?? [],
-      razeOrders: raw.westerlands?.razeOrders ?? [],
-      submitted: raw.westerlands?.submitted ?? false,
-    },
-  };
 }
 
 export default function GameCore({
@@ -222,14 +126,16 @@ export default function GameCore({
       remoteState.phase === "planning" &&
       remoteState.turn === state.turn
     ) {
-      const remoteRival = viewerFaction === "north" ? remoteState.westerlands : remoteState.north;
-      const localRival = viewerFaction === "north" ? state.westerlands : state.north;
-      if (factionOrdersEqual(remoteRival, localRival)) return;
+      if (rivalPlanningSliceEqual(state, remoteState, viewerFaction)) return;
       dispatch({
         type: "PULL_RIVAL_ORDERS",
         faction: viewerFaction,
         north: remoteState.north,
         westerlands: remoteState.westerlands,
+        armies: remoteState.armies,
+        characters: remoteState.characters,
+        holdStates: remoteState.holdStates,
+        prisoners: remoteState.prisoners ?? [],
       });
       return;
     }
@@ -266,6 +172,7 @@ export default function GameCore({
     state.turn,
     state.north,
     state.westerlands,
+    state.armies,
     dispatch,
   ]);
 
@@ -276,6 +183,9 @@ export default function GameCore({
     if (state.phase !== "planning") return;
     if (!state.north.submitted || !state.westerlands.submitted) return;
     if (!twoBrowser) return;
+    // Split children live on the other browser until we pull them. Resolving
+    // against the unsplit parent no-ops those marches and looks like a cancel.
+    if (!moveOrdersResolvable(state)) return;
     if (adjudicatedTurnRef.current === state.turn) return;
     adjudicatedTurnRef.current = state.turn;
     dispatch({ type: "ADJUDICATE_MOVES" });
@@ -286,6 +196,9 @@ export default function GameCore({
     state.north.submitted,
     state.westerlands.submitted,
     state.turn,
+    state.armies,
+    state.north.orders,
+    state.westerlands.orders,
     dispatch,
   ]);
 
@@ -341,7 +254,7 @@ export default function GameCore({
     // batch, so it gets resolved instead of being swallowed by the guard.
     const batchKey = [
       state.turn,
-      ...state.pendingBattles.map(
+      ...(state.pendingBattles ?? []).map(
         (b) => `${b.holdId}:${b.engagement ?? "field"}:${b.lastStand ? "ls" : "-"}`
       ),
     ].join("|");
@@ -354,7 +267,7 @@ export default function GameCore({
       // land. Mark the batch so a mid-flight UPDATE_TIREDNESS re-render cannot
       // skip ahead and settle the turn. Always resolve in finally so a failed
       // tiredness call cannot leave the room stuck.
-      const emptyField = state.pendingBattles.length === 0;
+      const emptyField = (state.pendingBattles ?? []).length === 0;
       if (emptyField) {
         resolvedBatchRef.current = batchKey;
       }
@@ -634,7 +547,7 @@ export default function GameCore({
 
     resolvedBatchRef.current = batchKey;
 
-    if (state.pendingBattles.length === 0) {
+    if ((state.pendingBattles ?? []).length === 0) {
       dispatch({ type: "BATTLES_RESOLVED", reports: [] });
       return;
     }
@@ -643,7 +556,7 @@ export default function GameCore({
       const reports: BattleReport[] = [];
       let characters = state.characters;
 
-      for (const battle of state.pendingBattles) {
+      for (const battle of state.pendingBattles ?? []) {
         console.group(`%c⚔ Battle: ${battle.holdId} — turn ${state.turn}${battle.lastStand ? " [LAST STAND]" : ""}`, "color:#c8941a;font-weight:bold");
         console.log("North armies:", battle.northArmies.map((a) => `${a.name} (${a.id})`));
         console.log("West armies:", battle.westArmies.map((a) => `${a.name} (${a.id})`));
@@ -871,7 +784,7 @@ export default function GameCore({
         {/* Battle log */}
         {state.battleLogOpen && (
           <BattleSummaries
-            reports={state.battleReports}
+            reports={state.battleReports ?? []}
             onClose={() => dispatch({ type: "TOGGLE_BATTLE_LOG" })}
           />
         )}

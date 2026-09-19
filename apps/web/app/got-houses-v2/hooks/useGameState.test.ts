@@ -10,7 +10,9 @@ import { army, battle } from "../lib/test-helpers";
 import { applyRaze } from "../lib/raze";
 import { garrisonHeadcount } from "../lib/hold-runtime";
 import { INITIAL_GAME_STATE } from "../data/initial-state";
-import type { GameState, RetreatEntry } from "../types";
+import { createPrisonerGroup } from "../lib/prisoners";
+import { moveOrdersResolvable } from "../lib/room-sync";
+import type { GameState, RetreatEntry, SplitConfig } from "../types";
 
 describe("applyCasualties", () => {
   it("never heals a unit when a row is larger than the stack", () => {
@@ -270,5 +272,136 @@ describe("razed seats cannot be garrisoned", () => {
       next.armies.find((a) => a.id === host.id)?.units[0]?.count,
       500
     );
+  });
+});
+
+const JAIME_SPLIT: SplitConfig = {
+  sourceArmyId: "army-jaime",
+  army1: {
+    units: [{ house: "Lannister", type: "cavalry", count: 1500 }],
+    leaderNames: ["Jaime Lannister"],
+    notableNames: ["Bronn"],
+  },
+  army2: {
+    units: [
+      { house: "Lannister", type: "infantry", count: 2000 },
+      { house: "Lannister", type: "archers", count: 500 },
+    ],
+    leaderNames: [],
+    notableNames: ["Ser Ilyn Payne", "Ser Balon Swann"],
+  },
+};
+
+describe("guest West split in a two-browser room", () => {
+  it("marches both halves after the host pulls the new hosts", () => {
+    let guest: GameState = {
+      ...INITIAL_GAME_STATE,
+      activeFaction: "westerlands",
+    };
+    guest = gameReducer(guest, { type: "SPLIT_ARMY", config: JAIME_SPLIT });
+    const kids = guest.armies.filter(
+      (a) => a.faction === "westerlands" && a.holdId === "16"
+    );
+    assert.equal(kids.length, 2);
+    const [a1, a2] = kids;
+
+    guest = gameReducer(
+      {
+        ...guest,
+        selectedArmyIds: [a1.id],
+        moveMode: { active: true, validTargets: ["21"] },
+      },
+      { type: "QUEUE_MOVE", toHoldId: "21" }
+    );
+    guest = gameReducer(
+      {
+        ...guest,
+        selectedArmyIds: [a2.id],
+        moveMode: { active: true, validTargets: ["17"] },
+      },
+      { type: "QUEUE_MOVE", toHoldId: "17" }
+    );
+    guest = gameReducer(guest, {
+      type: "SUBMIT_FACTION",
+      faction: "westerlands",
+      deferAdjudicate: true,
+    });
+
+    const host: GameState = { ...INITIAL_GAME_STATE, activeFaction: "north" };
+    let hostBoard = gameReducer(host, {
+      type: "PULL_RIVAL_ORDERS",
+      faction: "north",
+      north: host.north,
+      westerlands: guest.westerlands,
+      armies: guest.armies,
+      characters: guest.characters,
+      holdStates: guest.holdStates,
+      prisoners: guest.prisoners,
+    });
+    assert.ok(hostBoard.armies.some((a) => a.id === a1.id));
+    assert.ok(!hostBoard.armies.some((a) => a.id === "army-jaime"));
+    assert.equal(moveOrdersResolvable(hostBoard), true);
+
+    hostBoard = gameReducer(hostBoard, {
+      type: "SUBMIT_FACTION",
+      faction: "north",
+      deferAdjudicate: true,
+    });
+    hostBoard = gameReducer(hostBoard, { type: "ADJUDICATE_MOVES" });
+    assert.equal(hostBoard.armies.find((a) => a.id === a1.id)?.holdId, "21");
+    assert.equal(hostBoard.armies.find((a) => a.id === a2.id)?.holdId, "17");
+  });
+
+  it("moves escorted prisoners onto the first half and drops the parent order", () => {
+    const group = createPrisonerGroup({
+      captorFaction: "westerlands",
+      faction: "north",
+      location: { kind: "army", armyId: "army-jaime" },
+      units: [{ house: "Tully", type: "infantry", count: 40 }],
+      characterIds: [],
+      takenAtHoldId: "21",
+      takenTurn: 1,
+      origin: "battle",
+    });
+    assert.ok(group);
+
+    let state: GameState = {
+      ...INITIAL_GAME_STATE,
+      activeFaction: "westerlands",
+      prisoners: [group],
+      westerlands: {
+        ...INITIAL_GAME_STATE.westerlands,
+        orders: [{ armyId: "army-jaime", fromHoldId: "16", toHoldId: "21" }],
+      },
+    };
+    state = gameReducer(state, { type: "SPLIT_ARMY", config: JAIME_SPLIT });
+    const loc = (state.prisoners ?? [])[0]?.location;
+    assert.equal(loc?.kind, "army");
+    if (loc?.kind === "army") {
+      assert.notEqual(loc.armyId, "army-jaime");
+      assert.ok(state.armies.some((a) => a.id === loc.armyId));
+    }
+    assert.equal(
+      state.westerlands.orders.some((o) => o.armyId === "army-jaime"),
+      false
+    );
+  });
+
+  it("hydrates a sparse resolving snapshot without dropping arrays", () => {
+    const sparse = {
+      turn: 1,
+      phase: "resolving",
+      north: INITIAL_GAME_STATE.north,
+      westerlands: INITIAL_GAME_STATE.westerlands,
+    } as GameState;
+    const next = gameReducer(
+      { ...INITIAL_GAME_STATE, activeFaction: "westerlands" },
+      { type: "HYDRATE_REMOTE", state: sparse }
+    );
+    assert.ok(Array.isArray(next.pendingBattles));
+    assert.ok(Array.isArray(next.pendingRenames));
+    assert.ok(Array.isArray(next.armies));
+    assert.ok(Array.isArray(next.battleReports));
+    assert.equal(next.activeFaction, "westerlands");
   });
 });

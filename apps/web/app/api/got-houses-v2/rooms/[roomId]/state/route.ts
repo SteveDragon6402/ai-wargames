@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { and, eq } from "drizzle-orm";
 import { getDb, rooms, players, gotV2Games } from "@wargame/db";
 import { NextResponse } from "next/server";
 import { getSessionToken } from "@/lib/session";
@@ -15,6 +15,8 @@ function isGameState(value: unknown): value is GameState {
     !!s.westerlands
   );
 }
+
+const MERGE_TRIES = 8;
 
 export async function POST(
   req: Request,
@@ -54,24 +56,44 @@ export async function POST(
     }
 
     const writer = room.soloDualFaction ? "both" : (viewer.factionId as Faction);
-
-    const existing = await db.select().from(gotV2Games).where(eq(gotV2Games.roomId, roomId)).limit(1);
     const incoming = body.state;
-    const merged =
-      existing.length > 0 && isGameState(existing[0].state)
-        ? mergeRoomState(existing[0].state, incoming, writer)
-        : incoming;
 
-    if (existing.length > 0) {
-      await db
+    for (let attempt = 0; attempt < MERGE_TRIES; attempt++) {
+      const existing = await db
+        .select()
+        .from(gotV2Games)
+        .where(eq(gotV2Games.roomId, roomId))
+        .limit(1);
+
+      if (existing.length === 0) {
+        try {
+          await db.insert(gotV2Games).values({ roomId, state: incoming });
+          return NextResponse.json({ ok: true, state: incoming });
+        } catch {
+          continue;
+        }
+      }
+
+      const row = existing[0];
+      const current = isGameState(row.state) ? row.state : incoming;
+      const merged = mergeRoomState(current, incoming, writer);
+      const lastTry = attempt === MERGE_TRIES - 1;
+      const updated = await db
         .update(gotV2Games)
         .set({ state: merged, updatedAt: new Date() })
-        .where(eq(gotV2Games.roomId, roomId));
-    } else {
-      await db.insert(gotV2Games).values({ roomId, state: merged });
+        .where(
+          lastTry
+            ? eq(gotV2Games.roomId, roomId)
+            : and(eq(gotV2Games.roomId, roomId), eq(gotV2Games.updatedAt, row.updatedAt))
+        )
+        .returning({ roomId: gotV2Games.roomId });
+
+      if (updated.length > 0) {
+        return NextResponse.json({ ok: true, state: merged });
+      }
     }
 
-    return NextResponse.json({ ok: true, state: merged });
+    return NextResponse.json({ error: "Room save conflict" }, { status: 409 });
   } catch (e) {
     console.error("[POST /api/got-houses-v2/rooms/[roomId]/state]", e);
     return NextResponse.json({ error: "Failed to save state" }, { status: 500 });
