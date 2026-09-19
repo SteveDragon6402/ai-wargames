@@ -561,6 +561,25 @@ function getAdjacentHolds(holdId: string): string[] {
   return HOLDS_MAP.get(holdId)?.links ?? [];
 }
 
+/** Neighbours light up as soon as a field host is selected — the map is how you march. */
+function marchPreview(
+  state: GameState,
+  armyIds: string[]
+): { active: boolean; validTargets: string[] } {
+  const armies = armyIds
+    .map((id) => resolveSelectableArmy(state.armies, state.holdStates, id))
+    .filter((a): a is Army => !!a && !isGarrisonArmyId(a.id));
+  if (armies.length === 0) return { active: false, validTargets: [] };
+  if (armies.some((a) => getFactionOrders(state, a.faction).submitted)) {
+    return { active: false, validTargets: [] };
+  }
+  const union = new Set<string>();
+  for (const a of armies) {
+    for (const h of getAdjacentHolds(a.holdId)) union.add(h);
+  }
+  return { active: union.size > 0, validTargets: Array.from(union) };
+}
+
 /**
  * Is this army standing on friendly country?
  *
@@ -1009,7 +1028,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         ...state,
         selectedArmyIds: next,
         selectedHoldId: army.holdId ?? state.selectedHoldId,
-        moveMode: { active: false, validTargets: [] },
+        moveMode: marchPreview(state, next),
         talkPickerOpen: false,
       };
     }
@@ -1028,7 +1047,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         selectedHoldId: action.holdId,
         selectedArmyIds: armiesHere,
         talkPickerOpen: false,
-        moveMode: { active: false, validTargets: [] },
+        moveMode: marchPreview(state, armiesHere),
       };
     }
 
@@ -1093,8 +1112,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
       return {
         ...nextState,
-        selectedArmyIds: [],
-        moveMode: { active: false, validTargets: [] },
+        selectedArmyIds: state.selectedArmyIds,
+        moveMode: marchPreview(nextState, state.selectedArmyIds),
       };
     }
 
@@ -1125,16 +1144,25 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         newStanceOrders[action.armyId] = action.order;
       }
 
+      const stanceOn =
+        action.order !== null && currentOrder !== action.order;
+
       // Clear any move order for this army (can't march and rest/fortify)
       const newOrders = factionOrders.orders.filter((o) => o.armyId !== action.armyId);
 
-      return setFactionOrders(state, faction, {
+      const next = setFactionOrders(state, faction, {
         orders: newOrders,
         stanceOrders: newStanceOrders,
         stormArmyIds: factionOrders.stormArmyIds.filter(
           (id) => id !== action.armyId
         ),
       });
+      return {
+        ...next,
+        moveMode: stanceOn
+          ? { active: false, validTargets: [] }
+          : marchPreview(next, state.selectedArmyIds),
+      };
     }
 
     case "SUBMIT_FACTION": {
@@ -3037,9 +3065,21 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         : fo.sallyHoldIds;
       const stanceOrders = { ...fo.stanceOrders };
       if (action.active) delete stanceOrders[action.armyId];
+      const nextFo = {
+        ...fo,
+        stormArmyIds,
+        sallyHoldIds,
+        stanceOrders,
+        orders: action.active
+          ? fo.orders.filter((o) => o.armyId !== action.armyId)
+          : fo.orders,
+      };
+      const next = { ...state, [key]: nextFo };
       return {
-        ...state,
-        [key]: { ...fo, stormArmyIds, sallyHoldIds, stanceOrders },
+        ...next,
+        moveMode: action.active
+          ? { active: false, validTargets: [] }
+          : marchPreview(next, state.selectedArmyIds),
       };
     }
 
@@ -3455,7 +3495,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ? beginRaze(hs, army.faction, state.turn)
           : { ...hs, razeInProgress: null };
       }
-      return setFactionOrders(
+      const next = setFactionOrders(
         { ...state, holdStates },
         army.faction,
         {
@@ -3465,6 +3505,12 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             : fo.orders,
         }
       );
+      return {
+        ...next,
+        moveMode: action.active
+          ? { active: false, validTargets: [] }
+          : marchPreview(next, state.selectedArmyIds),
+      };
     }
 
     case "RESOLVE_PENDING_CHOICE": {

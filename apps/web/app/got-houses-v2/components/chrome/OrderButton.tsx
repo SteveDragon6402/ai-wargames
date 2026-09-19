@@ -40,7 +40,7 @@ export function OrderButton({
               spendsTurn ? "text-primary" : "text-muted-foreground"
             )}
           >
-            {spendsTurn ? "Spends this host's turn" : "Does not spend the turn"}
+            {spendsTurn ? "This is their job for the turn" : "They can still march or rest"}
           </div>
           <p className="text-[12px] font-normal leading-snug text-popover-foreground/90">
             {body}
@@ -55,24 +55,15 @@ export function OrderButton({
           variant={accent ? "default" : active ? "secondary" : "outline"}
           disabled={disabled}
           onClick={onClick}
-          className={cn(
-            "relative h-8 max-w-full overflow-hidden rounded-sm px-2.5 pr-3.5 text-[12px] font-medium tracking-normal",
+            className={cn(
+              "relative h-8 max-w-full overflow-hidden rounded-sm px-2.5 text-[12px] font-medium tracking-normal",
             active &&
               !accent &&
               "border-primary/70 bg-primary/15 text-primary hover:bg-primary/20 hover:text-primary"
           )}
         >
-          <span className="truncate">{label}</span>
-          <span
-            aria-hidden
-            className={cn(
-              "pointer-events-none absolute bottom-0.5 right-0.5 size-2 rounded-full border",
-              spendsTurn
-                ? "border-primary bg-primary shadow-[0_0_4px_hsl(var(--primary)/0.7)]"
-                : "border-muted-foreground/80 bg-transparent"
-            )}
-          />
-        </Button>
+            <span className="truncate">{label}</span>
+          </Button>
       </span>
     </HoldTip>
   );

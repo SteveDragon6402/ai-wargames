@@ -67,10 +67,10 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
   const submitLabel = !inPlanningPhase
     ? PHASE_COPY[phase] ?? "In progress"
     : currentSubmitted
-      ? "Orders locked"
+      ? "Turn committed"
       : blockedBy
         ? "Fate unpaid"
-        : "Lock orders";
+        : "Commit this turn";
 
   return (
     <header className="flex h-14 min-w-0 shrink-0 items-center gap-2 overflow-hidden border-b border-border bg-card/90 px-2 backdrop-blur sm:gap-3 sm:px-3">
@@ -157,71 +157,14 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
         </div>
       )}
 
-      <Hint
-        label={
-          north.submitted
-            ? "The North has locked this turn"
-            : north.orders.length
-              ? `The North has ${north.orders.length} march ${north.orders.length === 1 ? "order" : "orders"}`
-              : "The North has not marched yet"
-        }
-      >
-        <span
-          className={cn(
-            "hidden items-center gap-1 text-[12px] lg:flex",
-            north.submitted ? "text-good" : north.orders.length ? "text-primary" : "text-muted-foreground"
-          )}
-        >
-          <span
-            className={cn(
-              "size-1.5 rounded-full",
-              north.submitted ? "bg-good" : north.orders.length ? "bg-primary" : "bg-border"
-            )}
-          />
-          N
-        </span>
-      </Hint>
-      <Hint
-        label={
-          westerlands.submitted
-            ? "The Westerlands have locked this turn"
-            : westerlands.orders.length
-              ? `The Westerlands have ${westerlands.orders.length} march ${westerlands.orders.length === 1 ? "order" : "orders"}`
-              : "The Westerlands have not marched yet"
-        }
-      >
-        <span
-          className={cn(
-            "hidden items-center gap-1 text-[12px] lg:flex",
-            westerlands.submitted
-              ? "text-good"
-              : westerlands.orders.length
-                ? "text-primary"
-                : "text-muted-foreground"
-          )}
-        >
-          <span
-            className={cn(
-              "size-1.5 rounded-full",
-              westerlands.submitted
-                ? "bg-good"
-                : westerlands.orders.length
-                  ? "bg-primary"
-                  : "bg-border"
-            )}
-          />
-          W
-        </span>
-      </Hint>
-
       <div className="min-w-0 flex-1" />
 
       <Hint
         label={
           blockedBy ??
           (currentSubmitted
-            ? "Your orders are locked until the turn resolves"
-            : "Lock this turn's orders. Both sides must lock before adjudication.")
+            ? "You have committed. The field is judged when both sides have."
+            : "Commit this turn. Both sides must, then the field is judged.")
         }
       >
         <Button
@@ -258,23 +201,23 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
         </Hint>
       )}
 
-      <Hint label="Read every battle that has been fought">
-        <Button
-          type="button"
-          variant={state.battleLogOpen ? "secondary" : "outline"}
-          size="sm"
-          className="h-8 shrink-0 gap-1.5 px-2 text-[12px] sm:px-2.5"
-          onClick={() => dispatch({ type: "TOGGLE_BATTLE_LOG" })}
-        >
-          <Swords className="size-3.5" />
-          <span className="hidden md:inline">Battles</span>
-          {(state.battleReports ?? []).length > 0 && (
+      {(state.battleReports ?? []).length > 0 && (
+        <Hint label="Read every battle that has been fought">
+          <Button
+            type="button"
+            variant={state.battleLogOpen ? "secondary" : "outline"}
+            size="sm"
+            className="h-8 shrink-0 gap-1.5 px-2 text-[12px] sm:px-2.5"
+            onClick={() => dispatch({ type: "TOGGLE_BATTLE_LOG" })}
+          >
+            <Swords className="size-3.5" />
+            <span className="hidden md:inline">Battles</span>
             <Badge variant="outline" className="h-4 px-1 text-[10px]">
               {state.battleReports.length}
             </Badge>
-          )}
-        </Button>
-      </Hint>
+          </Button>
+        </Hint>
+      )}
 
       <Popover>
         <PopoverTrigger asChild>
@@ -339,6 +282,14 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
             <ScrollText className="size-4" />
             Last briefing
           </DropdownMenuItem>
+          {(state.battleReports ?? []).length > 0 && (
+            <DropdownMenuItem
+              onClick={() => dispatch({ type: "TOGGLE_BATTLE_LOG" })}
+            >
+              <Swords className="size-4" />
+              Battles
+            </DropdownMenuItem>
+          )}
           <DropdownMenuSeparator />
           <DropdownMenuItem onClick={() => dispatch({ type: "TOGGLE_ADMIN" })}>
             {adminMode ? "Leave hot-seat admin" : "Hot-seat admin"}

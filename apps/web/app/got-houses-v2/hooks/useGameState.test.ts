@@ -405,3 +405,44 @@ describe("guest West split in a two-browser room", () => {
     assert.equal(next.activeFaction, "westerlands");
   });
 });
+
+describe("the map is how you march", () => {
+  it("lights neighbour seats when a field host is selected", () => {
+    const next = gameReducer(INITIAL_GAME_STATE, {
+      type: "SELECT_ARMY",
+      armyId: "army-robb",
+      shift: false,
+    });
+    assert.equal(next.moveMode.active, true);
+    assert.ok(next.moveMode.validTargets.includes("07"));
+    assert.ok(!next.moveMode.validTargets.includes("08"));
+    assert.deepEqual(next.selectedArmyIds, ["army-robb"]);
+  });
+
+  it("keeps the host selected after a march is queued", () => {
+    let s = gameReducer(INITIAL_GAME_STATE, {
+      type: "SELECT_ARMY",
+      armyId: "army-robb",
+      shift: false,
+    });
+    s = gameReducer(s, { type: "QUEUE_MOVE", toHoldId: "07" });
+    assert.deepEqual(s.selectedArmyIds, ["army-robb"]);
+    assert.equal(s.north.orders[0]?.toHoldId, "07");
+    assert.equal(s.moveMode.active, true);
+  });
+
+  it("stops lighting neighbours when the host is told to rest", () => {
+    let s = gameReducer(INITIAL_GAME_STATE, {
+      type: "SELECT_ARMY",
+      armyId: "army-robb",
+      shift: false,
+    });
+    s = gameReducer(s, {
+      type: "SET_STANCE_ORDER",
+      armyId: "army-robb",
+      order: "rest",
+    });
+    assert.equal(s.moveMode.active, false);
+    assert.equal(s.north.stanceOrders["army-robb"], "rest");
+  });
+});

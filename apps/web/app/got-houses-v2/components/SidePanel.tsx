@@ -33,7 +33,7 @@ import TermsBlock from "./TermsBlock";
 import PrisonerCard from "./PrisonerCard";
 import SeatFatePanel from "./SeatFatePanel";
 import TheaterOverview from "./TheaterOverview";
-import { OrderButton, OrderGroup } from "./chrome/OrderButton";
+import { OrderButton } from "./chrome/OrderButton";
 import { prisonersAt, prisonersWith } from "../lib/prisoners";
 import { canRaze } from "../lib/raze";
 import { blockingChoicesFor, choiceAtHold } from "../lib/pending-choices";
@@ -57,7 +57,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
   const [railOpen, setRailOpen] = useState(true);
   const [hostsOpen, setHostsOpen] = useState(true);
   const prevHoldId = useRef<string | null>(null);
-  const { selectedHoldId, selectedArmyIds, moveMode, armies, activeFaction, adminMode } = state;
+  const { selectedHoldId, selectedArmyIds, armies, activeFaction, adminMode } = state;
   const talkOpen = state.talkPickerOpen && state.phase === "planning";
 
   const hold = selectedHoldId ? HOLDS_MAP.get(selectedHoldId) : undefined;
@@ -292,8 +292,71 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
   );
 
   const showOrders = selectedArmies.length > 0 || canSally;
-  const lockedHint = "Orders are locked for this side.";
-  const notYoursHint = "Select one of your hosts to issue this order.";
+  const who =
+    selectedArmies.length === 1
+      ? selectedArmies[0].name
+      : selectedArmies.length > 1
+        ? `${selectedArmies.length} hosts`
+        : "This garrison";
+  const marchDestIds = [
+    ...new Set(
+      selectedArmies
+        .map((a) => {
+          const fo = a.faction === "north" ? state.north : state.westerlands;
+          return fo.orders.find((o) => o.armyId === a.id)?.toHoldId;
+        })
+        .filter((id): id is string => !!id)
+    ),
+  ];
+  const razeActive = selectedArmies.some((a) =>
+    (state[a.faction].razeOrders ?? []).some(
+      (o) => o.armyId === a.id && o.holdId === selectedHoldId
+    )
+  );
+  const canRazeStay = selectedArmies.some((a) => {
+    if (!selectedHoldId) return false;
+    return (
+      (adminMode || a.faction === myFaction) &&
+      canRaze(a, selectedHoldId, holdRuntime).ok
+    );
+  });
+  const jobLine = (() => {
+    if (isLocked) {
+      return "This side has committed. The field is judged when both sides have.";
+    }
+    if (garrisonSelected) {
+      return `${who} are on the walls. They cannot march until you take them off.`;
+    }
+    if (stormActive) {
+      return `This turn ${who} will storm the walls.`;
+    }
+    if (sallyActive) {
+      return "This turn the garrison will ride out against the besiegers.";
+    }
+    if (razeActive) {
+      return `This turn ${who} will burn this seat.`;
+    }
+    if (singleArmyStanceOrder === "rest") {
+      return `This turn ${who} will rest here, and will not march.`;
+    }
+    if (singleArmyStanceOrder === "fortify") {
+      return `This turn ${who} will dig in here, and will not march.`;
+    }
+    if (marchDestIds.length === 1) {
+      const dest = HOLDS_MAP.get(marchDestIds[0])?.name ?? marchDestIds[0];
+      return `This turn ${who} will march to ${dest}. Click another neighbour to change.`;
+    }
+    if (marchDestIds.length > 1) {
+      return "This turn these hosts will march to different seats.";
+    }
+    if (canMove) {
+      return `${who} ${selectedArmies.length === 1 ? "has" : "have"} no job yet. Click a glowing neighbour to march, or rest here.`;
+    }
+    if (canSally) {
+      return "The garrison can ride out this turn, or wait behind the walls.";
+    }
+    return "Click one of your hosts — the numbered badges on the map, or a name in this list.";
+  })();
 
   useEffect(() => {
     try {
@@ -400,42 +463,6 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
         </div>
       </div>
 
-      {state.phase === "planning" && (
-        <div className="flex shrink-0 border-b border-border">
-          <button
-            type="button"
-            onClick={() =>
-              talkOpen ? dispatch({ type: "TOGGLE_TALK_PICKER" }) : undefined
-            }
-            className={cn(
-              "flex-1 px-3 py-2 text-[12px] font-medium",
-              !talkOpen
-                ? "border-b-2 border-primary text-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            {hold ? "This seat" : "Theater"}
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              if (!talkOpen) dispatch({ type: "TOGGLE_TALK_PICKER" });
-            }}
-            className={cn(
-              "flex-1 px-3 py-2 text-[12px] font-medium",
-              talkOpen
-                ? "border-b-2 border-primary text-foreground"
-                : "text-muted-foreground hover:text-foreground"
-            )}
-          >
-            Talk
-            {state.openConversationIds.length > 0
-              ? ` (${state.openConversationIds.length})`
-              : ""}
-          </button>
-        </div>
-      )}
-
       {talkOpen ? (
         <ConversationDock state={state} dispatch={dispatch} />
       ) : !selectedHoldId || !hold ? (
@@ -464,255 +491,212 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
 
             {showOrders && (
               <section className="min-w-0 space-y-3 overflow-hidden border-b border-border px-4 py-3">
-                <div className="flex items-baseline justify-between gap-2">
-                  <div className="text-[11px] font-medium text-muted-foreground">
-                    Orders
-                  </div>
-                  <div className="flex shrink-0 items-center gap-2 text-[10px] text-muted-foreground">
-                    <span className="inline-flex items-center gap-1">
-                      <span className="size-1.5 rounded-full bg-primary" />
-                      this turn
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      <span className="size-1.5 rounded-full border border-muted-foreground" />
-                      free
-                    </span>
-                  </div>
-                </div>
-                {moveMode.active ? (
-                  <div className="flex items-center gap-2">
-                    <p className="flex-1 text-[13px] text-primary">
-                      Click a highlighted hold on the map.
-                    </p>
-                    <OrderButton
-                      label="Cancel"
-                      hint="Stop choosing a destination"
-                      onClick={() => dispatch({ type: "CANCEL_MOVE" })}
-                    />
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {selectedArmies.length > 0 && (
-                      <>
-                        <OrderGroup title="March">
-                          <OrderButton
-                            label="Move"
-                            hint="March the selected host to an adjacent hold. Then click the destination on the map."
-                            disabledHint={
-                              isLocked
-                                ? lockedHint
-                                : garrisonSelected
-                                  ? "Men on the walls cannot march. Ungarrison them first."
-                                  : notYoursHint
-                            }
-                            disabled={!canMove}
-                            accent
-                            spendsTurn
-                            onClick={() => dispatch({ type: "BEGIN_MOVE" })}
-                          />
-                        </OrderGroup>
-                        <OrderGroup title="Camp">
-                          {canIssueStance && (
-                            <OrderButton
-                              label="Rest"
-                              hint="Spend the turn recovering condition. The host will not march."
-                              active={singleArmyStanceOrder === "rest"}
-                              spendsTurn
-                              onClick={() =>
-                                dispatch({
-                                  type: "SET_STANCE_ORDER",
-                                  armyId: singleSelected!.id,
-                                  order: singleArmyStanceOrder === "rest" ? null : "rest",
-                                })
-                              }
-                            />
-                          )}
-                          {canIssueStance && (
-                            <OrderButton
-                              label={
-                                singleSelected &&
-                                holdRuntime?.siege?.besiegerFaction ===
-                                  singleSelected.faction
-                                  ? "Dig in"
-                                  : "Fortify"
-                              }
-                              hint={
-                                singleSelected &&
-                                holdRuntime?.siege?.besiegerFaction ===
-                                  singleSelected.faction
-                                  ? "Defend the siege camp, not the keep. If a host friendly to the garrison attacks the camp, the garrison will sally."
-                                  : "Dig in at this seat. The host will not march."
-                              }
-                              active={singleArmyStanceOrder === "fortify"}
-                              spendsTurn
-                              onClick={() =>
-                                dispatch({
-                                  type: "SET_STANCE_ORDER",
-                                  armyId: singleSelected!.id,
-                                  order:
-                                    singleArmyStanceOrder === "fortify" ? null : "fortify",
-                                })
-                              }
-                            />
-                          )}
-                          {canIssueStance && (
-                            <OrderButton
-                              label="Speech"
-                              hint="Address the men to raise morale. Once per host per turn — it does not stop a march."
-                              disabledHint="This host already heard a speech this turn."
-                              disabled={state.speechesThisTurn.includes(singleSelected!.id)}
-                              active={state.speechArmyId === singleSelected!.id}
-                              onClick={() =>
-                                state.speechArmyId === singleSelected!.id
-                                  ? dispatch({ type: "CLOSE_SPEECH" })
-                                  : dispatch({
-                                      type: "OPEN_SPEECH",
-                                      armyId: singleSelected!.id,
-                                    })
-                              }
-                            />
-                          )}
-                        </OrderGroup>
-                        <OrderGroup title="Walls">
-                          {canGarrison && (
-                            <OrderButton
-                              label="Garrison"
-                              hint="Post men from this host onto the walls."
-                              onClick={() =>
-                                dispatch({
-                                  type: "OPEN_GARRISON_PANEL",
-                                  holdId: selectedHoldId,
-                                  mode: "deposit",
-                                  armyId: singleSelected!.id,
-                                })
-                              }
-                            />
-                          )}
-                          {canAbandon && (
-                            <OrderButton
-                              label="Abandon"
-                              hint="Leave this conquered seat empty and take the garrison with you."
-                              onClick={() =>
-                                dispatch({
-                                  type: "OPEN_GARRISON_PANEL",
-                                  holdId: selectedHoldId,
-                                  mode: "abandon",
-                                  armyId: garrisonSelected
-                                    ? null
-                                    : singleSelected?.id ?? null,
-                                })
-                              }
-                            />
-                          )}
-                          {canStorm && (
-                            <OrderButton
-                              label="Storm"
-                              hint="Throw this host at the walls today to take the castle. Bloody either way — this is not a probe."
-                              active={stormActive}
-                              spendsTurn
-                              onClick={() =>
-                                dispatch({
-                                  type: "SET_STORM_ORDER",
-                                  armyId: singleSelected!.id,
-                                  active: !stormActive,
-                                })
-                              }
-                            />
-                          )}
-                          {selectedArmies.some(
-                            (a) =>
-                              (adminMode || a.faction === myFaction) &&
-                              canRaze(a, selectedHoldId, holdRuntime).ok
-                          ) && (
-                            <OrderButton
-                              label={
-                                (state[myFaction].razeOrders ?? []).some(
-                                  (o) => o.holdId === selectedHoldId
-                                )
-                                  ? "Cancel raze"
-                                  : "Raze"
-                              }
-                              hint="Burn this seat this turn. It will not feed or shelter anyone after."
-                              spendsTurn
-                              onClick={() => {
-                                const army = selectedArmies.find((a) =>
-                                  canRaze(a, selectedHoldId, holdRuntime).ok
-                                );
-                                if (!army) return;
-                                const active = (state[army.faction].razeOrders ?? []).some(
-                                  (o) => o.armyId === army.id
-                                );
-                                dispatch({
-                                  type: "SET_RAZE_ORDER",
-                                  armyId: army.id,
-                                  holdId: selectedHoldId,
-                                  active: !active,
-                                });
-                              }}
-                            />
-                          )}
-                        </OrderGroup>
-                        <OrderGroup title="Host">
-                          {canCombine && (
-                            <OrderButton
-                              label="Combine"
-                              hint="Merge the selected hosts at this seat into one."
-                              onClick={() => dispatch({ type: "COMBINE_ARMIES" })}
-                            />
-                          )}
-                          {canSplit && (
-                            <OrderButton
-                              label="Split"
-                              hint="Divide this host into two, and assign men and captains."
-                              onClick={() =>
-                                dispatch({
-                                  type: "OPEN_SPLIT",
-                                  armyId: singleSelected!.id,
-                                })
-                              }
-                            />
-                          )}
-                          {canChangeCommander && (
-                            <OrderButton
-                              label="Commander"
-                              hint="Change who leads this host."
-                              onClick={() =>
-                                dispatch({
-                                  type: "OPEN_COMMANDER_CHANGE",
-                                  armyId: singleSelected!.id,
-                                })
-                              }
-                            />
-                          )}
-                          <OrderButton
-                            label="Deselect"
-                            hint="Clear the host selection. The seat stays open."
-                            onClick={() =>
-                              dispatch({ type: "SELECT_HOLD", holdId: selectedHoldId })
-                            }
-                          />
-                        </OrderGroup>
-                      </>
+                <p className="text-[13px] leading-relaxed text-foreground">
+                  {jobLine}
+                </p>
+                {(canIssueStance || canStorm || canSally || canRazeStay) && !isLocked && (
+                  <div className="flex min-w-0 flex-wrap gap-1.5">
+                    {canIssueStance && (
+                      <OrderButton
+                        label="Rest here"
+                        hint="Spend the turn recovering. They will not march."
+                        active={singleArmyStanceOrder === "rest"}
+                        spendsTurn
+                        onClick={() =>
+                          dispatch({
+                            type: "SET_STANCE_ORDER",
+                            armyId: singleSelected!.id,
+                            order: singleArmyStanceOrder === "rest" ? null : "rest",
+                          })
+                        }
+                      />
+                    )}
+                    {canIssueStance && (
+                      <OrderButton
+                        label={
+                          singleSelected &&
+                          holdRuntime?.siege?.besiegerFaction ===
+                            singleSelected.faction
+                            ? "Dig in"
+                            : "Dig in here"
+                        }
+                        hint={
+                          singleSelected &&
+                          holdRuntime?.siege?.besiegerFaction ===
+                            singleSelected.faction
+                            ? "Defend the siege camp. They will not march."
+                            : "Fortify this seat. They will not march."
+                        }
+                        active={singleArmyStanceOrder === "fortify"}
+                        spendsTurn
+                        onClick={() =>
+                          dispatch({
+                            type: "SET_STANCE_ORDER",
+                            armyId: singleSelected!.id,
+                            order:
+                              singleArmyStanceOrder === "fortify" ? null : "fortify",
+                          })
+                        }
+                      />
+                    )}
+                    {canStorm && (
+                      <OrderButton
+                        label="Storm the walls"
+                        hint="Assault the castle this turn instead of starving it."
+                        active={stormActive}
+                        spendsTurn
+                        onClick={() =>
+                          dispatch({
+                            type: "SET_STORM_ORDER",
+                            armyId: singleSelected!.id,
+                            active: !stormActive,
+                          })
+                        }
+                      />
                     )}
                     {canSally && (
-                      <OrderGroup title="Garrison">
-                        <OrderButton
-                          label="Sally out"
-                          hint="The garrison rides out against the besiegers this turn."
-                          active={sallyActive}
-                          accent
-                          spendsTurn
-                          onClick={() =>
-                            dispatch({
-                              type: "SET_SALLY_ORDER",
-                              holdId: selectedHoldId,
-                              active: !sallyActive,
-                            })
-                          }
-                        />
-                      </OrderGroup>
+                      <OrderButton
+                        label="Ride out"
+                        hint="The garrison attacks the besiegers this turn."
+                        active={sallyActive}
+                        spendsTurn
+                        onClick={() =>
+                          dispatch({
+                            type: "SET_SALLY_ORDER",
+                            holdId: selectedHoldId,
+                            active: !sallyActive,
+                          })
+                        }
+                      />
+                    )}
+                    {canRazeStay && (
+                      <OrderButton
+                        label={razeActive ? "Do not burn it" : "Burn this seat"}
+                        hint="Raze the seat this turn. It will not feed or shelter anyone after."
+                        active={razeActive}
+                        spendsTurn
+                        onClick={() => {
+                          if (!selectedHoldId) return;
+                          const army = selectedArmies.find((a) =>
+                            canRaze(a, selectedHoldId, holdRuntime).ok
+                          );
+                          if (!army) return;
+                          dispatch({
+                            type: "SET_RAZE_ORDER",
+                            armyId: army.id,
+                            holdId: selectedHoldId,
+                            active: !razeActive,
+                          });
+                        }}
+                      />
+                    )}
+                    {marchDestIds.length > 0 && singleSelected && (
+                      <OrderButton
+                        label="Keep them here"
+                        hint="Cancel the march. They will stand with no job until you give one."
+                        onClick={() =>
+                          dispatch({
+                            type: "SET_STANCE_ORDER",
+                            armyId: singleSelected.id,
+                            order: null,
+                          })
+                        }
+                      />
                     )}
                   </div>
+                )}
+                {(canGarrison ||
+                  canAbandon ||
+                  canIssueStance ||
+                  canCombine ||
+                  canSplit ||
+                  canChangeCommander) &&
+                  !isLocked && (
+                <details className="min-w-0">
+                  <summary className="cursor-pointer list-none text-[12px] text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
+                    More: split, walls, speech
+                  </summary>
+                  <div className="mt-2 flex min-w-0 flex-wrap gap-1.5">
+                    {canGarrison && (
+                      <OrderButton
+                        label="Post men on the walls"
+                        hint="Move soldiers from this host into the garrison."
+                        onClick={() =>
+                          dispatch({
+                            type: "OPEN_GARRISON_PANEL",
+                            holdId: selectedHoldId,
+                            mode: "deposit",
+                            armyId: singleSelected!.id,
+                          })
+                        }
+                      />
+                    )}
+                    {canAbandon && (
+                      <OrderButton
+                        label="Leave the walls empty"
+                        hint="Take the garrison with you and abandon this conquered seat."
+                        onClick={() =>
+                          dispatch({
+                            type: "OPEN_GARRISON_PANEL",
+                            holdId: selectedHoldId,
+                            mode: "abandon",
+                            armyId: garrisonSelected
+                              ? null
+                              : singleSelected?.id ?? null,
+                          })
+                        }
+                      />
+                    )}
+                    {canIssueStance && (
+                      <OrderButton
+                        label="Speak to the men"
+                        hint="A speech to raise morale. Once per host per turn. They can still march."
+                        disabledHint="This host already heard a speech this turn."
+                        disabled={state.speechesThisTurn.includes(singleSelected!.id)}
+                        active={state.speechArmyId === singleSelected!.id}
+                        onClick={() =>
+                          state.speechArmyId === singleSelected!.id
+                            ? dispatch({ type: "CLOSE_SPEECH" })
+                            : dispatch({
+                                type: "OPEN_SPEECH",
+                                armyId: singleSelected!.id,
+                              })
+                        }
+                      />
+                    )}
+                    {canCombine && (
+                      <OrderButton
+                        label="Join into one host"
+                        hint="Merge the selected hosts at this seat."
+                        onClick={() => dispatch({ type: "COMBINE_ARMIES" })}
+                      />
+                    )}
+                    {canSplit && (
+                      <OrderButton
+                        label="Divide this host"
+                        hint="Split men and captains into two hosts."
+                        onClick={() =>
+                          dispatch({
+                            type: "OPEN_SPLIT",
+                            armyId: singleSelected!.id,
+                          })
+                        }
+                      />
+                    )}
+                    {canChangeCommander && (
+                      <OrderButton
+                        label="Change who leads"
+                        hint="Pick another captain for this host."
+                        onClick={() =>
+                          dispatch({
+                            type: "OPEN_COMMANDER_CHANGE",
+                            armyId: singleSelected!.id,
+                          })
+                        }
+                      />
+                    )}
+                  </div>
+                </details>
                 )}
               </section>
             )}
@@ -868,7 +852,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
               </PanelSection>
             )}
 
-            {controllableArmies.length > 1 && !moveMode.active && (
+            {controllableArmies.length > 1 && (
               <div className="border-b border-border px-4 py-2">
                 <button
                   type="button"

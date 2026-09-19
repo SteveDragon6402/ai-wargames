@@ -69,83 +69,71 @@ function strengthOf(army: Army): number {
   return (army.units ?? []).reduce((s, u) => s + u.count, 0);
 }
 
+function formatMen(n: number): string {
+  if (n >= 10_000) return `${Math.round(n / 1000)}k`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k`;
+  return String(n);
+}
+
 /**
- * One host, with its size.
- *
- * Five identical anonymous dots at Moat Cailin told the player nothing about
- * whether that was a screening force or the whole Northern army, so each dot
- * now carries its strength in thousands.
+ * One badge per side at a seat. Five anonymous pills at Moat Cailin asked the
+ * player to count dots; this says “the North has 9k here” and clicking it
+ * takes the largest host.
  */
-function ArmyDot({
-  army,
-  fortified,
-  resting,
-  investing,
-  turnedHouses,
-  onArmyClick,
+function FactionStack({
+  faction,
+  armies,
+  onClick,
 }: {
-  army: Army;
-  fortified?: boolean;
-  resting?: boolean;
-  investing?: boolean;
-  turnedHouses?: string[];
-  onArmyClick?: (armyId: string, shift: boolean) => void;
+  faction: Faction;
+  armies: Army[];
+  onClick?: (armyId: string, shift: boolean) => void;
 }) {
-  const men = strengthOf(army);
-  const k = men >= 1000 ? `${Math.round(men / 1000)}` : "·";
-  const activity =
-    fortified && investing
-      ? "digging in around the walls (defending the siege camp)"
-      : investing
-        ? "in the siege camp"
-        : fortified
-          ? "fortifying"
-          : resting
-            ? "resting"
-            : "in the field";
-  const turned =
-    !!turnedHouses?.length &&
-    army.units.some((u) => turnedHouses.includes(u.house));
-  const color = turned ? FACTION_COLORS.westerlands : FACTION_COLORS[army.faction];
+  const men = armies.reduce((sum, a) => sum + strengthOf(a), 0);
+  const largest = [...armies].sort((a, b) => strengthOf(b) - strengthOf(a))[0];
+  const resting = armies.every((a) => (a.activity?.turnsResting ?? 0) > 0);
+  const hosts =
+    armies.length === 1
+      ? armies[0].name
+      : `${armies.length} hosts of ${FACTION_NAMES[faction]}`;
   return (
     <span
-      role={onArmyClick ? "button" : undefined}
-      className={onArmyClick ? "nopan nodrag" : undefined}
-      title={`${army.name} — ${men.toLocaleString()} men, ${activity}${
-        turned ? " (turned cloak)" : ""
-      }`}
+      role={onClick && largest ? "button" : undefined}
+      className={onClick ? "nopan nodrag" : undefined}
+      title={`${hosts} — ${men.toLocaleString()} men. Click to command.`}
       onMouseDown={(e) => {
-        if (!onArmyClick) return;
+        if (!onClick) return;
         e.stopPropagation();
       }}
       onClick={(e) => {
-        if (!onArmyClick) return;
+        if (!onClick || !largest) return;
         e.stopPropagation();
-        onArmyClick(army.id, e.shiftKey);
+        onClick(largest.id, e.shiftKey);
       }}
       style={{
         display: "inline-flex",
         alignItems: "center",
-        justifyContent: "center",
-        minWidth: 12,
-        height: 11,
-        padding: "0 2px",
-        borderRadius: fortified ? 1 : 6,
-        background: color,
-        border: fortified
-          ? "1px solid rgba(255,255,255,0.45)"
-          : "1px solid rgba(255,255,255,0.15)",
+        gap: 3,
+        height: 14,
+        padding: "0 5px",
+        borderRadius: 2,
+        background: FACTION_COLORS[faction],
+        border: "1px solid rgba(255,255,255,0.18)",
         flexShrink: 0,
-        opacity: resting && !fortified ? 0.55 : 1,
+        opacity: resting ? 0.6 : 1,
         fontFamily: MONO,
-        fontSize: 7,
+        fontSize: 8,
         fontWeight: 700,
-        color: "rgba(255,255,255,0.92)",
+        color: "rgba(255,255,255,0.95)",
         lineHeight: 1,
-        cursor: onArmyClick ? "pointer" : "inherit",
+        cursor: onClick ? "pointer" : "inherit",
+        letterSpacing: "0.02em",
       }}
     >
-      {k}
+      {formatMen(men)}
+      {armies.length > 1 ? (
+        <span style={{ fontWeight: 500, opacity: 0.8 }}>×{armies.length}</span>
+      ) : null}
     </span>
   );
 }
@@ -192,7 +180,6 @@ function HoldNode({ data }: { data: HoldNodeData }) {
     controller,
     homeFaction,
     spineColor,
-    turnedHouses,
     garrisonMen,
     garrisonBand,
     underSiege,
@@ -298,7 +285,7 @@ function HoldNode({ data }: { data: HoldNodeData }) {
         <div
           style={{
             fontFamily: "var(--font-display), Georgia, serif",
-            fontSize: 13,
+            fontSize: 15,
             fontWeight: 600,
             letterSpacing: "0.01em",
             color: isSelected ? "#c4a35a" : isMoveTarget ? "#e0c07a" : "#d8cbb4",
@@ -315,23 +302,26 @@ function HoldNode({ data }: { data: HoldNodeData }) {
           <div
             style={{
               display: "flex",
-              gap: 3,
-              marginTop: 3,
+              gap: 4,
+              marginTop: 4,
               flexWrap: "wrap",
               alignItems: "center",
             }}
           >
-            {[...northArmies, ...westArmies].map((a) => (
-              <ArmyDot
-                key={a.id}
-                army={a}
-                fortified={(a.activity?.turnsFortiying ?? 0) > 0}
-                resting={(a.activity?.turnsResting ?? 0) > 0}
-                investing={underSiege && besiegerFaction === a.faction}
-                turnedHouses={turnedHouses}
-                onArmyClick={onArmyClick}
+            {northArmies.length > 0 && (
+              <FactionStack
+                faction="north"
+                armies={northArmies}
+                onClick={onArmyClick}
               />
-            ))}
+            )}
+            {westArmies.length > 0 && (
+              <FactionStack
+                faction="westerlands"
+                armies={westArmies}
+                onClick={onArmyClick}
+              />
+            )}
           </div>
         )}
 

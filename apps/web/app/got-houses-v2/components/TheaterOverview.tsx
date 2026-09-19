@@ -36,8 +36,8 @@ export default function TheaterOverview({ state, dispatch, viewerFaction }: Prop
             The theater
           </h2>
           <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
-            Click a hold on the map to inspect it. Then pick a host and issue
-            orders from the right rail.
+            Click a coloured number on the map — that is a host. Neighbours
+            will glow. Click a glowing seat to march them there this turn.
           </p>
         </div>
 
@@ -67,7 +67,7 @@ export default function TheaterOverview({ state, dispatch, viewerFaction }: Prop
             </h3>
             <span className="font-mono text-[11px] text-muted-foreground">
               {orders.submitted
-                ? "Orders locked"
+                ? "Turn committed"
                 : orderedCount > 0
                   ? `${orderedCount} marching`
                   : "No marches yet"}
@@ -123,29 +123,28 @@ export default function TheaterOverview({ state, dispatch, viewerFaction }: Prop
           </h3>
           <ol className="space-y-2 text-[13px] leading-relaxed text-muted-foreground">
             <li>
-              <span className="font-medium text-foreground">1. Inspect.</span>{" "}
-              Click a hold, then a host.
+              <span className="font-medium text-foreground">1. Click a host.</span>{" "}
+              The seats they can reach this turn light up.
             </li>
             <li>
-              <span className="font-medium text-foreground">2. Order.</span>{" "}
-              March, rest, fortify, or work the walls. Hover a button for what
-              it does.
+              <span className="font-medium text-foreground">2. Give them a job.</span>{" "}
+              Click a glowing seat to march, or Rest / Dig in on the right if
+              they should stay.
             </li>
             <li>
-              <span className="font-medium text-foreground">3. Lock.</span>{" "}
-              Submit when the plan is set. Both sides lock, then the field is
-              adjudicated.
+              <span className="font-medium text-foreground">3. Commit.</span>{" "}
+              Both sides commit, then the field is judged.
             </li>
           </ol>
-          <Hint label="Open a short briefing of last turn and any unpaid fates">
+          <Hint label="Open the steward for last turn and how the board works">
             <Button
               type="button"
               variant="ghost"
               size="sm"
               className="h-8 px-2 text-[12px]"
-              onClick={() => dispatch({ type: "SET_BRIEFING_OPEN", open: true })}
+              onClick={() => dispatch({ type: "SET_STEWARD_OPEN", open: true })}
             >
-              Open last briefing
+              Ask the steward
             </Button>
           </Hint>
         </section>

@@ -34,14 +34,8 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
   const enemy = enemyLordId(faction);
 
   const commanders = Object.values(state.characters).filter((c) => {
-    if (
-      c.kind !== "npc" ||
-      !c.alive ||
-      c.faction !== faction ||
-      c.role !== "commander"
-    ) {
-      return false;
-    }
+    if (c.kind !== "npc" || !c.alive || c.faction !== faction) return false;
+    if (c.role === "steward" || c.role !== "commander") return false;
     if (c.holdId && !c.armyId) {
       const hs = state.holdStates?.[c.holdId];
       if (!hs || garrisonHeadcount(hs.garrison) <= 0) return false;
@@ -50,7 +44,12 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
   });
   const notablesByArmy = new Map<string, CharacterState[]>();
   for (const c of Object.values(state.characters)) {
-    if (c.kind !== "npc" || !c.alive || c.faction !== faction || c.role !== "notable") {
+    if (
+      c.kind !== "npc" ||
+      !c.alive ||
+      c.faction !== faction ||
+      c.role !== "notable"
+    ) {
       continue;
     }
     const key = c.armyId ?? (c.holdId ? `garrison:${c.holdId}` : "unassigned");
@@ -152,12 +151,12 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
     >
       <div
         style={{
-          color: "#c8941a",
-          fontSize: 11,
-          fontWeight: 700,
-          textTransform: "uppercase",
-          letterSpacing: "0.14em",
+          fontFamily: "var(--font-display), Georgia, serif",
+          fontSize: 18,
+          fontWeight: 600,
+          letterSpacing: "0.01em",
           marginBottom: 6,
+          color: "#d8cbb4",
         }}
       >
         Who will you speak with?
@@ -241,11 +240,9 @@ export default function CharacterPicker({ state, dispatch, embedded }: Props) {
             <div key={armyId} style={{ marginBottom: 12 }}>
               <div
                 style={{
-                  color: "#444",
-                  fontSize: 10,
+                  fontFamily: "var(--font-sans), system-ui, sans-serif",
+                  fontSize: 12,
                   marginBottom: 6,
-                  textTransform: "uppercase",
-                  letterSpacing: "0.1em",
                 }}
               >
                 {army?.name ??
@@ -282,10 +279,10 @@ function Section({
     <div style={{ marginBottom: 18 }}>
       <div
         style={{
-          color: "#6a8a6a",
-          fontSize: 10,
-          textTransform: "uppercase",
-          letterSpacing: "0.14em",
+          fontFamily: "var(--font-sans), system-ui, sans-serif",
+          fontSize: 12,
+          fontWeight: 500,
+          color: "#8a9a82",
           marginBottom: 8,
         }}
       >

@@ -5,7 +5,6 @@ import {
   ReactFlow,
   Background,
   Controls,
-  MiniMap,
   type Node,
   type Edge,
   type NodeTypes,
@@ -15,7 +14,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { HOLDS, REGION_COLORS } from "../data/holds";
+import { HOLDS, HOLDS_MAP } from "../data/holds";
 import { isSeaCrossing } from "../data/pathways";
 import type {
   GameState,
@@ -47,18 +46,18 @@ function toRf(x: number, y: number) {
 const MAP_VIEWS: { id: MapView; label: string; hint: string }[] = [
   {
     id: "seats",
-    label: "Seats",
-    hint: "Who holds each castle. Colour is the controller; the left strip is home country.",
+    label: "Who holds",
+    hint: "Colour is who owns the castle right now. The left strip is whose country it is.",
   },
   {
     id: "hosts",
-    label: "Hosts",
-    hint: "Field armies, sieges, and fights. Numbers on the dots are thousands of men.",
+    label: "Who stands",
+    hint: "One badge per side at a seat. The number is how many thousand men are in the field. Click a badge to command them.",
   },
   {
     id: "country",
-    label: "Country",
-    hint: "How picked-over the land is. Darker and browner means less forage left.",
+    label: "Forage",
+    hint: "How picked-over the land is. Darker and browner means less food left for a host that stays.",
   },
 ];
 
@@ -148,23 +147,24 @@ function MapInner({ state, dispatch }: Props) {
       if (state.moveMode.active) {
         if (state.moveMode.validTargets.includes(holdId)) {
           dispatch({ type: "QUEUE_MOVE", toHoldId: holdId });
-        } else {
-          // Click on a non-target hold cancels move mode
-          dispatch({ type: "CANCEL_MOVE" });
-          dispatch({ type: "SELECT_HOLD", holdId });
+          return;
         }
-      } else {
-        dispatch({ type: "SELECT_HOLD", holdId });
+        if (holdId === state.selectedHoldId) return;
       }
+      dispatch({ type: "SELECT_HOLD", holdId });
     },
-    [state.moveMode, dispatch]
+    [state.moveMode, state.selectedHoldId, dispatch]
   );
 
   const handleArmyClick = useCallback(
     (armyId: string, shift: boolean) => {
       const army = (state.armies ?? []).find((a) => a.id === armyId);
       if (!army) return;
-      if (state.moveMode.active) {
+      if (
+        !shift &&
+        state.moveMode.active &&
+        state.moveMode.validTargets.includes(army.holdId)
+      ) {
         handleHoldClick(army.holdId);
         return;
       }
@@ -346,6 +346,29 @@ function MapInner({ state, dispatch }: Props) {
     [roadEdges, orderEdges]
   );
 
+  const selectedField = (state.selectedArmyIds ?? [])
+    .map((id) => (state.armies ?? []).find((a) => a.id === id))
+    .filter((a): a is Army => !!a);
+  const marchLabel =
+    selectedField.length === 1
+      ? selectedField[0].name
+      : selectedField.length > 1
+        ? `${selectedField.length} hosts`
+        : "this host";
+  const marchDestIds = [
+    ...new Set(
+      selectedField.flatMap((a) => {
+        const fo = a.faction === "north" ? state.north : state.westerlands;
+        const dest = fo.orders.find((o) => o.armyId === a.id)?.toHoldId;
+        return dest ? [dest] : [];
+      })
+    ),
+  ];
+  const marchDestName =
+    marchDestIds.length === 1
+      ? (HOLDS_MAP.get(marchDestIds[0])?.name ?? marchDestIds[0])
+      : null;
+
   return (
     <ReactFlow
       nodes={nodes}
@@ -370,31 +393,21 @@ function MapInner({ state, dispatch }: Props) {
         color="#1a1a1a"
       />
       <Controls
+        position="bottom-right"
         style={{
           background: "#0a0a0a",
           border: "1px solid #1e1e1e",
         }}
       />
-      <MiniMap
-        style={{
-          background: "#0a0a0a",
-          border: "1px solid #1e1e1e",
-        }}
-        nodeColor={(node) => {
-          const data = node.data as HoldNodeData;
-          if (mapView === "country") {
-            return FORAGE_STROKE[data.forageStep ?? 0] ?? "#111";
-          }
-          if (mapView === "seats") {
-            if (data.controller === "north") return "#3a6ea8";
-            if (data.controller === "westerlands") return "#b03030";
-            if (data.controller === "hostile") return "#c8941a";
-            return "#333";
-          }
-          return REGION_COLORS[data.region] ?? "#111";
-        }}
-        maskColor="rgba(0,0,0,0.7)"
-      />
+      {state.moveMode.active && selectedField.length > 0 && (
+        <Panel position="top-center">
+          <div className="max-w-[min(28rem,calc(100vw-24px))] rounded-sm border border-primary/50 bg-card/95 px-3 py-2 text-[13px] leading-snug text-foreground shadow-lg backdrop-blur">
+            {marchDestName
+              ? `${marchLabel} will march to ${marchDestName}. Click another glowing seat to change.`
+              : `Click a glowing seat to march ${marchLabel} there this turn. Rest or dig in on the right if they should stay.`}
+          </div>
+        </Panel>
+      )}
 
       <Panel position="top-left" className="flex max-w-[min(280px,calc(100vw-24px))] flex-col gap-2">
         <div className="flex overflow-hidden rounded-sm border border-border bg-card/95 shadow-lg backdrop-blur">
@@ -447,15 +460,15 @@ function MapInner({ state, dispatch }: Props) {
             )}
             {mapView === "hosts" && (
               <>
-                <LegendRow color="#3a6ea8" rounded>
-                  Northern host (thousands)
+                <LegendRow color="#3a6ea8">
+                  North — thousands of men here
                 </LegendRow>
-                <LegendRow color="#b03030" rounded>
-                  Westerlands host
+                <LegendRow color="#b03030">
+                  Westerlands — thousands of men here
                 </LegendRow>
                 <div className="mt-2 space-y-1 border-t border-border pt-2 text-[12px] text-muted-foreground">
-                  <div>⊘ siege turn · ! too few to hold</div>
-                  <div>⚐ terms · ⚔ contested</div>
+                  <div>×2 means two hosts of that side</div>
+                  <div>Glow = they can march there this turn</div>
                 </div>
               </>
             )}
