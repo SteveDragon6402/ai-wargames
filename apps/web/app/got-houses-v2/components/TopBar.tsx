@@ -73,39 +73,39 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
         : "Lock orders";
 
   return (
-    <header className="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-card/90 px-3 backdrop-blur">
+    <header className="flex h-14 min-w-0 shrink-0 items-center gap-2 overflow-hidden border-b border-border bg-card/90 px-2 backdrop-blur sm:gap-3 sm:px-3">
       <Button
         asChild
         variant="ghost"
         size="sm"
-        className="h-8 gap-1 px-2 text-muted-foreground"
+        className="h-8 shrink-0 gap-1 px-2 text-muted-foreground"
       >
         <Link href="/" title="Leave the table">
           <ArrowLeft className="size-4" />
-          Table
+          <span className="hidden sm:inline">Table</span>
         </Link>
       </Button>
 
-      <div className="min-w-0">
-        <div className="font-display text-lg font-semibold leading-none tracking-wide text-foreground">
+      <div className="min-w-0 overflow-hidden">
+        <div className="truncate font-display text-lg font-semibold leading-none tracking-wide text-foreground">
           Riverlands
         </div>
-        <div className="mt-0.5 flex items-center gap-2 text-[12px] text-muted-foreground">
-          <span>
+        <div className="mt-0.5 flex min-w-0 items-center gap-2 overflow-hidden text-[12px] text-muted-foreground">
+          <span className="shrink-0">
             Turn {turn}
             <span className="text-muted-foreground/60"> / {VICTORY_TURN_LIMIT}</span>
           </span>
-          <span aria-hidden className="text-border">
+          <span aria-hidden className="hidden text-border sm:inline">
             ·
           </span>
-          <span>{PHASE_COPY[phase] ?? phase}</span>
+          <span className="hidden truncate sm:inline">{PHASE_COPY[phase] ?? phase}</span>
         </div>
       </div>
 
-      <div className="mx-1 hidden h-8 w-px bg-border sm:block" />
+      <div className="mx-1 hidden h-8 w-px shrink-0 bg-border md:block" />
 
       {adminMode ? (
-        <div className="flex overflow-hidden rounded-sm border border-border">
+        <div className="flex shrink-0 overflow-hidden rounded-sm border border-border">
           {(["north", "westerlands"] as Faction[]).map((f) => {
             const active = activeFaction === f;
             const submitted = f === "north" ? north.submitted : westerlands.submitted;
@@ -122,7 +122,7 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
                   type="button"
                   onClick={() => dispatch({ type: "SWITCH_FACTION", faction: f })}
                   className={cn(
-                    "flex h-8 items-center gap-1.5 px-3 text-[12px] font-medium",
+                    "flex h-8 items-center gap-1.5 px-2 text-[12px] font-medium sm:px-3",
                     f === "north" ? "text-north" : "text-west",
                     active
                       ? f === "north"
@@ -141,7 +141,7 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
       ) : (
         <div
           className={cn(
-            "flex items-center gap-2 rounded-sm border px-2.5 py-1",
+            "flex shrink-0 items-center gap-2 rounded-sm border px-2 py-1 sm:px-2.5",
             activeFaction === "north"
               ? "border-north/30 bg-north-deep/60 text-north"
               : "border-west/30 bg-west-deep/60 text-west"
@@ -153,7 +153,7 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
               activeFaction === "north" ? "bg-north" : "bg-west"
             )}
           />
-          <span className="text-[12px] font-medium">{factionLabel}</span>
+          <span className="hidden text-[12px] font-medium sm:inline">{factionLabel}</span>
         </div>
       )}
 
@@ -168,7 +168,7 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
       >
         <span
           className={cn(
-            "hidden items-center gap-1 text-[12px] sm:flex",
+            "hidden items-center gap-1 text-[12px] lg:flex",
             north.submitted ? "text-good" : north.orders.length ? "text-primary" : "text-muted-foreground"
           )}
         >
@@ -192,7 +192,7 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
       >
         <span
           className={cn(
-            "hidden items-center gap-1 text-[12px] sm:flex",
+            "hidden items-center gap-1 text-[12px] lg:flex",
             westerlands.submitted
               ? "text-good"
               : westerlands.orders.length
@@ -214,7 +214,7 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
         </span>
       </Hint>
 
-      <div className="flex-1" />
+      <div className="min-w-0 flex-1" />
 
       <Hint
         label={
@@ -229,7 +229,7 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
           size="sm"
           disabled={submitLocked}
           onClick={handleSubmit}
-          className="h-8 px-3 text-[12px] font-semibold"
+          className="h-8 max-w-[9.5rem] shrink-0 overflow-hidden truncate px-2.5 text-[12px] font-semibold sm:max-w-none sm:px-3"
         >
           {submitLabel}
           {!currentSubmitted && inPlanningPhase && currentOrders.orders.length > 0
@@ -244,11 +244,11 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
             type="button"
             variant={state.talkPickerOpen || state.openConversationIds.length > 0 ? "secondary" : "outline"}
             size="sm"
-            className="h-8 gap-1.5 px-2.5 text-[12px]"
+            className="h-8 shrink-0 gap-1.5 px-2 text-[12px] sm:px-2.5"
             onClick={() => dispatch({ type: "TOGGLE_TALK_PICKER" })}
           >
             <MessageCircle className="size-3.5" />
-            Talk
+            <span className="hidden md:inline">Talk</span>
             {state.openConversationIds.length > 0 && (
               <Badge variant="outline" className="h-4 px-1 text-[10px]">
                 {state.openConversationIds.length}
@@ -263,11 +263,11 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
           type="button"
           variant={state.battleLogOpen ? "secondary" : "outline"}
           size="sm"
-          className="h-8 gap-1.5 px-2.5 text-[12px]"
+          className="h-8 shrink-0 gap-1.5 px-2 text-[12px] sm:px-2.5"
           onClick={() => dispatch({ type: "TOGGLE_BATTLE_LOG" })}
         >
-            <Swords className="size-3.5" />
-          Battles
+          <Swords className="size-3.5" />
+          <span className="hidden md:inline">Battles</span>
           {(state.battleReports ?? []).length > 0 && (
             <Badge variant="outline" className="h-4 px-1 text-[10px]">
               {state.battleReports.length}
@@ -281,14 +281,17 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
           <Button
             variant="outline"
             size="sm"
-            className="h-8 gap-1.5 px-2.5 text-[12px]"
+            className="h-8 shrink-0 gap-1.5 px-2 text-[12px] sm:px-2.5"
             title="How this war is won or lost"
           >
             <Flag className="size-3.5" />
-            Ends
+            <span className="hidden md:inline">Ends</span>
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="end" className="w-80 space-y-3 text-[13px] leading-relaxed text-muted-foreground">
+        <PopoverContent
+          align="end"
+          className="w-[min(20rem,calc(100vw-24px))] max-w-[min(20rem,calc(100vw-24px))] space-y-3 break-words text-[13px] leading-relaxed text-muted-foreground"
+        >
           <div className="font-display text-base text-foreground">How the war ends</div>
           <p>
             Robb wins on turn {VICTORY_TURN_LIMIT} if the war is still open. It is
@@ -322,7 +325,7 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 text-muted-foreground"
+            className="h-8 w-8 shrink-0 text-muted-foreground"
             title="More table tools"
           >
             <Info className="size-4" />

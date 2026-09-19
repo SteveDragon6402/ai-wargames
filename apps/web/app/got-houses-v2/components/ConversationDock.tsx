@@ -82,7 +82,7 @@ export default function ConversationDock({ state, dispatch }: Props) {
                   dispatch({ type: "FOCUS_CONVERSATION", threadId: t.id })
                 }
                 className={cn(
-                  "min-w-[100px] shrink-0 rounded-sm border px-2.5 py-1.5 text-left text-[12px]",
+                  "min-w-[100px] max-w-[140px] shrink-0 overflow-hidden rounded-sm border px-2.5 py-1.5 text-left text-[12px]",
                   active
                     ? t.kind === "war_council"
                       ? "border-primary/40 bg-primary/10 text-foreground"
@@ -97,7 +97,7 @@ export default function ConversationDock({ state, dispatch }: Props) {
                       ? "Invite"
                       : "Private"}
                 </div>
-                <div>{threadLabel(t, state)}</div>
+                <div className="truncate">{threadLabel(t, state)}</div>
               </button>
             );
           })}

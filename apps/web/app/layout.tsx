@@ -38,7 +38,7 @@ export default function RootLayout({
       className={`${inter.variable} ${display.variable} ${jetbrainsMono.variable}`}
     >
       <body>
-        <TooltipProvider delayDuration={250}>{children}</TooltipProvider>
+        <TooltipProvider delayDuration={480}>{children}</TooltipProvider>
       </body>
     </html>
   );

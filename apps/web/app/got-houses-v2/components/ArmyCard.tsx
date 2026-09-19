@@ -127,7 +127,7 @@ export default function ArmyCard({
               {status && (
                 <Badge
                   variant="outline"
-                  className="mt-0.5 h-4 px-1 text-[10px] font-normal"
+                  className="mt-0.5 h-4 max-w-[72px] truncate px-1 text-[10px] font-normal"
                 >
                   {status}
                 </Badge>
@@ -154,7 +154,7 @@ export default function ArmyCard({
       </div>
 
       {open && (
-        <div className="space-y-2 border-t border-border/60 px-2.5 py-2 text-[12px] leading-snug text-muted-foreground">
+        <div className="space-y-2 overflow-hidden border-t border-border/60 px-2.5 py-2 text-[12px] leading-snug text-muted-foreground">
           {commander && (
             <div className="truncate text-foreground/85">
               {commander.title
@@ -184,16 +184,16 @@ export default function ArmyCard({
               </div>
             );
           })}
-          <div>
+          <div className="break-words">
             <span className="text-muted-foreground/70">Morale </span>
             {army.morale}
           </div>
-          <div>
+          <div className="break-words">
             <span className="text-muted-foreground/70">Condition </span>
             {army.tiredness}
           </div>
           {army.stance && (
-            <div>
+            <div className="break-words">
               <span className="text-muted-foreground/70">Stance </span>
               {army.stance}
             </div>
@@ -202,8 +202,8 @@ export default function ArmyCard({
             <div className="border-t border-border/60 pt-2">
               {army.notables.map((n) => (
                 <div key={n.name} className="mb-1 last:mb-0">
-                  <div className="text-foreground/80">{n.name}</div>
-                  <div className="italic">{n.description}</div>
+                  <div className="truncate text-foreground/80">{n.name}</div>
+                  <div className="break-words italic">{n.description}</div>
                 </div>
               ))}
             </div>

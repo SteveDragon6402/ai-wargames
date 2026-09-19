@@ -30,7 +30,7 @@ export default function TheaterOverview({ state, dispatch, viewerFaction }: Prop
 
   return (
     <ScrollArea className="min-h-0 flex-1">
-      <div className="space-y-6 p-4">
+      <div className="space-y-6 overflow-hidden p-4">
         <div>
           <h2 className="font-display text-[22px] font-semibold leading-tight text-foreground">
             The theater
@@ -51,7 +51,7 @@ export default function TheaterOverview({ state, dispatch, viewerFaction }: Prop
                 key={c.id}
                 type="button"
                 onClick={() => dispatch({ type: "SELECT_HOLD", holdId: c.holdId })}
-                className="block w-full rounded-sm border border-primary/40 bg-primary/10 px-3 py-2 text-left text-[13px] text-primary hover:bg-primary/15"
+                className="block w-full break-words rounded-sm border border-primary/40 bg-primary/10 px-3 py-2 text-left text-[13px] text-primary hover:bg-primary/15"
               >
                 {c.headline}
               </button>

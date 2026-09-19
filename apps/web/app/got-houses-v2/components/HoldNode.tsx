@@ -12,6 +12,8 @@ export type GarrisonBand =
   | "at_strength"
   | "reinforced";
 
+export type MapView = "seats" | "hosts" | "country";
+
 export interface HoldNodeData {
   id: string;
   label: string;
@@ -20,6 +22,8 @@ export interface HoldNodeData {
   isSelected: boolean;
   isMoveTarget: boolean;
   isInMoveMode: boolean;
+  mapView?: MapView;
+  forageStep?: 0 | 1 | 2 | 3 | 4;
   /** Who holds the seat right now; null when unheld. */
   controller?: Faction | "hostile" | null;
   /** Regional home — used for the spine when controller is missing. */
@@ -152,6 +156,16 @@ const BAND_LABEL: Record<GarrisonBand, string> = {
   reinforced: "reinforced beyond its usual strength",
 };
 
+const FORAGE_FILL = ["#16301c", "#1e2c16", "#2a2816", "#2c2014", "#241818"] as const;
+const FORAGE_WORD = ["Full", "Gleaned", "Picked", "Thin", "Bare"] as const;
+
+const SEAT_FILL: Record<string, string> = {
+  north: "#102438",
+  westerlands: "#2c1010",
+  hostile: "#2a1c10",
+  none: "#161616",
+};
+
 function HoldNode({ data }: { data: HoldNodeData }) {
   const {
     label,
@@ -164,7 +178,6 @@ function HoldNode({ data }: { data: HoldNodeData }) {
     homeFaction,
     spineColor,
     turnedHouses,
-    hasGarrison,
     garrisonMen,
     garrisonBand,
     underSiege,
@@ -174,13 +187,26 @@ function HoldNode({ data }: { data: HoldNodeData }) {
     termsState,
     awaitingGarrison,
     contested,
+    mapView = "hosts",
+    forageStep = 0,
   } = data;
 
   const northArmies = armies.filter((a) => a.faction === "north");
   const westArmies = armies.filter((a) => a.faction === "westerlands");
   const hasArmies = armies.length > 0;
+  const showHosts = mapView === "hosts";
+  const showSeats = mapView === "seats";
+  const showCountry = mapView === "country";
 
-  const bg = REGION_COLORS[region] ?? "#111";
+  const seatWho =
+    controller === "north" || controller === "westerlands" || controller === "hostile"
+      ? controller
+      : "none";
+  const bg = showCountry
+    ? FORAGE_FILL[forageStep]
+    : showSeats
+      ? SEAT_FILL[seatWho] ?? SEAT_FILL.none
+      : REGION_COLORS[region] ?? "#111";
   const borderBase = REGION_BORDER_COLORS[region] ?? "#2a2a2a";
 
   let borderColor = borderBase;
@@ -247,7 +273,7 @@ function HoldNode({ data }: { data: HoldNodeData }) {
             left: 0,
             top: 0,
             bottom: 0,
-            width: 3,
+            width: mapView === "seats" ? 5 : 3,
             background: controllerColor,
             pointerEvents: "none",
           }}
@@ -269,8 +295,7 @@ function HoldNode({ data }: { data: HoldNodeData }) {
           {label}
         </div>
 
-        {/* Army dots row */}
-        {hasArmies && (
+        {showHosts && hasArmies && (
           <div
             style={{
               display: "flex",
@@ -293,19 +318,57 @@ function HoldNode({ data }: { data: HoldNodeData }) {
           </div>
         )}
 
-        {(hasGarrison || underSiege || garrisonBand) && (
+        {showSeats && (
+          <div
+            style={{
+              fontFamily: MONO,
+              fontSize: 8,
+              color: "#9a8a70",
+              marginTop: 2,
+              letterSpacing: "0.02em",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            {controller === "north"
+              ? "North"
+              : controller === "westerlands"
+                ? "West"
+                : controller === "hostile"
+                  ? "Hostile"
+                  : "Unheld"}
+          </div>
+        )}
+
+        {showCountry && (
+          <div
+            style={{
+              fontFamily: MONO,
+              fontSize: 8,
+              color: "#9a8a70",
+              marginTop: 2,
+            }}
+            title={FORAGE_WORD[forageStep]}
+          >
+            {FORAGE_WORD[forageStep]}
+          </div>
+        )}
+
+        {((showSeats && garrisonBand) ||
+          (showHosts && (underSiege || termsState))) && (
           <div
             style={{
               display: "flex",
               gap: 4,
-              marginTop: hasArmies ? 2 : 3,
+              marginTop: 2,
               alignItems: "center",
               fontFamily: MONO,
               fontSize: 7,
               letterSpacing: "0.06em",
             }}
           >
-            {garrisonBand && (
+            {showSeats && garrisonBand && (
               <span
                 title={`Garrison ${garrisonMen?.toLocaleString() ?? "?"} — ${BAND_LABEL[garrisonBand]}`}
                 style={{ color: BAND_COLOR[garrisonBand] }}
@@ -313,7 +376,7 @@ function HoldNode({ data }: { data: HoldNodeData }) {
                 {BAND_GLYPH[garrisonBand]}
               </span>
             )}
-            {underSiege && besiegerFaction && (
+            {showHosts && underSiege && besiegerFaction && (
               <span
                 title={`Invested by ${FACTION_NAMES[besiegerFaction]} — day ${siegeTurns ?? 1}${
                   siegeUnderStrength ? " (too few to hold the ring)" : ""
@@ -328,7 +391,7 @@ function HoldNode({ data }: { data: HoldNodeData }) {
                 {siegeUnderStrength ? "!" : ""}
               </span>
             )}
-            {termsState && (
+            {showHosts && termsState && (
               <span
                 title={
                   termsState === "offered"
@@ -352,7 +415,7 @@ function HoldNode({ data }: { data: HoldNodeData }) {
           </div>
         )}
 
-        {awaitingGarrison && (
+        {showSeats && awaitingGarrison && (
           <div
             style={{
               fontFamily: MONO,
@@ -364,11 +427,11 @@ function HoldNode({ data }: { data: HoldNodeData }) {
             }}
             title="Taken — walls empty. Posting a garrison is optional."
           >
-            ⚑ walls empty
+            ⚑ empty
           </div>
         )}
 
-        {contested && (
+        {showHosts && contested && (
           <div
             style={{
               fontFamily: MONO,

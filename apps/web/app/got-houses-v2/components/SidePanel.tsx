@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ChevronRight, PanelRightClose, X } from "lucide-react";
 import type { GameState, GameAction, Army, Faction } from "../types";
 import { HOLDS_MAP } from "../data/holds";
+import { getCastleSeed } from "../data/castles";
 import { regionTrait } from "../data/regions";
 import {
   freeCapacity,
@@ -34,7 +35,7 @@ import SeatFatePanel from "./SeatFatePanel";
 import TheaterOverview from "./TheaterOverview";
 import { OrderButton, OrderGroup } from "./chrome/OrderButton";
 import { prisonersAt, prisonersWith } from "../lib/prisoners";
-import { canRaze, effectiveCastleSeed } from "../lib/raze";
+import { canRaze } from "../lib/raze";
 import { blockingChoicesFor, choiceAtHold } from "../lib/pending-choices";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -147,10 +148,8 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
   const canIssueStance = !!singleSelected && ownsSelection && !isLocked;
 
   const holdRuntime = selectedHoldId ? state.holdStates?.[selectedHoldId] : undefined;
-  const castleSeed = selectedHoldId
-    ? effectiveCastleSeed(selectedHoldId, holdRuntime)
-    : undefined;
-  const garrisonable = !!castleSeed && isGarrisonable(castleSeed, holdRuntime);
+  const castleSeed = selectedHoldId ? getCastleSeed(selectedHoldId) : undefined;
+  const garrisonable = !!castleSeed && isGarrisonable(castleSeed);
   const garrisonMen = holdRuntime ? garrisonHeadcount(holdRuntime.garrison) : 0;
   const freeSlots = holdRuntime && selectedHoldId
     ? freeCapacity(selectedHoldId, holdRuntime)
@@ -420,7 +419,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
         />
       ) : (
         <>
-          <ScrollArea className="min-h-0 flex-1">
+          <ScrollArea className="min-h-0 flex-1 overflow-x-hidden">
             {otherFates.length > 0 && (
               <div className="space-y-2 border-b border-border px-4 py-3">
                 {otherFates.map((c) => (
@@ -442,7 +441,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                   <div className="text-[11px] font-medium text-muted-foreground">
                     Orders
                   </div>
-                  <div className="flex items-center gap-2 text-[10px] text-muted-foreground">
+                  <div className="flex shrink-0 items-center gap-2 text-[10px] text-muted-foreground">
                     <span className="inline-flex items-center gap-1">
                       <span className="size-1.5 rounded-full bg-primary" />
                       this turn
@@ -691,107 +690,53 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
               </section>
             )}
 
-            {castleSeed && castleSeed.siteKind !== "open" && holdRuntime && (
+            {garrisonable && holdRuntime && castleSeed && (
               <PanelSection
                 title="Seat"
                 hint={
-                  holdRuntime.razed
-                    ? "Burned ruin"
-                    : holdRuntime.siege
-                    ? `Garrison ${garrisonMen.toLocaleString()} · siege`
-                    : `Garrison ${garrisonMen.toLocaleString()}`
+                  holdRuntime.siege
+                    ? `${garrisonMen.toLocaleString()} · siege`
+                    : `${garrisonMen.toLocaleString()} on walls`
                 }
                 defaultOpen={
                   !!holdRuntime.siege ||
                   !!myFateHere ||
                   holdPrisoners.length > 0 ||
                   armyPrisoners.length > 0 ||
-                  !!openPledge ||
-                  !!holdRuntime.razed
+                  !!openPledge
                 }
                 accent={!!myFateHere || !!holdRuntime.siege}
               >
-                <div className="flex items-baseline justify-between gap-2">
-                  <p className="min-w-0 truncate text-[12px] text-muted-foreground">
-                    {castleSeed.siteKind} · {holdRuntime.controller ?? "unheld"}
-                  </p>
-                  <p className="shrink-0 font-mono text-[13px] text-foreground">
-                    {garrisonMen.toLocaleString()} / {castleSeed.capacity.toLocaleString()}
-                  </p>
-                </div>
-                {holdRuntime.razed && (
-                  <p className="mt-2 text-[13px] text-bad">
-                    Put to the torch — no garrison can be posted here.
-                  </p>
-                )}
+                <p className="break-words text-[12px] text-muted-foreground">
+                  Held by {holdRuntime.controller ?? "no one"}
+                  {garrisonMen > 0
+                    ? ` · ${garrisonMen.toLocaleString()} on the walls`
+                    : " · walls unmanned"}
+                </p>
                 {holdRuntime.siege && (
-                  <p className="mt-2 text-[12px] font-medium text-bad">
+                  <p className="mt-2 break-words text-[12px] font-medium text-bad">
                     Under siege · turn {holdRuntime.siege.turns} ·{" "}
                     {holdRuntime.siege.besiegerFaction === "north"
                       ? "the North"
                       : "the Westerlands"}
                   </p>
                 )}
-                {wallsBrokenOpen && (
-                  <p className="mt-2 text-[13px] text-primary">
-                    Walls broken — gates forced
-                  </p>
-                )}
-                <MoreDetails>
-                  <p className="text-[12px] text-muted-foreground">
-                    Home {holdRuntime.homeFaction} · usual{" "}
-                    {castleSeed.defaultGarrison.toLocaleString()} ·{" "}
-                    {freeSlots.toLocaleString()} free
-                  </p>
-                  {holdRuntime.garrison.leaders.length > 0 && (
-                    <p className="mt-1 truncate text-[12px] text-muted-foreground">
-                      Command:{" "}
-                      {holdRuntime.garrison.leaders.map((l) => l.name).join(", ")}
-                    </p>
-                  )}
-                  <p className="mt-1 break-words text-[13px] italic leading-relaxed text-muted-foreground">
-                    {holdRuntime.supplies}
-                  </p>
-                  {gSoft && garrisonMen > 0 && (
-                    <div className="mt-2 space-y-0.5 break-words text-[12px] text-muted-foreground">
-                      <div>Morale: {gSoft.morale}</div>
-                      <div>Condition: {gSoft.tiredness}</div>
-                      <div>Stance: {gSoft.stance}</div>
-                    </div>
-                  )}
-                  {holdRuntime.foodDaysRemaining != null && (
-                    <p className="mt-1 text-[12px] text-muted-foreground">
-                      Food ~{holdRuntime.foodDaysRemaining} days
-                    </p>
-                  )}
-                  {holdRuntime.postSiegeTurnsLeft > 0 && !holdRuntime.siege && (
-                    <p className="mt-1 text-[12px] text-muted-foreground">
-                      Post-siege recovery ({holdRuntime.postSiegeTurnsLeft})
-                    </p>
-                  )}
-                </MoreDetails>
                 {openPledge && (
-                  <div className="mt-2 rounded-sm border border-primary/40 bg-primary/10 px-2.5 py-2 text-[12px] leading-relaxed text-primary">
+                  <div className="mt-2 break-words rounded-sm border border-primary/40 bg-primary/10 px-2.5 py-2 text-[12px] leading-relaxed text-primary">
                     Seat taken — walls empty.
                     <div className="mt-1 text-primary/80">
-                      Posting at least {openPledge.minimumMen.toLocaleString()} men
-                      is optional. The host may still rest, fortify, speak, or
-                      march.
+                      Posting men is optional.
                     </div>
                   </div>
                 )}
                 {underStrengthSiege && (
-                  <div className="mt-2 rounded-sm border border-bad/40 bg-bad/10 px-2.5 py-2 text-[12px] leading-relaxed text-bad">
-                    Too few to besiege.
-                    <div className="mt-1 opacity-80">
-                      {underStrengthSiege.men.toLocaleString()} men cannot ring a
-                      garrison of {garrisonMen.toLocaleString()}.{" "}
-                      {underStrengthSiege.required.toLocaleString()} are needed.
-                    </div>
+                  <div className="mt-2 break-words rounded-sm border border-bad/40 bg-bad/10 px-2.5 py-2 text-[12px] leading-relaxed text-bad">
+                    Too few to besiege ({underStrengthSiege.men.toLocaleString()} /{" "}
+                    {underStrengthSiege.required.toLocaleString()}).
                   </div>
                 )}
                 {holdRuntime.siege && (
-                  <div className="mt-2">
+                  <div className="mt-2 min-w-0">
                     <TermsBlock
                       state={state}
                       dispatch={dispatch}
@@ -801,7 +746,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                   </div>
                 )}
                 {myFateHere && (
-                  <div className="mt-2">
+                  <div className="mt-2 min-w-0">
                     <SeatFatePanel
                       state={state}
                       dispatch={dispatch}
@@ -828,7 +773,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                   />
                 ))}
                 {(canUngarrison || canParley) && (
-                  <div className="mt-2 flex flex-wrap gap-1.5">
+                  <div className="mt-2 flex min-w-0 flex-wrap gap-1.5">
                     {canUngarrison && (
                       <OrderButton
                         label="Ungarrison"
@@ -856,8 +801,43 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                   </div>
                 )}
                 {parleyError && (
-                  <p className="mt-2 text-[12px] text-bad">{parleyError}</p>
+                  <p className="mt-2 break-words text-[12px] text-bad">{parleyError}</p>
                 )}
+                <MoreDetails>
+                  <p>
+                    {castleSeed.siteKind} · home {holdRuntime.homeFaction}
+                  </p>
+                  <p className="font-mono text-foreground">
+                    {garrisonMen.toLocaleString()} / {castleSeed.capacity.toLocaleString()}{" "}
+                    capacity · usual {castleSeed.defaultGarrison.toLocaleString()} ·{" "}
+                    {freeSlots.toLocaleString()} free
+                  </p>
+                  {holdRuntime.garrison.leaders.length > 0 && (
+                    <p>
+                      Command:{" "}
+                      {holdRuntime.garrison.leaders.map((l) => l.name).join(", ")}
+                    </p>
+                  )}
+                  <p className="italic">{holdRuntime.supplies}</p>
+                  {gSoft && garrisonMen > 0 && (
+                    <p>
+                      Morale {gSoft.morale} · condition {gSoft.tiredness} · stance{" "}
+                      {gSoft.stance}
+                    </p>
+                  )}
+                  {holdRuntime.foodDaysRemaining != null && (
+                    <p>Food ~{holdRuntime.foodDaysRemaining} days</p>
+                  )}
+                  {holdRuntime.postSiegeTurnsLeft > 0 && !holdRuntime.siege && (
+                    <p>Post-siege recovery ({holdRuntime.postSiegeTurnsLeft})</p>
+                  )}
+                  {wallsBrokenOpen && <p>Walls broken — gates forced</p>}
+                  {openPledge && (
+                    <p>
+                      Optional posting: at least {openPledge.minimumMen.toLocaleString()} men.
+                    </p>
+                  )}
+                </MoreDetails>
               </PanelSection>
             )}
 
@@ -947,25 +927,24 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
 
             {trait && (
               <PanelSection title="Country" hint={trait.name} defaultOpen={false}>
-                <div className="text-[11px] text-muted-foreground">Roads</div>
-                <div className="mt-1 space-y-1 text-[12px] leading-relaxed text-muted-foreground">
-                  {hold.links.map((id) => {
-                    const name = HOLDS_MAP.get(id)?.name ?? id;
-                    return (
-                      <div key={id}>
-                        {name} — {forageOnPath(state.forage, hold.id, id)}
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="mt-3 text-[11px] text-muted-foreground">{trait.name}</div>
-                <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
-                  {trait.blurb}
-                </p>
-                <div className="mt-3 text-[11px] text-muted-foreground">Forage</div>
-                <p className="mt-1 text-[13px] leading-relaxed text-muted-foreground">
+                <p className="break-words text-[13px] leading-relaxed text-muted-foreground">
                   {forageAtHold(state.forage, hold.id)}
                 </p>
+                <MoreDetails>
+                  <p className="text-[11px] text-muted-foreground">{trait.name}</p>
+                  <p className="mt-1">{trait.blurb}</p>
+                  <div className="mt-3 text-[11px] text-muted-foreground">Roads</div>
+                  <div className="mt-1 space-y-1">
+                    {hold.links.map((id) => {
+                      const name = HOLDS_MAP.get(id)?.name ?? id;
+                      return (
+                        <div key={id} className="break-words">
+                          {name} — {forageOnPath(state.forage, hold.id, id)}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </MoreDetails>
               </PanelSection>
             )}
           </ScrollArea>
@@ -987,18 +966,6 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
   );
 }
 
-function MoreDetails({ children }: { children: React.ReactNode }) {
-  return (
-    <details className="group/more mt-2">
-      <summary className="cursor-pointer list-none text-[11px] font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
-        <span className="group-open/more:hidden">More</span>
-        <span className="hidden group-open/more:inline">Less</span>
-      </summary>
-      <div className="mt-1">{children}</div>
-    </details>
-  );
-}
-
 function PanelSection({
   title,
   hint,
@@ -1017,17 +984,37 @@ function PanelSection({
     <details
       open={open}
       onToggle={(e) => setOpen(e.currentTarget.open)}
-      className="group border-b border-border"
+      className="group min-w-0 overflow-hidden border-b border-border"
     >
       <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-2.5 text-[12px] font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
-        <span className={cn(accent && "text-primary")}>{title}</span>
+        <span className={cn("shrink-0", accent && "text-primary")}>{title}</span>
         {hint && (
-          <span className="max-w-[180px] truncate text-[11px] font-normal text-muted-foreground/70 group-open:hidden">
+          <span className="min-w-0 truncate text-[11px] font-normal text-muted-foreground/70 group-open:hidden">
             {hint}
           </span>
         )}
       </summary>
-      <div className="px-4 pb-3">{children}</div>
+      <div className="min-w-0 overflow-hidden px-4 pb-3">{children}</div>
     </details>
+  );
+}
+
+function MoreDetails({ children }: { children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-2 min-w-0">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="text-[11px] text-muted-foreground hover:text-foreground"
+      >
+        {open ? "Less" : "More"}
+      </button>
+      {open && (
+        <div className="mt-2 min-w-0 space-y-1 overflow-hidden break-words text-[12px] leading-relaxed text-muted-foreground">
+          {children}
+        </div>
+      )}
+    </div>
   );
 }

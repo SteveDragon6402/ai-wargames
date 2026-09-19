@@ -96,7 +96,7 @@
 
 /* React Flow — campaign map */
 .game-map {
-  @apply absolute inset-0;
+  @apply absolute inset-0 overflow-hidden;
   background-color: hsl(var(--background));
 }
 

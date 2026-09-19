@@ -41,7 +41,7 @@ export function OrderButton({
             disabled={disabled}
             onClick={onClick}
             className={cn(
-              "relative h-8 max-w-full rounded-sm px-2.5 pr-3.5 text-[12px] font-medium tracking-normal",
+              "relative h-8 max-w-full overflow-hidden rounded-sm px-2.5 pr-3.5 text-[12px] font-medium tracking-normal",
               active &&
                 !accent &&
                 "border-primary/70 bg-primary/15 text-primary hover:bg-primary/20 hover:text-primary"
@@ -50,7 +50,6 @@ export function OrderButton({
             <span className="truncate">{label}</span>
             <span
               aria-hidden
-              title={spendsTurn ? "Spends this turn" : "Does not spend the turn"}
               className={cn(
                 "pointer-events-none absolute bottom-0.5 right-0.5 size-2 rounded-full border",
                 spendsTurn
@@ -64,7 +63,7 @@ export function OrderButton({
       <TooltipContent
         side="left"
         align="center"
-        className="space-y-1.5 p-3 text-left"
+        className="max-h-[min(360px,70vh)] space-y-1.5 overflow-y-auto p-3 text-left"
       >
         <div className="font-display text-[16px] leading-tight text-foreground">
           {label}

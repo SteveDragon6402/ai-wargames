@@ -91,6 +91,14 @@ export function forageOnPath(
   return state.paths[pathwayKey(a, b)]?.line ?? pathForageSeed(a, b);
 }
 
+export function forageStepOnPath(
+  forage: ForageState | undefined,
+  a: string,
+  b: string
+): ForageStep {
+  return normalizeForage(forage).paths[pathwayKey(a, b)]?.step ?? 0;
+}
+
 /** How hard a passing host bites the country. */
 export function grazeSteps(men: number): number {
   if (men >= 5000) return 3;

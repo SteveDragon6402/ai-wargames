@@ -31,22 +31,19 @@ export default function PrisonerCard({ group, state, dispatch }: Props) {
       : state.armies.find((a) => a.id === loc.armyId)?.holdId;
 
   return (
-    <div
-      style={{
-        marginTop: 8,
+    <div className="mt-2 min-w-0 overflow-hidden" style={{
         border: "1px solid #4a2010",
         background: "#120804",
         padding: "8px 9px",
-      }}
-    >
+      }}>
       <div style={{ ...MONO, fontSize: 8, color: "#a06030", letterSpacing: "0.12em" }}>
         PRISONERS
       </div>
-      <div style={{ ...MONO, fontSize: 11, color: "#d0b090", marginTop: 3 }}>
+      <div className="mt-0.5 break-words font-mono text-[11px] text-[#d0b090]">
         {men > 0 ? `${men.toLocaleString()} men` : "Named captives"}
         {names.length > 0 ? ` — ${names.join(", ")}` : ""}
       </div>
-      <div style={{ ...MONO, fontSize: 8, color: "#6a5030", marginTop: 3 }}>
+      <div className="mt-0.5 break-words font-mono text-[8px] uppercase tracking-wider text-[#6a5030]">
         Taken at {taken}, turn {group.takenTurn}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 8 }}>

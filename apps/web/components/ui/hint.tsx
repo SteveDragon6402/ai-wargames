@@ -18,7 +18,7 @@ interface HintProps {
 export function Hint({ label, children, side = "top", className }: HintProps) {
   if (!label) return <>{children}</>;
   return (
-    <Tooltip>
+    <Tooltip delayDuration={480}>
       <TooltipTrigger asChild>{children}</TooltipTrigger>
       <TooltipContent
         side={side}
