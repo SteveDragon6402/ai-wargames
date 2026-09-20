@@ -11,7 +11,6 @@ import {
   garrisonHeadcount,
   isFriendlyTo,
   isGarrisonable,
-  normalizeGarrison,
 } from "../lib/hold-runtime";
 import {
   garrisonArmyId,
@@ -24,7 +23,7 @@ import {
   findNamedGarrisonNegotiator,
   negotiatorLabel,
 } from "../lib/castellan";
-import { forageAtHold, forageOnPath } from "../lib/forage";
+import { forageAtHold } from "../lib/forage";
 import { openParleyAtHold } from "../lib/converse-client";
 import ArmyCard from "./ArmyCard";
 import SpeechComposer from "./SpeechComposer";
@@ -39,7 +38,6 @@ import { canRaze } from "../lib/raze";
 import { blockingChoicesFor, choiceAtHold } from "../lib/pending-choices";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { cn } from "@/lib/utils";
 
 interface Props {
   state: GameState;
@@ -55,9 +53,8 @@ const FACTION_LABEL: Record<Faction, string> = {
 export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
   const [parleyError, setParleyError] = useState<string | null>(null);
   const [railOpen, setRailOpen] = useState(true);
-  const [hostsOpen, setHostsOpen] = useState(true);
   const prevHoldId = useRef<string | null>(null);
-  const { selectedHoldId, selectedArmyIds, armies, activeFaction, adminMode } = state;
+  const { selectedHoldId, selectedArmyIds, moveMode, armies, activeFaction, adminMode } = state;
   const talkOpen = state.talkPickerOpen && state.phase === "planning";
 
   const hold = selectedHoldId ? HOLDS_MAP.get(selectedHoldId) : undefined;
@@ -250,12 +247,6 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
       ? { men: ownMenHere, required: siegeRequirement }
       : null;
 
-  const wallsBrokenOpen =
-    garrisonable &&
-    !!holdRuntime &&
-    garrisonMen === 0 &&
-    !!holdRuntime.scar?.toLowerCase().includes("storm");
-
   const namedNegotiatorId =
     canParley && holdRuntime && selectedHoldId
       ? findNamedGarrisonNegotiator(
@@ -267,8 +258,6 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
   const parleyLabel = namedNegotiatorId
     ? negotiatorLabel(namedNegotiatorId, state.characters).name
     : "Castellan";
-
-  const gSoft = holdRuntime ? normalizeGarrison(holdRuntime.garrison) : null;
 
   async function openCastleParley() {
     if (!selectedHoldId) return;
@@ -350,13 +339,60 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
       return "This turn these hosts will march to different seats.";
     }
     if (canMove) {
-      return `${who} ${selectedArmies.length === 1 ? "has" : "have"} no job yet. Click a glowing neighbour to march, or rest here.`;
+      return `${who} ${selectedArmies.length === 1 ? "has" : "have"} no job yet. March is ready — click a glowing neighbour, or Rest / Dig in to stay.`;
     }
     if (canSally) {
       return "The garrison can ride out this turn, or wait behind the walls.";
     }
-    return "Click one of your hosts — the numbered badges on the map, or a name in this list.";
+    return "Click one of your hosts — the coloured number on the map, or a name in this list.";
   })();
+
+  const marchDestName =
+    marchDestIds.length === 1
+      ? (HOLDS_MAP.get(marchDestIds[0])?.name ?? marchDestIds[0])
+      : null;
+  const marching =
+    moveMode.active || marchDestIds.length > 0;
+
+  function startMarch() {
+    if (
+      singleSelected &&
+      (singleArmyStanceOrder === "rest" || singleArmyStanceOrder === "fortify")
+    ) {
+      dispatch({
+        type: "SET_STANCE_ORDER",
+        armyId: singleSelected.id,
+        order: null,
+      });
+      return;
+    }
+    if (stormActive && singleSelected) {
+      dispatch({
+        type: "SET_STORM_ORDER",
+        armyId: singleSelected.id,
+        active: false,
+      });
+      return;
+    }
+    if (razeActive && singleSelected && selectedHoldId) {
+      dispatch({
+        type: "SET_RAZE_ORDER",
+        armyId: singleSelected.id,
+        holdId: selectedHoldId,
+        active: false,
+      });
+      return;
+    }
+    if (!moveMode.active) {
+      dispatch({ type: "BEGIN_MOVE" });
+    }
+  }
+
+  function cancelMarch() {
+    for (const army of selectedArmies) {
+      dispatch({ type: "SET_STANCE_ORDER", armyId: army.id, order: null });
+    }
+  }
 
   useEffect(() => {
     try {
@@ -387,7 +423,6 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
     if (selectedArmyIds.length === 0) return;
     setRailOpen(true);
     persistRail(true);
-    setHostsOpen(true);
   }, [armyKey, selectedArmyIds.length]);
 
   useEffect(() => {
@@ -494,8 +529,20 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                 <p className="text-[13px] leading-relaxed text-foreground">
                   {jobLine}
                 </p>
-                {(canIssueStance || canStorm || canSally || canRazeStay) && !isLocked && (
+                {(canMove || canIssueStance || canStorm || canSally || canRazeStay) &&
+                  !isLocked && (
                   <div className="flex min-w-0 flex-wrap gap-1.5">
+                    {canMove && (
+                      <OrderButton
+                        label={
+                          marchDestName ? `March to ${marchDestName}` : "March"
+                        }
+                        hint="Click a glowing neighbour on the map to send them there this turn."
+                        active={marching}
+                        spendsTurn
+                        onClick={startMarch}
+                      />
+                    )}
                     {canIssueStance && (
                       <OrderButton
                         label="Rest here"
@@ -590,17 +637,11 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                         }}
                       />
                     )}
-                    {marchDestIds.length > 0 && singleSelected && (
+                    {marchDestIds.length > 0 && (
                       <OrderButton
-                        label="Keep them here"
-                        hint="Cancel the march. They will stand with no job until you give one."
-                        onClick={() =>
-                          dispatch({
-                            type: "SET_STANCE_ORDER",
-                            armyId: singleSelected.id,
-                            order: null,
-                          })
-                        }
+                        label="Cancel march"
+                        hint="They will stay here with no job until you give them one."
+                        onClick={cancelMarch}
                       />
                     )}
                   </div>
@@ -612,11 +653,9 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                   canSplit ||
                   canChangeCommander) &&
                   !isLocked && (
-                <details className="min-w-0">
-                  <summary className="cursor-pointer list-none text-[12px] text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
-                    More: split, walls, speech
-                  </summary>
-                  <div className="mt-2 flex min-w-0 flex-wrap gap-1.5">
+                  <div className="min-w-0 space-y-1.5">
+                    <div className="text-[11px] text-muted-foreground">Organize</div>
+                    <div className="flex min-w-0 flex-wrap gap-1.5">
                     {canGarrison && (
                       <OrderButton
                         label="Post men on the walls"
@@ -695,28 +734,20 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                         }
                       />
                     )}
+                    </div>
                   </div>
-                </details>
                 )}
               </section>
             )}
 
             {garrisonable && holdRuntime && castleSeed && (
-              <PanelSection
+              <RailBlock
                 title="Seat"
                 hint={
                   holdRuntime.siege
                     ? `${garrisonMen.toLocaleString()} · siege`
                     : `${garrisonMen.toLocaleString()} on walls`
                 }
-                defaultOpen={
-                  !!holdRuntime.siege ||
-                  !!myFateHere ||
-                  holdPrisoners.length > 0 ||
-                  armyPrisoners.length > 0 ||
-                  !!openPledge
-                }
-                accent={!!myFateHere || !!holdRuntime.siege}
               >
                 <p className="break-words text-[12px] text-muted-foreground">
                   Held by {holdRuntime.controller ?? "no one"}
@@ -803,9 +834,8 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                     )}
                     {canParley && (
                       <OrderButton
-                        label={`Talk · ${parleyLabel}`}
+                        label={`Talk to ${parleyLabel}`}
                         hint={`Open a parley with ${parleyLabel}.`}
-                        accent
                         onClick={() => void openCastleParley()}
                       />
                     )}
@@ -814,42 +844,19 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                 {parleyError && (
                   <p className="mt-2 break-words text-[12px] text-bad">{parleyError}</p>
                 )}
-                <MoreDetails>
-                  <p>
-                    {castleSeed.siteKind} · home {holdRuntime.homeFaction}
+                <p className="mt-2 break-words text-[12px] text-muted-foreground">
+                  {garrisonMen.toLocaleString()} / {castleSeed.capacity.toLocaleString()}{" "}
+                  capacity
+                  {holdRuntime.foodDaysRemaining != null
+                    ? ` · food ~${holdRuntime.foodDaysRemaining} days`
+                    : ""}
+                </p>
+                {holdRuntime.supplies && (
+                  <p className="mt-1 break-words text-[12px] italic text-muted-foreground">
+                    {holdRuntime.supplies}
                   </p>
-                  <p className="font-mono text-foreground">
-                    {garrisonMen.toLocaleString()} / {castleSeed.capacity.toLocaleString()}{" "}
-                    capacity · usual {castleSeed.defaultGarrison.toLocaleString()} ·{" "}
-                    {freeSlots.toLocaleString()} free
-                  </p>
-                  {holdRuntime.garrison.leaders.length > 0 && (
-                    <p>
-                      Command:{" "}
-                      {holdRuntime.garrison.leaders.map((l) => l.name).join(", ")}
-                    </p>
-                  )}
-                  <p className="italic">{holdRuntime.supplies}</p>
-                  {gSoft && garrisonMen > 0 && (
-                    <p>
-                      Morale {gSoft.morale} · condition {gSoft.tiredness} · stance{" "}
-                      {gSoft.stance}
-                    </p>
-                  )}
-                  {holdRuntime.foodDaysRemaining != null && (
-                    <p>Food ~{holdRuntime.foodDaysRemaining} days</p>
-                  )}
-                  {holdRuntime.postSiegeTurnsLeft > 0 && !holdRuntime.siege && (
-                    <p>Post-siege recovery ({holdRuntime.postSiegeTurnsLeft})</p>
-                  )}
-                  {wallsBrokenOpen && <p>Walls broken — gates forced</p>}
-                  {openPledge && (
-                    <p>
-                      Optional posting: at least {openPledge.minimumMen.toLocaleString()} men.
-                    </p>
-                  )}
-                </MoreDetails>
-              </PanelSection>
+                )}
+              </RailBlock>
             )}
 
             {controllableArmies.length > 1 && (
@@ -873,7 +880,7 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
               </div>
             )}
 
-            <PanelSection
+            <RailBlock
               title="Hosts"
               hint={
                 selectedArmyIds.length > 0
@@ -882,9 +889,6 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                     ? `${northHere.length + westHere.length} here`
                     : "none"
               }
-              open={hostsOpen}
-              onOpenChange={setHostsOpen}
-              accent={selectedArmyIds.length > 0}
             >
               {northHere.length === 0 && westHere.length === 0 ? (
                 <p className="py-4 text-center text-[13px] text-muted-foreground">
@@ -938,29 +942,17 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
                   )}
                 </div>
               )}
-            </PanelSection>
+            </RailBlock>
 
             {trait && (
-              <PanelSection title="Country" hint={trait.name} defaultOpen={false}>
+              <RailBlock title="Country" hint={trait.name}>
                 <p className="break-words text-[13px] leading-relaxed text-muted-foreground">
                   {forageAtHold(state.forage, hold.id)}
                 </p>
-                <MoreDetails>
-                  <p className="text-[11px] text-muted-foreground">{trait.name}</p>
-                  <p className="mt-1">{trait.blurb}</p>
-                  <div className="mt-3 text-[11px] text-muted-foreground">Roads</div>
-                  <div className="mt-1 space-y-1">
-                    {hold.links.map((id) => {
-                      const name = HOLDS_MAP.get(id)?.name ?? id;
-                      return (
-                        <div key={id} className="break-words">
-                          {name} — {forageOnPath(state.forage, hold.id, id)}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </MoreDetails>
-              </PanelSection>
+                <p className="mt-2 break-words text-[12px] leading-relaxed text-muted-foreground">
+                  {trait.blurb}
+                </p>
+              </RailBlock>
             )}
           </ScrollArea>
 
@@ -981,64 +973,26 @@ export default function SidePanel({ state, dispatch, viewerFaction }: Props) {
   );
 }
 
-function PanelSection({
+function RailBlock({
   title,
   hint,
-  defaultOpen = false,
-  open: openProp,
-  onOpenChange,
-  accent,
   children,
 }: {
   title: string;
   hint?: string;
-  defaultOpen?: boolean;
-  open?: boolean;
-  onOpenChange?: (open: boolean) => void;
-  accent?: boolean;
   children: React.ReactNode;
 }) {
-  const [uncontrolled, setUncontrolled] = useState(defaultOpen);
-  const open = openProp ?? uncontrolled;
   return (
-    <details
-      open={open}
-      onToggle={(e) => {
-        const next = e.currentTarget.open;
-        onOpenChange?.(next);
-        if (openProp === undefined) setUncontrolled(next);
-      }}
-      className="group min-w-0 overflow-hidden border-b border-border"
-    >
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-2.5 text-[12px] font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
-        <span className={cn("shrink-0", accent && "text-primary")}>{title}</span>
+    <section className="min-w-0 overflow-hidden border-b border-border px-4 py-3">
+      <div className="mb-2 flex items-baseline justify-between gap-2">
+        <h3 className="text-[12px] font-medium text-foreground">{title}</h3>
         {hint && (
-          <span className="min-w-0 truncate text-[11px] font-normal text-muted-foreground/70 group-open:hidden">
+          <span className="min-w-0 truncate text-[11px] font-normal text-muted-foreground">
             {hint}
           </span>
         )}
-      </summary>
-      <div className="min-w-0 overflow-hidden px-4 pb-3">{children}</div>
-    </details>
-  );
-}
-
-function MoreDetails({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="mt-2 min-w-0">
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="text-[11px] text-muted-foreground hover:text-foreground"
-      >
-        {open ? "Less" : "More"}
-      </button>
-      {open && (
-        <div className="mt-2 min-w-0 space-y-1 overflow-hidden break-words text-[12px] leading-relaxed text-muted-foreground">
-          {children}
-        </div>
-      )}
-    </div>
+      </div>
+      {children}
+    </section>
   );
 }

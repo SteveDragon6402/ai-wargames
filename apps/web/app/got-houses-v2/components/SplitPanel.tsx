@@ -162,10 +162,10 @@ function SplitPanelInner({
           }}
         >
           <div>
-            <div style={{ ...MONO, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.12em", color: "#c8941a" }}>
-              Split Army
+            <div style={{ fontFamily: "var(--font-display), Georgia, serif", fontSize: 18, fontWeight: 600, color: "#d8cbb4" }}>
+              Divide this host
             </div>
-            <div style={{ ...MONO, fontSize: 9, color: "#555", textTransform: "uppercase", letterSpacing: "0.1em", marginTop: 2 }}>
+            <div style={{ fontSize: 12, color: "#888", marginTop: 2 }}>
               {army.name}
             </div>
           </div>
@@ -182,11 +182,11 @@ function SplitPanelInner({
 
         <div style={{ flex: 1, overflowY: "auto", padding: "12px 16px" }}>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 80px 80px 80px", gap: 4, marginBottom: 8, alignItems: "center" }}>
-            <div style={{ ...MONO, fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em" }}>Unit Group</div>
-            <div style={{ ...MONO, fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", textAlign: "center" }}>← All A1</div>
-            <div style={{ ...MONO, fontSize: 8, color: "#3a6ea8", textTransform: "uppercase", letterSpacing: "0.1em", textAlign: "center" }}>Army 1</div>
-            <div style={{ ...MONO, fontSize: 8, color: "#b03030", textTransform: "uppercase", letterSpacing: "0.1em", textAlign: "center" }}>Army 2</div>
-            <div style={{ ...MONO, fontSize: 8, color: "#444", textTransform: "uppercase", letterSpacing: "0.1em", textAlign: "center" }}>All A2 →</div>
+            <div style={{ ...MONO, fontSize: 11, color: "#888" }}>Unit</div>
+            <div style={{ ...MONO, fontSize: 11, color: "#888", textAlign: "center" }}>All to 1</div>
+            <div style={{ ...MONO, fontSize: 11, color: "#3a6ea8", textAlign: "center" }}>Host 1</div>
+            <div style={{ ...MONO, fontSize: 11, color: "#b03030", textAlign: "center" }}>Host 2</div>
+            <div style={{ ...MONO, fontSize: 11, color: "#888", textAlign: "center" }}>All to 2</div>
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 16 }}>

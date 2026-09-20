@@ -404,7 +404,7 @@ function MapInner({ state, dispatch }: Props) {
           <div className="max-w-[min(28rem,calc(100vw-24px))] rounded-sm border border-primary/50 bg-card/95 px-3 py-2 text-[13px] leading-snug text-foreground shadow-lg backdrop-blur">
             {marchDestName
               ? `${marchLabel} will march to ${marchDestName}. Click another glowing seat to change.`
-              : `Click a glowing seat to march ${marchLabel} there this turn. Rest or dig in on the right if they should stay.`}
+              : `March is ready. Click a glowing seat, or Rest / Dig in on the right if they should stay.`}
           </div>
         </Panel>
       )}
@@ -440,50 +440,31 @@ function MapInner({ state, dispatch }: Props) {
             </HoldTip>
           ))}
         </div>
-        <details className="rounded-sm border border-border bg-card/95 shadow-lg backdrop-blur">
-          <summary className="cursor-pointer list-none px-3 py-2 text-[12px] font-medium text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden">
-            Map key
-          </summary>
-          <div className="space-y-1.5 border-t border-border px-3 py-2.5">
-            {mapView === "seats" && (
-              <>
-                <LegendRow color="#3a6ea8">Held by the North</LegendRow>
-                <LegendRow color="#b03030">Held by the Westerlands</LegendRow>
-                <LegendRow color="#c8941a">Held against both</LegendRow>
-                <LegendRow color="#333">Unheld</LegendRow>
-                <div className="mt-2 space-y-1 border-t border-border pt-2 text-[12px] text-muted-foreground">
-                  <div>Left strip = home country</div>
-                  <div>▤ ▦ ▩ garrison thin / full / reinforced</div>
-                  <div>⚑ walls empty</div>
-                </div>
-              </>
-            )}
-            {mapView === "hosts" && (
-              <>
-                <LegendRow color="#3a6ea8">
-                  North — thousands of men here
-                </LegendRow>
-                <LegendRow color="#b03030">
-                  Westerlands — thousands of men here
-                </LegendRow>
-                <div className="mt-2 space-y-1 border-t border-border pt-2 text-[12px] text-muted-foreground">
-                  <div>×2 means two hosts of that side</div>
-                  <div>Glow = they can march there this turn</div>
-                </div>
-              </>
-            )}
-            {mapView === "country" && (
-              <>
-                <LegendRow color="#3a6a40">Full country</LegendRow>
-                <LegendRow color="#7a6a30">Picked over</LegendRow>
-                <LegendRow color="#6a3830">Stripped bare</LegendRow>
-                <div className="mt-2 border-t border-border pt-2 text-[12px] text-muted-foreground">
-                  Roads take the same colour as the path between seats.
-                </div>
-              </>
-            )}
-          </div>
-        </details>
+        <div className="rounded-sm border border-border bg-card/95 px-3 py-2 shadow-lg backdrop-blur">
+          {mapView === "seats" && (
+            <div className="space-y-1">
+              <LegendRow color="#3a6ea8">North holds it</LegendRow>
+              <LegendRow color="#b03030">Westerlands hold it</LegendRow>
+              <LegendRow color="#333">Unheld</LegendRow>
+            </div>
+          )}
+          {mapView === "hosts" && (
+            <div className="space-y-1">
+              <LegendRow color="#3a6ea8">North in the field</LegendRow>
+              <LegendRow color="#b03030">Westerlands in the field</LegendRow>
+              <p className="text-[11px] text-muted-foreground">
+                Glow means they can march there. ×2 means two hosts.
+              </p>
+            </div>
+          )}
+          {mapView === "country" && (
+            <div className="space-y-1">
+              <LegendRow color="#3a6a40">Full forage</LegendRow>
+              <LegendRow color="#7a6a30">Picked over</LegendRow>
+              <LegendRow color="#6a3830">Stripped bare</LegendRow>
+            </div>
+          )}
+        </div>
       </Panel>
     </ReactFlow>
   );

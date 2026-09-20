@@ -100,10 +100,10 @@ export default function SpeechComposer({ army, state, dispatch }: Props) {
       >
         <div
           style={{
-            fontSize: 9,
-            color: "#c8941a",
-            textTransform: "uppercase",
-            letterSpacing: "0.12em",
+            fontFamily: "var(--font-display), Georgia, serif",
+            fontSize: 14,
+            fontWeight: 600,
+            color: "#d8cbb4",
           }}
         >
           Speech · {army.name}
@@ -114,20 +114,17 @@ export default function SpeechComposer({ army, state, dispatch }: Props) {
           style={{
             background: "none",
             border: "none",
-            color: "#555",
+            color: "#888",
             cursor: "pointer",
             fontFamily: "inherit",
-            fontSize: 9,
-            textTransform: "uppercase",
-            letterSpacing: "0.1em",
+            fontSize: 12,
           }}
         >
           Cancel
         </button>
       </div>
-      <div style={{ color: "#555", fontSize: 10, marginBottom: 8, lineHeight: 1.4 }}>
-        Command to this host. Counts as their action — they will not march.
-        May imply rest or fortify.
+      <div style={{ color: "#888", fontSize: 12, marginBottom: 8, lineHeight: 1.45 }}>
+        Words to this host. They can still march or rest this turn.
       </div>
       {already ? (
         <div style={{ color: "#666", fontSize: 11 }}>

@@ -36,8 +36,9 @@ export default function TheaterOverview({ state, dispatch, viewerFaction }: Prop
             The theater
           </h2>
           <p className="mt-1.5 text-[13px] leading-relaxed text-muted-foreground">
-            Click a coloured number on the map — that is a host. Neighbours
-            will glow. Click a glowing seat to march them there this turn.
+            Click a coloured number on the map — that is a host. March is
+            ready: neighbours glow. Click a glowing seat to send them there,
+            or Rest / Dig in on the right if they should stay.
           </p>
         </div>
 
@@ -128,8 +129,8 @@ export default function TheaterOverview({ state, dispatch, viewerFaction }: Prop
             </li>
             <li>
               <span className="font-medium text-foreground">2. Give them a job.</span>{" "}
-              Click a glowing seat to march, or Rest / Dig in on the right if
-              they should stay.
+              Click a glowing seat to march, or press Rest / Dig in if they
+              should stay. March is selected until you pick another job.
             </li>
             <li>
               <span className="font-medium text-foreground">3. Commit.</span>{" "}

@@ -75,7 +75,7 @@ export default function CounselPanel({ state, dispatch, viewerFaction }: Props) 
 
         {audience && mineStatus === "open" && (
           <div className="mt-5 space-y-4">
-            <div className="text-[12px] font-medium uppercase tracking-wide text-primary">
+            <div className="text-[13px] font-medium text-foreground">
               {speaker?.name ?? "A bannerman"} seeks a word
               {lord ? ` with ${lord.name}` : ""}
             </div>

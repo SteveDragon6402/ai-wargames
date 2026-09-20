@@ -358,11 +358,10 @@ function Header({ title, onClose }: { title: string; onClose: () => void }) {
     >
       <div
         style={{
-          ...MONO,
-          fontSize: 12,
-          color: "#c8941a",
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
+          fontFamily: "var(--font-display), Georgia, serif",
+          fontSize: 16,
+          fontWeight: 600,
+          color: "#d8cbb4",
         }}
       >
         {title}
@@ -396,11 +395,8 @@ function Section({
     <div style={{ marginBottom: 12 }}>
       <div
         style={{
-          ...MONO,
-          fontSize: 8,
-          color: "#555",
-          textTransform: "uppercase",
-          letterSpacing: "0.12em",
+          fontSize: 11,
+          color: "#888",
           marginBottom: 6,
         }}
       >

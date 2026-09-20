@@ -446,6 +446,26 @@ describe("the map is how you march", () => {
     assert.equal(s.moveMode.active, false);
     assert.equal(s.north.stanceOrders["army-robb"], "rest");
   });
+
+  it("lights neighbours again when rest is cancelled", () => {
+    let s = gameReducer(INITIAL_GAME_STATE, {
+      type: "SELECT_ARMY",
+      armyId: "army-robb",
+      shift: false,
+    });
+    s = gameReducer(s, {
+      type: "SET_STANCE_ORDER",
+      armyId: "army-robb",
+      order: "rest",
+    });
+    s = gameReducer(s, {
+      type: "SET_STANCE_ORDER",
+      armyId: "army-robb",
+      order: null,
+    });
+    assert.equal(s.moveMode.active, true);
+    assert.equal(s.north.stanceOrders["army-robb"], undefined);
+  });
 });
 
 function voicedAudience(

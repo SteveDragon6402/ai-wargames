@@ -113,8 +113,8 @@ function ArmyRenameCard({
           }}
         >
           <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-            <div style={{ ...MONO, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.15em", color: "#c8941a", marginBottom: 4 }}>
-              {mode === "voluntary" ? "Appoint Commander" : "Commander Lost"}
+            <div style={{ fontFamily: "var(--font-display), Georgia, serif", fontSize: 18, fontWeight: 600, color: "#d8cbb4", marginBottom: 4 }}>
+              {mode === "voluntary" ? "Change who leads" : "This host needs a captain"}
             </div>
             {mode === "voluntary" && (
               <button

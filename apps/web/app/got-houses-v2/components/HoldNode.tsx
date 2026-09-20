@@ -259,7 +259,7 @@ function HoldNode({ data }: { data: HoldNodeData }) {
           transition: "border-color 0.15s, box-shadow 0.15s",
           position: "relative",
           overflow: "hidden",
-          opacity: isInMoveMode && !isMoveTarget && !isSelected ? 0.4 : 1,
+          opacity: isInMoveMode && !isMoveTarget && !isSelected ? 0.6 : 1,
         }}
         title={controllerLabel}
       >

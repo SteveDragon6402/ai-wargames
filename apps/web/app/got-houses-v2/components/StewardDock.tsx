@@ -271,7 +271,7 @@ export default function StewardDock({
                 return (
                   <div
                     key={m.id}
-                    className="my-3 text-center text-[10px] uppercase tracking-[0.18em] text-muted-foreground"
+                    className="my-3 text-center text-[11px] text-muted-foreground"
                   >
                     {m.text}
                   </div>
@@ -285,7 +285,7 @@ export default function StewardDock({
                 >
                   <div
                     className={cn(
-                      "mb-1 text-[10px] uppercase tracking-[0.08em] text-muted-foreground",
+                      "mb-1 text-[11px] text-muted-foreground",
                       mine && "text-right"
                     )}
                   >
@@ -304,7 +304,7 @@ export default function StewardDock({
             })}
             {streamingReply !== null && (
               <div className="mb-3 max-w-[88%]">
-                <div className="mb-1 text-[10px] uppercase tracking-[0.08em] text-muted-foreground">
+                <div className="mb-1 text-[11px] text-muted-foreground">
                   {stewardName}
                 </div>
                 <div className="rounded-sm border border-border bg-background px-2.5 py-2 text-[13px] leading-snug text-foreground">
