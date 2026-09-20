@@ -31,6 +31,7 @@ const CASTELLAN_NAMES = [
 export function isHumanNegotiator(c: CharacterState): boolean {
   if (c.kind !== "npc" || !c.alive) return false;
   if (c.species === "beast") return false;
+  if (c.role === "steward") return false;
   // A man in an enemy cell cannot answer for his own walls.
   if (c.captive) return false;
   return true;

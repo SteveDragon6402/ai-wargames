@@ -13,6 +13,7 @@ export type UnitType = "cavalry" | "infantry" | "archers";
 
 export type GamePhase =
   | "planning"
+  | "counsel"
   | "resolving"
   | "retreat"
   | "rename_commanders"
@@ -698,13 +699,16 @@ export interface PlayerLordState {
   alive: boolean;
 }
 
+/** How an NPC sits in the war — stewards keep the table, not a host. */
+export type NpcRole = "commander" | "notable" | "castellan" | "steward";
+
 /** Full NPC agent runtime state. */
 export interface NpcAgentState {
   kind: "npc";
   id: CharacterId;
   name: string;
   faction: Faction;
-  role: "commander" | "notable" | "castellan";
+  role: NpcRole;
   /**
    * Beasts (direwolves, etc.) can be present but cannot negotiate or take
    * castellan charge. Default / omitted = human.
@@ -803,7 +807,7 @@ export interface AdviceRecord {
   text: string;
 }
 
-export type ConversationKind = "direct" | "war_council";
+export type ConversationKind = "direct" | "war_council" | "steward";
 export type ConversationStatus = "pending_invite" | "active" | "closed";
 
 export interface ConversationThread {
@@ -948,6 +952,52 @@ export interface Traveller {
   needsDestination?: boolean;
 }
 
+/* ── Counsel / audience ──────────────────────────────────────── */
+
+/** A bannerman's proposed way out of a dilemma. */
+export interface AudienceOption {
+  id: string;
+  label: string;
+}
+
+export interface AudienceAnswer {
+  optionId: string | null;
+  freeText: string | null;
+}
+
+/** Clamped world writes a consequence GM is allowed to make. */
+export interface AudienceEffects {
+  armyUpdates: TirednessUpdate[];
+  garrisonUpdates: GarrisonConditionUpdate[];
+  prisonerActs: { groupId: string; action: "release" | "execute" }[];
+  forageHolds: { holdId: string; steps: number }[];
+  deedSummary: string;
+  deedDetail: string;
+}
+
+/**
+ * One counsel after a map turn: a living NPC of that faction approaches
+ * the player lord with a dilemma grounded in what just happened.
+ */
+export interface Audience {
+  id: string;
+  turn: number;
+  faction: Faction;
+  speakerId: CharacterId;
+  addresseeId: CharacterId;
+  kind: string;
+  situation: string;
+  whyNow: string;
+  text: string;
+  options: AudienceOption[];
+  answer: AudienceAnswer | null;
+  narration: string | null;
+  effects: AudienceEffects | null;
+  effectsApplied: boolean;
+  skipped: boolean;
+  skipReason?: string | null;
+}
+
 /* ── The deed ledger ─────────────────────────────────────────── */
 
 export type DeedKind =
@@ -966,7 +1016,8 @@ export type DeedKind =
   | "prisoners_taken"
   | "prisoners_released"
   | "prisoners_executed"
-  | "prisoners_liberated";
+  | "prisoners_liberated"
+  | "counsel_given";
 
 /** The circumstances of a deed — enough to judge it, not merely name it. */
 export interface DeedCircumstances {
@@ -1118,6 +1169,13 @@ export interface GameState {
   travellers?: Traveller[];
   /** The public war record. Everyone can read it; everyone judges you by it. */
   deeds?: Deed[];
+  /** Counsel after each map turn — history, including the one now open. */
+  audiences?: Audience[];
+  /**
+   * Map adjudication can run under the counsel overlay.
+   * idle: still planning. resolving: marches/fights in flight. resolved: board is settled.
+   */
+  mapStatus?: "idle" | "resolving" | "resolved";
   /** Seat whose fate panel is open (null = closed). */
   seatFatePanelId?: string | null;
   /** Whether the turn-start briefing is showing. */
@@ -1126,6 +1184,12 @@ export interface GameState {
   briefingShownFor?: Faction | null;
   /** Turn the briefing was last dismissed on. */
   briefingShownTurn?: number | null;
+  /** Steward dock open on this client. */
+  stewardOpen?: boolean;
+  /** Unread steward briefing waiting per side. */
+  stewardUnread?: Record<Faction, boolean>;
+  /** Last turn each side already received a steward briefing. */
+  stewardBriefedTurn?: Record<Faction, number | null>;
 }
 
 export type GameAction =
@@ -1148,6 +1212,42 @@ export type GameAction =
     }
   | { type: "SET_RETREAT"; armyId: string; toHoldId: string; asFaction?: Faction }
   | { type: "COMMIT_RETREATS" }
+  | {
+      type: "APPLY_AUDIENCE_PROPOSAL";
+      audience: Audience;
+    }
+  | {
+      type: "APPLY_AUDIENCE_VOICE";
+      audienceId: string;
+      text: string;
+      options: AudienceOption[];
+      patches?: NpcRuntimePatch[];
+    }
+  | {
+      type: "SET_AUDIENCE_ANSWER";
+      audienceId: string;
+      answer: AudienceAnswer;
+      asFaction?: Faction;
+    }
+  | {
+      type: "PULL_RIVAL_AUDIENCE_ANSWERS";
+      myFaction: Faction;
+      audiences: Audience[];
+    }
+  | {
+      type: "SKIP_AUDIENCE";
+      faction: Faction;
+      reason: string;
+    }
+  | {
+      type: "APPLY_AUDIENCE_OUTCOME";
+      audienceId: string;
+      narration: string;
+      effects: AudienceEffects;
+      patches?: NpcRuntimePatch[];
+    }
+  | { type: "FINISH_COUNSEL" }
+  | { type: "ENTER_COUNSEL" }
   | { type: "COMBINE_ARMIES" }
   | { type: "TOGGLE_ADMIN" }
   | { type: "SWITCH_FACTION"; faction: Faction }
@@ -1240,6 +1340,9 @@ export type GameAction =
     }
   | { type: "OPEN_SEAT_FATE_PANEL"; choiceId: string | null }
   | { type: "SET_BRIEFING_OPEN"; open: boolean }
+  | { type: "SET_STEWARD_OPEN"; open: boolean }
+  | { type: "SET_STEWARD_UNREAD"; faction: Faction; unread: boolean }
+  | { type: "MARK_STEWARD_BRIEFED"; faction: Faction; turn: number }
   | {
       /** Let a body of captives go, or put them to the sword. */
       type: "DISPOSE_PRISONERS";
@@ -1272,6 +1375,7 @@ export type GameAction =
       characters?: Record<CharacterId, CharacterState>;
       holdStates?: Record<string, HoldRuntime>;
       prisoners?: PrisonerGroup[];
+      audiences?: Audience[];
     }
   | {
       /** Take the other side's retreat picks without touching ours. */

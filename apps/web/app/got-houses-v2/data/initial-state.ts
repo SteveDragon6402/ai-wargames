@@ -4,6 +4,11 @@ import { buildInitialHoldStates } from "../lib/hold-runtime";
 import { buildInitialForage } from "../lib/forage";
 import { reconcileSieges } from "../lib/siege";
 import { syncCastellansWithSieges } from "../lib/castellan";
+import {
+  emptyStewardBriefedTurn,
+  emptyStewardThread,
+  emptyStewardUnread,
+} from "../lib/steward";
 
 const FRESH_ACTIVITY: ArmyActivity = {
   turnsResting: 0,
@@ -207,7 +212,10 @@ export const INITIAL_GAME_STATE: GameState = {
   voluntaryCommanderChange: null,
   splitPanelArmyId: null,
   characters: OPENING.characters,
-  conversations: [],
+  conversations: [
+    emptyStewardThread("north", 1),
+    emptyStewardThread("westerlands", 1),
+  ],
   speechesThisTurn: [],
   speechArmyId: null,
   openConversationIds: [],
@@ -225,8 +233,12 @@ export const INITIAL_GAME_STATE: GameState = {
   pendingChoices: [],
   travellers: [],
   deeds: [],
+  audiences: [],
   seatFatePanelId: null,
   briefingOpen: false,
   briefingShownFor: null,
   briefingShownTurn: null,
+  stewardOpen: false,
+  stewardUnread: emptyStewardUnread(),
+  stewardBriefedTurn: emptyStewardBriefedTurn(),
 };

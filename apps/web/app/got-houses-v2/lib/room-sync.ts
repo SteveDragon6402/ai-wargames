@@ -9,6 +9,7 @@ import type {
   PrisonerGroup,
   RetreatEntry,
 } from "../types";
+import { mergeCounselAudiences } from "./audience";
 
 export type RoomWriter = Faction | "both";
 
@@ -16,14 +17,16 @@ function phaseRank(phase: GamePhase): number {
   switch (phase) {
     case "planning":
       return 0;
-    case "resolving":
+    case "counsel":
       return 1;
-    case "retreat":
+    case "resolving":
       return 2;
-    case "rename_commanders":
+    case "retreat":
       return 3;
-    case "ended":
+    case "rename_commanders":
       return 4;
+    case "ended":
+      return 5;
     default:
       return 0;
   }
@@ -203,6 +206,10 @@ export function mergeRoomState(
       ...boards,
       north: clipMoveOrders(north, armyIds),
       westerlands: clipMoveOrders(westerlands, armyIds),
+      audiences:
+        writer === "westerlands"
+          ? current.audiences
+          : incoming.audiences ?? current.audiences,
     };
   }
 
@@ -213,6 +220,18 @@ export function mergeRoomState(
       return { ...current, retreats };
     }
     return { ...incoming, retreats };
+  }
+
+  if (current.phase === "counsel" && incoming.phase === "counsel") {
+    const audiences = mergeCounselAudiences(
+      current.audiences,
+      incoming.audiences,
+      writer
+    );
+    if (writer === "westerlands") {
+      return { ...current, audiences };
+    }
+    return { ...incoming, audiences };
   }
 
   // Resolving / rename at the same progress: only the host (North) may write.
@@ -233,6 +252,7 @@ export function boardFingerprint(state: GameState): string {
   return JSON.stringify({
     turn: state.turn,
     phase: state.phase,
+    mapStatus: state.mapStatus ?? "idle",
     pending: pending.map((b) => `${b.holdId}:${b.lastStand ? 1 : 0}`),
     reports: reports.length,
     armies: armies.map((a) => [a.id, a.holdId, a.units, a.name]),
@@ -245,5 +265,14 @@ export function boardFingerprint(state: GameState): string {
     choices: (state.pendingChoices ?? []).map((c) => c.id),
     prisoners: (state.prisoners ?? []).map((p) => [p.id, p.location]),
     deeds: (state.deeds ?? []).length,
+    audiences: (state.audiences ?? []).map((a) => [
+      a.id,
+      a.faction,
+      a.skipped ? 1 : 0,
+      a.text ? 1 : 0,
+      a.answer?.optionId ?? a.answer?.freeText ?? "",
+      a.narration ? 1 : 0,
+      a.effectsApplied ? 1 : 0,
+    ]),
   });
 }

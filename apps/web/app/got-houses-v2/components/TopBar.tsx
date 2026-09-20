@@ -45,6 +45,7 @@ const PHASE_COPY: Record<string, string> = {
   resolving: "Adjudicating",
   retreat: "Retreat",
   rename_commanders: "Rename commanders",
+  counsel: "Counsel",
   ended: "War ended",
 };
 
@@ -201,23 +202,23 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
         </Hint>
       )}
 
-      {(state.battleReports ?? []).length > 0 && (
-        <Hint label="Read every battle that has been fought">
-          <Button
-            type="button"
-            variant={state.battleLogOpen ? "secondary" : "outline"}
-            size="sm"
-            className="h-8 shrink-0 gap-1.5 px-2 text-[12px] sm:px-2.5"
-            onClick={() => dispatch({ type: "TOGGLE_BATTLE_LOG" })}
-          >
-            <Swords className="size-3.5" />
-            <span className="hidden md:inline">Battles</span>
+      <Hint label="Read every battle that has been fought">
+        <Button
+          type="button"
+          variant={state.battleLogOpen ? "secondary" : "outline"}
+          size="sm"
+          className="h-8 shrink-0 gap-1.5 px-2 text-[12px] sm:px-2.5"
+          onClick={() => dispatch({ type: "TOGGLE_BATTLE_LOG" })}
+        >
+          <Swords className="size-3.5" />
+          <span className="hidden md:inline">Battles</span>
+          {(state.battleReports ?? []).length > 0 && (
             <Badge variant="outline" className="h-4 px-1 text-[10px]">
               {state.battleReports.length}
             </Badge>
-          </Button>
-        </Hint>
-      )}
+          )}
+        </Button>
+      </Hint>
 
       <Popover>
         <PopoverTrigger asChild>
@@ -277,10 +278,10 @@ export default function TopBar({ state, dispatch, deferAdjudicate }: Props) {
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-52">
           <DropdownMenuItem
-            onClick={() => dispatch({ type: "SET_BRIEFING_OPEN", open: true })}
+            onClick={() => dispatch({ type: "SET_STEWARD_OPEN", open: true })}
           >
             <ScrollText className="size-4" />
-            Last briefing
+            Ask the steward
           </DropdownMenuItem>
           {(state.battleReports ?? []).length > 0 && (
             <DropdownMenuItem

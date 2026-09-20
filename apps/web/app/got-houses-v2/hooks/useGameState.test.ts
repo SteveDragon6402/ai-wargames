@@ -12,7 +12,8 @@ import { garrisonHeadcount } from "../lib/hold-runtime";
 import { INITIAL_GAME_STATE } from "../data/initial-state";
 import { createPrisonerGroup } from "../lib/prisoners";
 import { moveOrdersResolvable } from "../lib/room-sync";
-import type { GameState, RetreatEntry, SplitConfig } from "../types";
+import type { Audience, GameState, RetreatEntry, SplitConfig } from "../types";
+import { skippedAudience } from "../lib/audience";
 
 describe("applyCasualties", () => {
   it("never heals a unit when a row is larger than the stack", () => {
@@ -444,5 +445,217 @@ describe("the map is how you march", () => {
     });
     assert.equal(s.moveMode.active, false);
     assert.equal(s.north.stanceOrders["army-robb"], "rest");
+  });
+});
+
+function voicedAudience(
+  faction: "north" | "westerlands",
+  extra: Partial<Audience> = {}
+): Audience {
+  const speakerId = faction === "north" ? "roose-bolton" : "addam-marbrand";
+  const addresseeId = faction === "north" ? "robb-stark" : "tywin-lannister";
+  return {
+    id: `aud-${faction}-1-${speakerId}`,
+    turn: 1,
+    faction,
+    speakerId,
+    addresseeId,
+    kind: "prisoners_fate",
+    situation: "Captives from the last fight.",
+    whyNow: "The column is slowed.",
+    text: "My lord, the captives are a weight. What is your word?",
+    options: [
+      { id: "keep", label: "Keep them under guard" },
+      { id: "free", label: "Turn them loose" },
+      { id: "hang", label: "Hang a few as a lesson" },
+    ],
+    answer: null,
+    narration: null,
+    effects: null,
+    effectsApplied: false,
+    skipped: false,
+    ...extra,
+  };
+}
+
+function counselState(
+  audiences: Audience[],
+  activeFaction: "north" | "westerlands" = "north"
+): GameState {
+  return {
+    ...INITIAL_GAME_STATE,
+    phase: "counsel",
+    turn: 1,
+    activeFaction,
+    audiences,
+  };
+}
+
+describe("counsel answers", () => {
+  it("does not let the host answer for the West", () => {
+    const start = counselState(
+      [voicedAudience("north"), voicedAudience("westerlands")],
+      "north"
+    );
+    const next = gameReducer(start, {
+      type: "SET_AUDIENCE_ANSWER",
+      audienceId: voicedAudience("westerlands").id,
+      answer: { optionId: "keep", freeText: null },
+      asFaction: "north",
+    });
+    assert.equal(
+      (next.audiences ?? []).find((a) => a.faction === "westerlands")?.answer,
+      null
+    );
+  });
+
+  it("does not let the guest answer for the North", () => {
+    const start = counselState(
+      [voicedAudience("north"), voicedAudience("westerlands")],
+      "westerlands"
+    );
+    const next = gameReducer(start, {
+      type: "SET_AUDIENCE_ANSWER",
+      audienceId: voicedAudience("north").id,
+      answer: { optionId: "keep", freeText: null },
+      asFaction: "westerlands",
+    });
+    assert.equal(
+      (next.audiences ?? []).find((a) => a.faction === "north")?.answer,
+      null
+    );
+  });
+
+  it("lets a side answer their own dilemma", () => {
+    const start = counselState(
+      [voicedAudience("north"), voicedAudience("westerlands")],
+      "westerlands"
+    );
+    const next = gameReducer(start, {
+      type: "SET_AUDIENCE_ANSWER",
+      audienceId: voicedAudience("westerlands").id,
+      answer: { optionId: "free", freeText: null },
+      asFaction: "westerlands",
+    });
+    assert.equal(
+      (next.audiences ?? []).find((a) => a.faction === "westerlands")?.answer?.optionId,
+      "free"
+    );
+  });
+
+  it("pulls only the rival's counsel answer", () => {
+    const north = voicedAudience("north", {
+      answer: { optionId: "keep", freeText: null },
+    });
+    const west = voicedAudience("westerlands");
+    const next = gameReducer(counselState([north, west], "north"), {
+      type: "PULL_RIVAL_AUDIENCE_ANSWERS",
+      myFaction: "north",
+      audiences: [
+        { ...north, answer: { optionId: "hang", freeText: null } },
+        { ...west, answer: { optionId: "free", freeText: null } },
+      ],
+    });
+    assert.equal(
+      (next.audiences ?? []).find((a) => a.faction === "north")?.answer?.optionId,
+      "keep"
+    );
+    assert.equal(
+      (next.audiences ?? []).find((a) => a.faction === "westerlands")?.answer?.optionId,
+      "free"
+    );
+  });
+
+  it("rejects a free answer over forty words", () => {
+    const start = counselState([voicedAudience("north")], "north");
+    const next = gameReducer(start, {
+      type: "SET_AUDIENCE_ANSWER",
+      audienceId: voicedAudience("north").id,
+      answer: {
+        optionId: null,
+        freeText: Array.from({ length: 41 }, () => "word").join(" "),
+      },
+      asFaction: "north",
+    });
+    assert.equal((next.audiences ?? [])[0]?.answer, null);
+  });
+
+  it("does not queue marches during counsel", () => {
+    const start: GameState = {
+      ...counselState([voicedAudience("north")], "north"),
+      selectedArmyIds: ["army-robb"],
+    };
+    const next = gameReducer(start, { type: "BEGIN_MOVE" });
+    assert.equal(next.moveMode.active, false);
+    const queued = gameReducer(
+      { ...start, moveMode: { active: true, validTargets: ["07"] } },
+      { type: "QUEUE_MOVE", toHoldId: "07" }
+    );
+    assert.equal(queued.north.orders.length, start.north.orders.length);
+  });
+
+  it("skips a failed side and still advances to planning", () => {
+    const start = counselState(
+      [
+        skippedAudience("north", 1, "propose failed"),
+        skippedAudience("westerlands", 1, "propose failed"),
+      ],
+      "north"
+    );
+    const next = gameReducer(start, { type: "FINISH_COUNSEL" });
+    assert.equal(next.phase, "planning");
+    assert.equal(next.turn, 2);
+  });
+
+  it("does not finish while a side still owes an answer", () => {
+    const start = counselState(
+      [
+        skippedAudience("north", 1, "propose failed"),
+        voicedAudience("westerlands"),
+      ],
+      "north"
+    );
+    const next = gameReducer(start, { type: "FINISH_COUNSEL" });
+    assert.equal(next.phase, "counsel");
+    assert.equal(next.turn, 1);
+  });
+
+  it("records a counsel_given deed after a chosen option", () => {
+    const audience = voicedAudience("north", {
+      answer: { optionId: "keep", freeText: null },
+    });
+    const start = counselState(
+      [audience, skippedAudience("westerlands", 1, "propose failed")],
+      "north"
+    );
+    const next = gameReducer(start, {
+      type: "APPLY_AUDIENCE_OUTCOME",
+      audienceId: audience.id,
+      narration: "The captives stay under guard.",
+      effects: {
+        armyUpdates: [
+          {
+            armyId: "army-robb",
+            tiredness: "Weary of herding captives.",
+            morale: "Grim but obedient.",
+            stance: "Holding the column together.",
+          },
+        ],
+        garrisonUpdates: [],
+        prisonerActs: [],
+        forageHolds: [],
+        deedSummary: "Robb heard Roose after the last march.",
+        deedDetail: "Roose put the captives to Robb. He kept them.",
+      },
+    });
+    const deed = (next.deeds ?? []).find((d) => d.kind === "counsel_given");
+    assert.ok(deed);
+    assert.match(deed!.summary, /Roose|Robb|heard/);
+    const robb = next.armies.find((a) => a.id === "army-robb");
+    assert.equal(robb?.morale, "Grim but obedient.");
+    assert.equal(
+      (next.audiences ?? []).find((a) => a.id === audience.id)?.effectsApplied,
+      true
+    );
   });
 });

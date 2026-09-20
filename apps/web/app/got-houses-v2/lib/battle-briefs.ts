@@ -64,6 +64,7 @@ export function collectBattleCharacterIds(
         c.alive &&
         c.armyId &&
         armyIds.has(c.armyId) &&
+        c.role !== "steward" &&
         !lords.has(c.id)
     )
     .map((c) => c.id);

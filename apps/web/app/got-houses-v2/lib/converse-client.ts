@@ -58,7 +58,64 @@ export function snapshotForApi(state: GameState) {
     prisoners: state.prisoners,
     deeds: state.deeds,
     turnHistory: state.turnHistory,
+    north: state.north,
+    westerlands: state.westerlands,
+    audiences: state.audiences,
   };
+}
+
+export interface ConverseStreamPayload {
+  reply?: string;
+  patches?: NpcRuntimePatch[];
+  adviceRecords?: AdviceRecord[];
+  error?: string;
+}
+
+/** Read the NDJSON reply stream used by Talk and the steward. */
+export async function readConverseNdjson(
+  res: Response,
+  hooks: { onDelta: (chunk: string) => void; onTool: (name: string) => void }
+): Promise<ConverseStreamPayload> {
+  const reader = res.body?.getReader();
+  if (!reader) {
+    return (await res.json().catch(() => ({}))) as ConverseStreamPayload;
+  }
+
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let payload: ConverseStreamPayload = {};
+
+  const handleLine = (line: string) => {
+    const trimmed = line.trim();
+    if (!trimmed) return;
+    let frame: Record<string, unknown>;
+    try {
+      frame = JSON.parse(trimmed) as Record<string, unknown>;
+    } catch {
+      return;
+    }
+    if (frame.type === "delta" && typeof frame.text === "string") {
+      hooks.onDelta(frame.text);
+    } else if (frame.type === "tool" && typeof frame.name === "string") {
+      hooks.onTool(frame.name);
+    } else if (frame.type === "done" || frame.type === "error") {
+      payload = frame as ConverseStreamPayload;
+    }
+  };
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+    let idx = buffer.indexOf("\n");
+    while (idx !== -1) {
+      handleLine(buffer.slice(0, idx));
+      buffer = buffer.slice(idx + 1);
+      idx = buffer.indexOf("\n");
+    }
+  }
+  handleLine(buffer);
+  return payload;
 }
 
 export type TalkOverrides = {

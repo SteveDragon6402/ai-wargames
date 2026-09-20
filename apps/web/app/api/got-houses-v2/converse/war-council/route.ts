@@ -15,6 +15,7 @@ import type {
   NpcRuntimePatch,
   PrisonerGroup,
   TurnHistory,
+  Audience,
 } from "@/app/got-houses-v2/types";
 import {
   buildEmbodiedSystemPrompt,
@@ -40,6 +41,7 @@ interface WarCouncilBody {
   prisoners?: PrisonerGroup[];
   deeds?: Deed[];
   turnHistory?: TurnHistory[];
+  audiences?: Audience[];
 }
 
 export async function POST(req: NextRequest) {
@@ -105,6 +107,7 @@ export async function POST(req: NextRequest) {
         prisoners: body.prisoners,
         deeds: body.deeds,
         turnHistory: body.turnHistory,
+        audiences: body.audiences,
       };
 
       // One commander failing must not silence the whole table: each is tried

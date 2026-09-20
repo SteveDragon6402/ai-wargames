@@ -9,6 +9,7 @@ import type {
   Deed,
   Faction,
   FactionEvent,
+  FactionOrders,
   ForageState,
   Hold,
   HoldRuntime,
@@ -18,6 +19,7 @@ import type {
   PrisonerGroup,
   TownFate,
   TurnHistory,
+  Audience,
 } from "../types";
 import {
   CHARACTER_SEED_MAP,
@@ -36,6 +38,7 @@ import { armyFieldPresence } from "./siege";
 import { describeSeat, turnsBetween } from "./travel";
 import { describeCaptivity, prisonerAwarenessLines, prisonerRoster } from "./prisoners";
 import { reputationSummary, searchDeeds } from "./deeds";
+import { formatAudienceLog, searchAudiences } from "./audience";
 import {
   formatBattleLog,
   formatMarch,
@@ -44,6 +47,8 @@ import {
   queryMarchHistory,
 } from "./battle-records";
 import { refugeOptions } from "./release";
+import { explainRules, formatStandingOrders } from "./steward-prompts";
+import { isStewardCharacter } from "./steward";
 
 export interface CharacterToolContext {
   actingCharacterId: CharacterId;
@@ -66,6 +71,9 @@ export interface CharacterToolContext {
   prisoners?: PrisonerGroup[];
   deeds?: Deed[];
   turnHistory?: TurnHistory[];
+  audiences?: Audience[];
+  /** Standing orders — used by the steward's inspect_orders tool. */
+  factionOrders?: { north: FactionOrders; westerlands: FactionOrders };
   /**
    * Set when a freed man is choosing where to walk. Filled by choose_refuge.
    */
@@ -96,6 +104,14 @@ export interface CharacterToolContext {
     outlook: string;
     approach: string;
     mood?: string;
+  } | null;
+  /**
+   * Set when this NPC is presenting a counsel dilemma to the lord.
+   * Filled by present_dilemma.
+   */
+  audiencePresentation?: {
+    text: string;
+    options: { id: string; label: string }[];
   } | null;
 }
 
@@ -936,6 +952,74 @@ export const CHARACTER_TOOL_DEFS: Anthropic.Messages.Tool[] = [
       required: ["holdName"],
     },
   },
+  {
+    name: "explain_rules",
+    description:
+      "Look up how this war is played: marching, rest, fortify, speeches, locking orders, walls and sieges, forage, Talk, victory. Use this instead of guessing the rules or the clicks.",
+    input_schema: {
+      type: "object",
+      properties: {
+        topic: {
+          type: "string",
+          description:
+            "move | rest | fortify | speech | lock | turn | walls | siege | forage | talk | victory. Omit to list topics.",
+        },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "inspect_orders",
+    description:
+      "Read this side's standing orders for the current planning turn: marches, rest, fortify, storm, sally, raze, and whether they are locked.",
+    input_schema: { type: "object", properties: {}, required: [] },
+  },
+  {
+    name: "search_audiences",
+    description:
+      "Search counsel the lords have given after a march — who approached, what was asked, how the lord answered, and what followed.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string" },
+        faction: { type: "string", description: "north | westerlands" },
+        sinceTurn: { type: "number" },
+        limit: { type: "number" },
+      },
+      required: [],
+    },
+  },
+  {
+    name: "present_dilemma",
+    description:
+      "Present a dilemma to your lord: the plea in your own voice, and exactly three ways you propose to deal with it. Call this once when you are ready.",
+    input_schema: {
+      type: "object",
+      properties: {
+        text: {
+          type: "string",
+          description: "What you say to your lord. First person, in character.",
+        },
+        options: {
+          type: "array",
+          minItems: 3,
+          maxItems: 3,
+          items: {
+            type: "object",
+            properties: {
+              id: { type: "string" },
+              label: {
+                type: "string",
+                description: "A short proposed course, in your voice.",
+              },
+            },
+            required: ["id", "label"],
+          },
+        },
+      },
+      required: ["text", "options"],
+    },
+  },
 ];
 
 /** Terms decision a castellan reached during a tool loop. */
@@ -1085,6 +1169,14 @@ ${castle}`,
           ? ctx.armies.find((a) => a.id === npc.armyId)
           : undefined;
         fromId = hereArmy?.holdId ?? npc.holdId ?? null;
+      }
+      if (!fromId && npc.role === "steward") {
+        const lordId = factionLordId(npc.faction);
+        const lord = ctx.characters[lordId];
+        const lordArmy = lord?.armyId
+          ? ctx.armies.find((a) => a.id === lord.armyId)
+          : ctx.armies.find((a) => a.faction === npc.faction);
+        fromId = lordArmy?.holdId ?? null;
       }
       if (!fromId) {
         return { result: "You are not sure where you are standing." };
@@ -1584,6 +1676,70 @@ Country forage: ${forageAtHold(ctx.forage, holdId)}`,
       };
     }
 
+    case "explain_rules": {
+      if (!isStewardCharacter(npc)) {
+        return { result: "That book is not yours." };
+      }
+      return { result: explainRules(String(input.topic ?? "")) };
+    }
+
+    case "inspect_orders": {
+      if (!isStewardCharacter(npc)) {
+        return { result: "The standing orders are not at this table." };
+      }
+      const orders = ctx.factionOrders?.[npc.faction];
+      if (!orders) {
+        return { result: "The standing orders are not at this table." };
+      }
+      return {
+        result: formatStandingOrders(npc.faction, orders, {
+          armies: ctx.armies,
+        }),
+      };
+    }
+
+    case "search_audiences": {
+      const names: Record<string, string> = {};
+      for (const c of Object.values(ctx.characters)) names[c.id] = c.name;
+      const hits = searchAudiences(ctx.audiences, {
+        query: String(input.query ?? ""),
+        faction:
+          input.faction === "north" || input.faction === "westerlands"
+            ? input.faction
+            : undefined,
+        sinceTurn:
+          input.sinceTurn != null && input.sinceTurn !== ""
+            ? Number(input.sinceTurn)
+            : undefined,
+        limit: Number(input.limit) || 20,
+      });
+      if (hits.length === 0) return { result: "No matching counsel on the record." };
+      return { result: hits.map((a) => formatAudienceLog(a, names)).join("\n---\n") };
+    }
+
+    case "present_dilemma": {
+      if (!("audiencePresentation" in ctx) || ctx.audiencePresentation === undefined) {
+        return { result: "You are not presenting a dilemma now." };
+      }
+      const text = String(input.text ?? "").trim();
+      const rawOpts = Array.isArray(input.options) ? input.options : [];
+      const options = rawOpts
+        .map((o, i) => {
+          const rec = o as { id?: unknown; label?: unknown };
+          return {
+            id: String(rec.id ?? `opt-${i + 1}`).trim() || `opt-${i + 1}`,
+            label: String(rec.label ?? "").trim(),
+          };
+        })
+        .filter((o) => o.label.length > 0)
+        .slice(0, 3);
+      if (text.length < 8 || options.length !== 3) {
+        return { result: "Need a plea and exactly three options." };
+      }
+      ctx.audiencePresentation = { text, options };
+      return { result: "The dilemma is before your lord." };
+    }
+
     default:
       return { result: `Unknown tool: ${name}` };
   }
@@ -1716,10 +1872,19 @@ export async function runCharacterToolLoop(opts: {
   // line of dialogue instead.
   const speakTool = CHARACTER_TOOL_DEFS.find((t) => t.name === SPEAK_TOOL_NAME)!;
   const allowed = opts.allowedTools ? new Set(opts.allowedTools) : null;
+  const stewardOnly = new Set(["explain_rules", "inspect_orders"]);
+  const acting = ctx.characters[ctx.actingCharacterId];
+  const stewardActing = isStewardCharacter(acting);
   const tools = (speechMode
     ? CHARACTER_TOOL_DEFS
     : CHARACTER_TOOL_DEFS.filter((t) => t.name !== SPEAK_TOOL_NAME)
-  ).filter((t) => !allowed || t.name === SPEAK_TOOL_NAME || allowed.has(t.name));
+  ).filter((t) => {
+    if (stewardOnly.has(t.name) && !stewardActing) return false;
+    if (t.name === "present_dilemma" && ctx.audiencePresentation === undefined) {
+      return false;
+    }
+    return !allowed || t.name === SPEAK_TOOL_NAME || allowed.has(t.name);
+  });
 
   const patches = new Map<string, NpcRuntimePatch>();
   const adviceBag: AdviceRecord[] = [];

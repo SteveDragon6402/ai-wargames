@@ -187,3 +187,116 @@ describe("moveOrdersResolvable", () => {
     assert.equal(moveOrdersResolvable(westSplitBoard(INITIAL_GAME_STATE)), true);
   });
 });
+
+describe("counsel merge", () => {
+  it("does not let a West save clobber North's answer or the board", () => {
+    const north = {
+      id: "aud-north-1-roose-bolton",
+      turn: 1,
+      faction: "north" as const,
+      speakerId: "roose-bolton",
+      addresseeId: "robb-stark",
+      kind: "prisoners_fate",
+      situation: "Captives.",
+      whyNow: "Now.",
+      text: "My lord, the captives?",
+      options: [
+        { id: "a", label: "Keep" },
+        { id: "b", label: "Free" },
+        { id: "c", label: "Hang" },
+      ],
+      answer: { optionId: "a", freeText: null },
+      narration: null,
+      effects: null,
+      effectsApplied: false,
+      skipped: false,
+    };
+    const west = { ...north, id: "aud-west-1-addam-marbrand", faction: "westerlands" as const, speakerId: "addam-marbrand", addresseeId: "tywin-lannister", answer: null };
+
+    const hostArmies = INITIAL_GAME_STATE.armies.map((a) =>
+      a.id === "army-robb" ? { ...a, name: "HOST ROBB" } : a
+    );
+    const guestArmies = INITIAL_GAME_STATE.armies.map((a) =>
+      a.id === "army-robb" ? { ...a, name: "GUEST ROBB" } : a
+    );
+
+    const host: GameState = {
+      ...INITIAL_GAME_STATE,
+      phase: "counsel",
+      armies: hostArmies,
+      audiences: [north, west],
+    };
+    const guest: GameState = {
+      ...INITIAL_GAME_STATE,
+      phase: "counsel",
+      armies: guestArmies,
+      audiences: [
+        { ...north, answer: { optionId: "zzz", freeText: null } },
+        { ...west, answer: { optionId: "b", freeText: null } },
+      ],
+    };
+
+    const merged = mergeRoomState(host, guest, "westerlands");
+    assert.equal(merged.armies.find((a) => a.id === "army-robb")?.name, "HOST ROBB");
+    assert.equal(
+      merged.audiences?.find((a) => a.faction === "north")?.answer?.optionId,
+      "a"
+    );
+    assert.equal(
+      merged.audiences?.find((a) => a.faction === "westerlands")?.answer?.optionId,
+      "b"
+    );
+  });
+
+  it("changes the board fingerprint when a plea or answer lands", () => {
+    const empty: GameState = { ...INITIAL_GAME_STATE, phase: "counsel", audiences: [] };
+    const voiced: GameState = {
+      ...empty,
+      audiences: [
+        {
+          id: "aud-north-1-roose-bolton",
+          turn: 1,
+          faction: "north",
+          speakerId: "roose-bolton",
+          addresseeId: "robb-stark",
+          kind: "prisoners_fate",
+          situation: "Captives.",
+          whyNow: "Now.",
+          text: "My lord, the captives?",
+          options: [
+            { id: "a", label: "Keep" },
+            { id: "b", label: "Free" },
+            { id: "c", label: "Hang" },
+          ],
+          answer: null,
+          narration: null,
+          effects: null,
+          effectsApplied: false,
+          skipped: false,
+        },
+      ],
+    };
+    const answered: GameState = {
+      ...voiced,
+      audiences: [
+        {
+          ...voiced.audiences![0],
+          answer: { optionId: "a", freeText: null },
+        },
+      ],
+    };
+    assert.notEqual(boardFingerprint(empty), boardFingerprint(voiced));
+    assert.notEqual(boardFingerprint(voiced), boardFingerprint(answered));
+  });
+
+  it("ranks counsel after retreat so a guest cannot rewind the host", () => {
+    assert.ok(
+      stateProgress({ turn: 1, phase: "counsel" }) >
+        stateProgress({ turn: 1, phase: "retreat" })
+    );
+    assert.ok(
+      stateProgress({ turn: 1, phase: "ended" }) >
+        stateProgress({ turn: 1, phase: "counsel" })
+    );
+  });
+});

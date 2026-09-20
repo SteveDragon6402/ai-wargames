@@ -114,6 +114,8 @@ function prettyToolName(name: string): string {
     get_thread_history: "recalling an older talk",
     list_past_threads: "recalling past talks",
     record_battle_judgment: "judging the fight",
+    search_audiences: "recalling counsel",
+    present_dilemma: "putting a choice to their lord",
     turns_to: "counting the march",
     accept_terms: "weighing surrender",
     reject_terms: "weighing surrender",

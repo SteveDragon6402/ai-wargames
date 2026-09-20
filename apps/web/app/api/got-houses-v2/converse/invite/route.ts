@@ -19,7 +19,7 @@ import {
   situationLines,
   type CharacterToolContext,
 } from "@/app/got-houses-v2/lib/character-tools";
-import type { Deed, PrisonerGroup, TurnHistory } from "@/app/got-houses-v2/types";
+import type { Audience, Deed, PrisonerGroup, TurnHistory } from "@/app/got-houses-v2/types";
 
 interface InviteBody {
   fromCharacterId: CharacterId;
@@ -36,6 +36,7 @@ interface InviteBody {
   prisoners?: PrisonerGroup[];
   deeds?: Deed[];
   turnHistory?: TurnHistory[];
+  audiences?: Audience[];
 }
 
 /**
@@ -98,6 +99,7 @@ export async function POST(req: NextRequest) {
       prisoners: body.prisoners,
       deeds: body.deeds,
       turnHistory: body.turnHistory,
+      audiences: body.audiences,
     };
 
     const client = new Anthropic({ apiKey });

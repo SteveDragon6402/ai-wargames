@@ -4,6 +4,21 @@ import { INITIAL_GAME_STATE } from "../data/initial-state";
 import { gameReducer } from "./useGameState";
 import type { GameState } from "../types";
 
+function skipCounsel(state: GameState): GameState {
+  if (state.phase !== "counsel") return state;
+  let next = gameReducer(state, {
+    type: "SKIP_AUDIENCE",
+    faction: "north",
+    reason: "walk",
+  });
+  next = gameReducer(next, {
+    type: "SKIP_AUDIENCE",
+    faction: "westerlands",
+    reason: "walk",
+  });
+  return gameReducer(next, { type: "FINISH_COUNSEL" });
+}
+
 function passTurn(state: GameState): GameState {
   const afterNorth = gameReducer(state, {
     type: "SUBMIT_FACTION",
@@ -14,7 +29,9 @@ function passTurn(state: GameState): GameState {
     faction: "westerlands",
   });
   assert.equal(afterBoth.phase, "resolving");
-  return gameReducer(afterBoth, { type: "BATTLES_RESOLVED", reports: [] });
+  return skipCounsel(
+    gameReducer(afterBoth, { type: "BATTLES_RESOLVED", reports: [] })
+  );
 }
 
 describe("walk the opening board to a win", () => {

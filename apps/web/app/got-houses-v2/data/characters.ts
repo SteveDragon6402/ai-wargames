@@ -3,12 +3,15 @@ import type {
   CharacterState,
   Faction,
   NpcAgentState,
+  NpcRole,
   PlayerLordState,
 } from "../types";
 import { CASTELLAN_SEEDS, castellanFaction } from "./castellans";
 
 export const NOTEPAD_MAX_CHARS = 800;
 export const PLAYER_CHAT_MAX_WORDS = 40;
+/** Steward dock allows a longer how-to question than Talk. */
+export const PLAYER_STEWARD_MAX_WORDS = 80;
 /**
  * Guidance for the model, not a knife. Replies used to be chopped at exactly
  * this many words, which is what made characters trail off mid-sentence; the
@@ -34,7 +37,7 @@ export interface NpcAgentSeed {
   id: CharacterId;
   name: string;
   faction: Faction;
-  role: "commander" | "notable" | "castellan";
+  role: NpcRole;
   background: string;
   systemPrompt: string;
   /** Rides with this host. Mutually exclusive with holdId. */
@@ -317,6 +320,30 @@ export const CHARACTER_SEEDS: CharacterSeed[] = [
     background: "Kingsguard with the vanguard; honourable and capable.",
     systemPrompt: `You are Ser Balon Swann of the Kingsguard. Honourable, formal, capable. Keep replies punchy (under 60 words).`,
   },
+
+  // ── Household stewards (war table, not the field) ──────────────────────
+  {
+    kind: "npc",
+    id: "steward-north",
+    name: "Hallis Mollen",
+    faction: "north",
+    role: "steward",
+    mood: "Steady, watchful, ready with the map",
+    background:
+      "Captain of the Winterfell guard. He keeps the lord's map and books at the war table — he does not command a host.",
+    systemPrompt: `You are Hallis Mollen, captain of Winterfell's guard, sitting as steward of Robb Stark's war table. You are not a commander and you never issue orders. You brief what happened, explain how the board and the interface work in plain speech, and recommend plays when asked. The lord still clicks the map. Keep replies punchy; finish your sentences.`,
+  },
+  {
+    kind: "npc",
+    id: "steward-west",
+    name: "Maester Creylen",
+    faction: "westerlands",
+    role: "steward",
+    mood: "Dry, exact, impatient with vagueness",
+    background:
+      "Maester of Casterly Rock. He keeps Tywin Lannister's table — maps, counts, and the order of the day — and does not ride with a host.",
+    systemPrompt: `You are Maester Creylen of Casterly Rock, steward of Tywin Lannister's war table. You are not a commander and you never issue orders. You brief what happened, explain how the board and the interface work in plain speech, and recommend plays when asked. Lord Tywin still clicks the map. Keep replies dry and exact; finish your sentences.`,
+  },
 ];
 
 /**
@@ -358,6 +385,14 @@ export function getBackground(id: CharacterId): string {
 
 export function factionLordId(faction: Faction): CharacterId {
   return faction === "north" ? "robb-stark" : "tywin-lannister";
+}
+
+export function stewardIdFor(faction: Faction): CharacterId {
+  return faction === "north" ? "steward-north" : "steward-west";
+}
+
+export function stewardThreadIdFor(faction: Faction): string {
+  return faction === "north" ? "steward-thread-north" : "steward-thread-west";
 }
 
 export function enemyLordId(faction: Faction): CharacterId {

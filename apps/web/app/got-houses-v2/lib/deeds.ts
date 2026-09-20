@@ -40,6 +40,7 @@ const KIND_LABEL: Record<DeedKind, string> = {
   prisoners_released: "released prisoners",
   prisoners_executed: "executed prisoners",
   prisoners_liberated: "freed prisoners from an enemy",
+  counsel_given: "heard a bannerman and answered",
 };
 
 /** Deeds a reasonable man would hold against you. */

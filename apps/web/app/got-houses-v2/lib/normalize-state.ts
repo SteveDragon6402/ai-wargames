@@ -3,6 +3,11 @@ import { INITIAL_GAME_STATE } from "../data/initial-state";
 import type { Army, FactionOrders, GameState } from "../types";
 import { normalizeForage } from "./forage";
 import { normalizeHoldRuntime } from "./hold-runtime";
+import {
+  emptyStewardBriefedTurn,
+  emptyStewardUnread,
+  ensureStewardThread,
+} from "./steward";
 
 function normalizeFactionOrders(raw: Partial<FactionOrders> | undefined): FactionOrders {
   return {
@@ -26,7 +31,8 @@ function normalizeArmy(army: Army): Army {
 
 /** Fill arrays a sparse room snapshot may omit so the joiner cannot crash. */
 export function normalizeState(raw: GameState): GameState {
-  const characters = raw.characters ?? buildInitialCharacters();
+  const seedChars = buildInitialCharacters();
+  const characters = raw.characters ?? seedChars;
   const normalizedCharacters = Object.fromEntries(
     Object.entries(characters).map(([id, c]) => [
       id,
@@ -35,11 +41,25 @@ export function normalizeState(raw: GameState): GameState {
         : c,
     ])
   );
+  for (const id of ["steward-north", "steward-west"] as const) {
+    if (!normalizedCharacters[id] && seedChars[id]) {
+      normalizedCharacters[id] = seedChars[id];
+    }
+  }
+  let conversations = raw.conversations ?? [];
+  conversations = ensureStewardThread(conversations, "north", raw.turn ?? 1)
+    .conversations;
+  conversations = ensureStewardThread(
+    conversations,
+    "westerlands",
+    raw.turn ?? 1
+  ).conversations;
+
   return {
     ...INITIAL_GAME_STATE,
     ...raw,
     characters: normalizedCharacters,
-    conversations: raw.conversations ?? [],
+    conversations,
     speechesThisTurn: raw.speechesThisTurn ?? [],
     speechArmyId: raw.speechArmyId ?? null,
     openConversationIds: raw.openConversationIds ?? [],
@@ -60,10 +80,20 @@ export function normalizeState(raw: GameState): GameState {
     pendingChoices: raw.pendingChoices ?? [],
     travellers: raw.travellers ?? [],
     deeds: raw.deeds ?? [],
+    audiences: raw.audiences ?? [],
     seatFatePanelId: raw.seatFatePanelId ?? null,
     briefingOpen: raw.briefingOpen ?? false,
     briefingShownFor: raw.briefingShownFor ?? null,
     briefingShownTurn: raw.briefingShownTurn ?? null,
+    stewardOpen: raw.stewardOpen ?? false,
+    stewardUnread: {
+      ...emptyStewardUnread(),
+      ...(raw.stewardUnread ?? {}),
+    },
+    stewardBriefedTurn: {
+      ...emptyStewardBriefedTurn(),
+      ...(raw.stewardBriefedTurn ?? {}),
+    },
     turnHistory: (raw.turnHistory ?? []).map((h) => ({
       turn: h.turn,
       armyMoves: (h.armyMoves ?? []).map((m) => ({

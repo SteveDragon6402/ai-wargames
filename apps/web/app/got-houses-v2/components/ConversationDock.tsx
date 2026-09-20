@@ -36,7 +36,7 @@ export default function ConversationDock({ state, dispatch }: Props) {
 
   const threads = threadIds
     .map((id) => state.conversations.find((t) => t.id === id))
-    .filter(Boolean) as ConversationThread[];
+    .filter((t): t is ConversationThread => !!t && t.kind !== "steward");
 
   const focusedId =
     state.focusedConversationId &&

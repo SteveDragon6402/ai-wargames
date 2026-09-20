@@ -42,7 +42,7 @@ import { INITIAL_GAME_STATE } from "../data/initial-state";
 import { HOLDS_MAP } from "../data/holds";
 import { getCastleSeed, homeFactionForRegion } from "../data/castles";
 import { getPathwayRoute } from "../data/pathways";
-import { findCharacterIdByName } from "../data/characters";
+import { countWords, findCharacterIdByName } from "../data/characters";
 import {
   eventFromSpeech,
   eventsFromBattleReports,
@@ -133,6 +133,17 @@ import {
 import { tickTravellers } from "../lib/release";
 import { normalizeState } from "../lib/normalize-state";
 import { mergePlanningBoards } from "../lib/room-sync";
+import {
+  applyAudienceEffects,
+  audienceThisTurn,
+  audiencesAnswered,
+  audiencesReadyToFinish,
+  AUDIENCE_FREE_TEXT_WORDS,
+  livingBannermen,
+  replaceAudience,
+  skippedAudience,
+  upsertAudience,
+} from "../lib/audience";
 import {
   applyRaze,
   armiesCommittedToRazing,
@@ -379,7 +390,7 @@ function advanceToPlanning(
     holdStates,
     travellers: ticked.travellers,
     characters: ticked.characters,
-    briefingOpen: true,
+    briefingOpen: false,
     briefingShownFor: null,
     briefingShownTurn: null,
   };
@@ -400,6 +411,52 @@ function advanceToPlanning(
     };
   }
   return { ...next, northPrize: verdict.northPrize, outcome: next.outcome ?? null };
+}
+
+/**
+ * Map turn is done. Hear counsel before the next planning turn, unless the war
+ * has already ended — or nobody living can approach the lord.
+ */
+function enterCounsel(state: GameState, patch: Partial<GameState>): GameState {
+  const merged: GameState = { ...state, ...patch, pendingBattles: [] };
+  const verdict = evaluateVictory({
+    finishedTurn: state.turn,
+    armies: merged.armies,
+    holdStates: merged.holdStates,
+    characters: merged.characters,
+    northPrize: state.northPrize ?? null,
+  });
+  if (verdict.outcome) {
+    return {
+      ...merged,
+      turn: state.turn,
+      phase: "ended",
+      outcome: verdict.outcome,
+      northPrize: verdict.northPrize,
+    };
+  }
+
+  let audiences = [...(merged.audiences ?? [])];
+  for (const faction of ["north", "westerlands"] as const) {
+    if (audienceThisTurn(audiences, state.turn, faction)) continue;
+    if (livingBannermen(merged.characters, faction).length === 0) {
+      audiences = upsertAudience(
+        audiences,
+        skippedAudience(faction, state.turn, "no living bannerman to approach")
+      );
+    }
+  }
+
+  const next: GameState = {
+    ...merged,
+    phase: "counsel",
+    audiences,
+    northPrize: verdict.northPrize,
+  };
+  if (audiencesReadyToFinish(next)) {
+    return advanceToPlanning(next, {});
+  }
+  return next;
 }
 
 /**
@@ -1052,6 +1109,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case "BEGIN_MOVE": {
+      if (state.phase !== "planning") return state;
       if (state.selectedArmyIds.length === 0) return state;
 
       const selectedArmies = state.selectedArmyIds
@@ -1073,6 +1131,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case "QUEUE_MOVE": {
+      if (state.phase !== "planning") return state;
       if (!state.moveMode.active || state.selectedArmyIds.length === 0) return state;
 
       const selectedArmies = state.selectedArmyIds
@@ -2266,7 +2325,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         updatedArmies
       );
 
-      return advanceToPlanning(state, {
+      return enterCounsel(state, {
         armies: updatedArmies,
         characters,
         holdStates: settled.holdStates,
@@ -2336,7 +2395,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         };
       }
 
-      return advanceToPlanning(state, {
+      return enterCounsel(state, {
         armies: updatedArmies,
         characters,
         pendingRenames: [],
@@ -2495,7 +2554,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         updatedArmies
       );
 
-      return advanceToPlanning(state, {
+      return enterCounsel(state, {
         armies: updatedArmies,
         characters: castellanSync.characters,
         holdStates: settled.holdStates,
@@ -2678,7 +2737,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         activeFaction: action.faction,
         selectedArmyIds: [],
         moveMode: { active: false, validTargets: [] },
-        briefingOpen: state.adminMode,
+        briefingOpen: false,
+        stewardOpen: state.adminMode ? true : state.stewardOpen,
         briefingShownFor: action.faction,
       };
     }
@@ -2740,6 +2800,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case "OPEN_CONVERSATION": {
+      const thread = state.conversations.find((t) => t.id === action.threadId);
+      if (thread?.kind === "steward") return state;
       const ids = state.openConversationIds.includes(action.threadId)
         ? state.openConversationIds
         : [...state.openConversationIds, action.threadId];
@@ -2760,6 +2822,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case "CLOSE_CONVERSATION_DOCK": {
+      const closing = state.conversations.find((t) => t.id === action.threadId);
+      if (closing?.kind === "steward") return state;
       const openConversationIds = state.openConversationIds.filter(
         (id) => id !== action.threadId
       );
@@ -2811,6 +2875,9 @@ function gameReducer(state: GameState, action: GameAction): GameState {
             t.id === action.thread.id ? action.thread : t
           )
         : [...state.conversations, action.thread];
+      if (action.thread.kind === "steward") {
+        return { ...state, conversations };
+      }
       const shouldOpen =
         action.thread.status === "active" ||
         action.thread.status === "pending_invite";
@@ -3367,7 +3434,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           ? [...(state.capturePledges ?? []), yielded.pledge]
           : state.capturePledges,
         factionEvents: [...(state.factionEvents ?? []), ...yielded.events],
-        briefingOpen: true,
+        briefingOpen: false,
         seatFatePanelId: yielded.pendingChoice?.id ?? state.seatFatePanelId,
       });
     }
@@ -3541,6 +3608,33 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       };
     }
 
+    case "SET_STEWARD_OPEN": {
+      const unread = {
+        north: state.stewardUnread?.north ?? false,
+        westerlands: state.stewardUnread?.westerlands ?? false,
+      };
+      if (action.open) unread[state.activeFaction] = false;
+      return { ...state, stewardOpen: action.open, stewardUnread: unread };
+    }
+
+    case "SET_STEWARD_UNREAD": {
+      const unread = {
+        north: state.stewardUnread?.north ?? false,
+        westerlands: state.stewardUnread?.westerlands ?? false,
+      };
+      unread[action.faction] = action.unread;
+      return { ...state, stewardUnread: unread };
+    }
+
+    case "MARK_STEWARD_BRIEFED": {
+      const briefed = {
+        north: state.stewardBriefedTurn?.north ?? null,
+        westerlands: state.stewardBriefedTurn?.westerlands ?? null,
+      };
+      briefed[action.faction] = action.turn;
+      return { ...state, stewardBriefedTurn: briefed };
+    }
+
     case "DISPOSE_PRISONERS": {
       const disposed = disposePrisonerGroup(
         boardOf(state),
@@ -3572,6 +3666,116 @@ function gameReducer(state: GameState, action: GameAction): GameState {
           : t
       );
       return { ...state, travellers };
+    }
+
+    case "APPLY_AUDIENCE_PROPOSAL": {
+      if (state.phase !== "counsel") return state;
+      const existing = audienceThisTurn(
+        state.audiences,
+        state.turn,
+        action.audience.faction
+      );
+      if (existing && !existing.skipped) return state;
+      return {
+        ...state,
+        audiences: upsertAudience(state.audiences, action.audience),
+      };
+    }
+
+    case "APPLY_AUDIENCE_VOICE": {
+      if (state.phase !== "counsel") return state;
+      const current = (state.audiences ?? []).find((a) => a.id === action.audienceId);
+      if (!current || current.skipped) return state;
+      let next: GameState = {
+        ...state,
+        audiences: replaceAudience(state.audiences, action.audienceId, {
+          text: action.text,
+          options: action.options,
+        }),
+      };
+      if (action.patches?.length) {
+        next = {
+          ...next,
+          characters: applyCharacterPatches(next.characters, action.patches),
+        };
+      }
+      return next;
+    }
+
+    case "SET_AUDIENCE_ANSWER": {
+      if (state.phase !== "counsel") return state;
+      const current = (state.audiences ?? []).find((a) => a.id === action.audienceId);
+      if (!current || current.skipped || !current.text) return state;
+      if (action.asFaction && current.faction !== action.asFaction) return state;
+      if (!canActAs(state, current.faction)) return state;
+      const free = action.answer.freeText?.trim() || null;
+      if (free && countWords(free) > AUDIENCE_FREE_TEXT_WORDS) return state;
+      if (!action.answer.optionId && !free) return state;
+      if (current.answer) return state;
+      return {
+        ...state,
+        audiences: replaceAudience(state.audiences, action.audienceId, {
+          answer: {
+            optionId: free ? null : action.answer.optionId,
+            freeText: free,
+          },
+        }),
+      };
+    }
+
+    case "PULL_RIVAL_AUDIENCE_ANSWERS": {
+      if (state.phase !== "counsel") return state;
+      let changed = false;
+      const audiences = (state.audiences ?? []).map((local) => {
+        if (local.faction === action.myFaction) return local;
+        const remote = action.audiences.find((a) => a.id === local.id);
+        if (!remote?.answer || local.answer) return local;
+        changed = true;
+        return { ...local, answer: remote.answer };
+      });
+      return changed ? { ...state, audiences } : state;
+    }
+
+    case "SKIP_AUDIENCE": {
+      if (state.phase !== "counsel") return state;
+      const existing = audienceThisTurn(state.audiences, state.turn, action.faction);
+      if (existing?.skipped) return state;
+      if (existing?.effectsApplied) return state;
+      return {
+        ...state,
+        audiences: upsertAudience(
+          (state.audiences ?? []).filter((a) => a.id !== existing?.id),
+          skippedAudience(action.faction, state.turn, action.reason)
+        ),
+      };
+    }
+
+    case "APPLY_AUDIENCE_OUTCOME": {
+      if (state.phase !== "counsel") return state;
+      const current = (state.audiences ?? []).find((a) => a.id === action.audienceId);
+      if (!current || current.skipped || current.effectsApplied) return state;
+      const voiced: typeof current = {
+        ...current,
+        narration: action.narration,
+        effects: action.effects,
+      };
+      let next: GameState = {
+        ...state,
+        audiences: replaceAudience(state.audiences, current.id, voiced),
+      };
+      next = applyAudienceEffects(next, voiced, action.effects);
+      if (action.patches?.length) {
+        next = {
+          ...next,
+          characters: applyCharacterPatches(next.characters, action.patches),
+        };
+      }
+      return next;
+    }
+
+    case "FINISH_COUNSEL": {
+      if (!audiencesReadyToFinish(state)) return state;
+      return advanceToPlanning(state, {});
     }
 
     default:

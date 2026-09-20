@@ -119,6 +119,22 @@ function recoverSpot(spot: ForageSpot): ForageSpot {
   return makeSpot(spot.base, asStep(spot.step - 1));
 }
 
+export function grazeHold(
+  forage: ForageState | undefined,
+  holdId: string,
+  steps: number
+): ForageState {
+  const next = normalizeForage(forage);
+  if (steps <= 0 || !next.holds[holdId]) return next;
+  return {
+    ...next,
+    holds: {
+      ...next.holds,
+      [holdId]: grazeSpot(next.holds[holdId], steps),
+    },
+  };
+}
+
 export function armyMen(army: { units: { count: number }[] }): number {
   return army.units.reduce((s, u) => s + u.count, 0);
 }

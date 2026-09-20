@@ -14,6 +14,7 @@ import type {
   NpcAgentState,
   PrisonerGroup,
   TurnHistory,
+  Audience,
 } from "@/app/got-houses-v2/types";
 import {
   buildEmbodiedSystemPrompt,
@@ -44,6 +45,7 @@ interface MessageBody {
   prisoners?: PrisonerGroup[];
   deeds?: Deed[];
   turnHistory?: TurnHistory[];
+  audiences?: Audience[];
 }
 
 export async function POST(req: NextRequest) {
@@ -138,6 +140,7 @@ export async function POST(req: NextRequest) {
       prisoners: body.prisoners,
       deeds: body.deeds,
       turnHistory: body.turnHistory,
+      audiences: body.audiences,
       surrender: surrenderCtx,
     };
 

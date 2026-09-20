@@ -7,6 +7,7 @@ import type {
   CharacterState,
   Faction,
   FactionEvent,
+  Audience,
   Deed,
   ForageState,
   NpcAgentState,
@@ -34,6 +35,7 @@ interface DigestBody {
   forage?: ForageState;
   prisoners?: PrisonerGroup[];
   deeds?: Deed[];
+  audiences?: Audience[];
   /** Optional: limit which factions digest (default both) */
   factions?: Faction[];
 }
@@ -121,6 +123,7 @@ export async function POST(req: NextRequest) {
           forage: body.forage,
           prisoners: body.prisoners,
           deeds: body.deeds,
+          audiences: body.audiences,
         };
 
         const result = await runCharacterToolLoop({
