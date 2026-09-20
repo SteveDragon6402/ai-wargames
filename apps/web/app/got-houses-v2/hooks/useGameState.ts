@@ -137,7 +137,6 @@ import {
   applyAudienceEffects,
   audienceThisTurn,
   audiencesAnswered,
-  audiencesReadyToFinish,
   AUDIENCE_FREE_TEXT_WORDS,
   livingBannermen,
   replaceAudience,
@@ -393,6 +392,7 @@ function advanceToPlanning(
     briefingOpen: false,
     briefingShownFor: null,
     briefingShownTurn: null,
+    mapStatus: "idle",
   };
   const verdict = evaluateVictory({
     finishedTurn: state.turn,
@@ -414,11 +414,49 @@ function advanceToPlanning(
 }
 
 /**
- * Map turn is done. Hear counsel before the next planning turn, unless the war
- * has already ended — or nobody living can approach the lord.
+ * Open counsel as soon as both sides lock, so the pre-loaded dilemma can
+ * cover the wait while the map is adjudicated underneath.
  */
-function enterCounsel(state: GameState, patch: Partial<GameState>): GameState {
-  const merged: GameState = { ...state, ...patch, pendingBattles: [] };
+function enterCounsel(state: GameState, patch: Partial<GameState> = {}): GameState {
+  const merged: GameState = { ...state, ...patch };
+  if (merged.phase === "ended" || merged.outcome) return merged;
+  if (merged.phase !== "planning") return merged;
+  if (!merged.north.submitted || !merged.westerlands.submitted) return merged;
+
+  let audiences = [...(merged.audiences ?? [])];
+  for (const faction of ["north", "westerlands"] as const) {
+    if (audienceThisTurn(audiences, merged.turn, faction)) continue;
+    if (livingBannermen(merged.characters, faction).length === 0) {
+      audiences = upsertAudience(
+        audiences,
+        skippedAudience(faction, merged.turn, "no living bannerman to approach")
+      );
+    }
+  }
+
+  const next: GameState = {
+    ...merged,
+    phase: "counsel",
+    audiences,
+    mapStatus: merged.mapStatus ?? "idle",
+  };
+  if (audiencesAnswered(next)) {
+    return gameReducer({ ...merged, audiences }, { type: "ADJUDICATE_MOVES" });
+  }
+  return next;
+}
+
+/**
+ * Map adjudication finished. Stay on counsel if the lords are still answering;
+ * otherwise go to rename, retreat, or the next planning turn.
+ */
+function settleMapTurn(state: GameState, patch: Partial<GameState>): GameState {
+  const merged: GameState = {
+    ...state,
+    ...patch,
+    pendingBattles: [],
+    mapStatus: "resolved",
+  };
   const verdict = evaluateVictory({
     finishedTurn: state.turn,
     armies: merged.armies,
@@ -435,28 +473,27 @@ function enterCounsel(state: GameState, patch: Partial<GameState>): GameState {
       northPrize: verdict.northPrize,
     };
   }
-
-  let audiences = [...(merged.audiences ?? [])];
-  for (const faction of ["north", "westerlands"] as const) {
-    if (audienceThisTurn(audiences, state.turn, faction)) continue;
-    if (livingBannermen(merged.characters, faction).length === 0) {
-      audiences = upsertAudience(
-        audiences,
-        skippedAudience(faction, state.turn, "no living bannerman to approach")
-      );
-    }
+  const withPrize: GameState = { ...merged, northPrize: verdict.northPrize };
+  if (state.phase === "counsel" && !audiencesAnswered(withPrize)) {
+    return { ...withPrize, phase: "counsel" };
   }
-
-  const next: GameState = {
-    ...merged,
-    phase: "counsel",
-    audiences,
-    northPrize: verdict.northPrize,
-  };
-  if (audiencesReadyToFinish(next)) {
-    return advanceToPlanning(next, {});
+  if ((withPrize.pendingRenames ?? []).length > 0) {
+    return { ...withPrize, phase: "rename_commanders" };
   }
-  return next;
+  if ((withPrize.retreats ?? []).length > 0) {
+    return { ...withPrize, phase: "retreat", pendingRenames: [] };
+  }
+  const settled = reconcilePledges(
+    state.turn,
+    withPrize.capturePledges ?? [],
+    withPrize.holdStates,
+    withPrize.armies
+  );
+  return advanceToPlanning(withPrize, {
+    holdStates: settled.holdStates,
+    capturePledges: settled.pledges,
+    factionEvents: [...(withPrize.factionEvents ?? []), ...settled.events].slice(-400),
+  });
 }
 
 /**
@@ -1237,13 +1274,21 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         nextState.north.submitted &&
         nextState.westerlands.submitted
       ) {
-        return gameReducer(nextState, { type: "ADJUDICATE_MOVES" });
+        return enterCounsel(nextState);
       }
       return nextState;
     }
 
+    case "ENTER_COUNSEL": {
+      return enterCounsel(state);
+    }
+
     case "ADJUDICATE_MOVES": {
       if (state.phase === "ended" || state.outcome) return state;
+      if (state.phase !== "planning" && state.phase !== "counsel") return state;
+      if (state.mapStatus === "resolving" || state.mapStatus === "resolved") {
+        return state;
+      }
       const razing = new Set([
         ...armiesCommittedToRazing(state.north.razeOrders),
         ...armiesCommittedToRazing(state.westerlands.razeOrders),
@@ -1445,7 +1490,8 @@ function gameReducer(state: GameState, action: GameAction): GameState {
 
       let resolved: GameState = {
         ...state,
-        phase: "resolving",
+        phase: state.phase === "counsel" ? "counsel" : "resolving",
+        mapStatus: "resolving",
         armies: updatedArmies,
         characters: castellanSync.characters,
         holdStates: applyGarrisonStanceOrders(
@@ -2257,7 +2303,11 @@ function gameReducer(state: GameState, action: GameAction): GameState {
       if (lastStandWithBurden.length > 0) {
         return {
           ...state,
-          phase: "resolving",
+          phase:
+            state.phase === "counsel" && !audiencesAnswered(state)
+              ? "counsel"
+              : "resolving",
+          mapStatus: "resolving",
           armies: updatedArmies,
           characters,
           holdStates,
@@ -2275,69 +2325,19 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         };
       }
 
-      if (survivingRenames.length > 0) {
-        return {
-          ...state,
-          phase: "rename_commanders",
-          armies: updatedArmies,
-          characters,
-          holdStates,
-          prisoners,
-          pendingChoices,
-          deeds: deedsOut,
-          pendingBattles: [],
-          battleReports: battleReportsOut,
-          retreats: nonTrappedRetreats,
-          pendingRenames: survivingRenames,
-          lastStandHoldIds,
-          capturePledges,
-          factionEvents,
-          conversations,
-        };
-      }
-
-      if (nonTrappedRetreats.length > 0) {
-        return {
-          ...state,
-          phase: "retreat",
-          armies: updatedArmies,
-          characters,
-          holdStates,
-          prisoners,
-          pendingChoices,
-          deeds: deedsOut,
-          pendingBattles: [],
-          battleReports: battleReportsOut,
-          retreats: nonTrappedRetreats,
-          pendingRenames: [],
-          lastStandHoldIds,
-          capturePledges,
-          factionEvents,
-          conversations,
-        };
-      }
-
-      // No retreats to run: settle the pledges we can before opening planning.
-      const settled = reconcilePledges(
-        state.turn,
-        capturePledges,
-        holdStates,
-        updatedArmies
-      );
-
-      return enterCounsel(state, {
+      return settleMapTurn(state, {
         armies: updatedArmies,
         characters,
-        holdStates: settled.holdStates,
+        holdStates,
         prisoners,
         pendingChoices,
         deeds: deedsOut,
-        pendingBattles: [],
         battleReports: battleReportsOut,
-        retreats: [],
-        pendingRenames: [],
-        capturePledges: settled.pledges,
-        factionEvents: [...factionEvents, ...settled.events].slice(-400),
+        retreats: nonTrappedRetreats,
+        pendingRenames: survivingRenames,
+        lastStandHoldIds,
+        capturePledges,
+        factionEvents,
         conversations,
       });
     }
@@ -2395,7 +2395,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         };
       }
 
-      return enterCounsel(state, {
+      return settleMapTurn(state, {
         armies: updatedArmies,
         characters,
         pendingRenames: [],
@@ -2535,6 +2535,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         return {
           ...state,
           phase: "resolving",
+          mapStatus: "resolving",
           armies: updatedArmies,
           characters: castellanSync.characters,
           holdStates: castellanSync.holdStates,
@@ -2554,7 +2555,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         updatedArmies
       );
 
-      return enterCounsel(state, {
+      return settleMapTurn(state, {
         armies: updatedArmies,
         characters: castellanSync.characters,
         holdStates: settled.holdStates,
@@ -3488,11 +3489,16 @@ function gameReducer(state: GameState, action: GameAction): GameState {
         prisoners: action.prisoners ?? state.prisoners,
       };
       const boards = mergePlanningBoards(state, remote, rival);
+      const audiences =
+        mine === "westerlands" && action.audiences
+          ? action.audiences
+          : state.audiences;
       return {
         ...state,
         ...boards,
         north: mine === "north" ? state.north : action.north,
         westerlands: mine === "westerlands" ? state.westerlands : action.westerlands,
+        audiences,
       };
     }
 
@@ -3669,10 +3675,10 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case "APPLY_AUDIENCE_PROPOSAL": {
-      if (state.phase !== "counsel") return state;
+      if (state.phase !== "planning" && state.phase !== "counsel") return state;
       const existing = audienceThisTurn(
         state.audiences,
-        state.turn,
+        action.audience.turn,
         action.audience.faction
       );
       if (existing && !existing.skipped) return state;
@@ -3683,7 +3689,6 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case "APPLY_AUDIENCE_VOICE": {
-      if (state.phase !== "counsel") return state;
       const current = (state.audiences ?? []).find((a) => a.id === action.audienceId);
       if (!current || current.skipped) return state;
       let next: GameState = {
@@ -3737,7 +3742,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case "SKIP_AUDIENCE": {
-      if (state.phase !== "counsel") return state;
+      if (state.phase !== "planning" && state.phase !== "counsel") return state;
       const existing = audienceThisTurn(state.audiences, state.turn, action.faction);
       if (existing?.skipped) return state;
       if (existing?.effectsApplied) return state;
@@ -3751,7 +3756,7 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case "APPLY_AUDIENCE_OUTCOME": {
-      if (state.phase !== "counsel") return state;
+      if (state.phase === "ended") return state;
       const current = (state.audiences ?? []).find((a) => a.id === action.audienceId);
       if (!current || current.skipped || current.effectsApplied) return state;
       const voiced: typeof current = {
@@ -3774,8 +3779,26 @@ function gameReducer(state: GameState, action: GameAction): GameState {
     }
 
     case "FINISH_COUNSEL": {
-      if (!audiencesReadyToFinish(state)) return state;
-      return advanceToPlanning(state, {});
+      if (state.phase !== "counsel") return state;
+      if (!audiencesAnswered(state)) return state;
+      if ((state.mapStatus ?? "idle") !== "resolved") return state;
+      if ((state.pendingRenames ?? []).length > 0) {
+        return { ...state, phase: "rename_commanders" };
+      }
+      if ((state.retreats ?? []).length > 0) {
+        return { ...state, phase: "retreat", pendingRenames: [] };
+      }
+      const settled = reconcilePledges(
+        state.turn,
+        state.capturePledges ?? [],
+        state.holdStates,
+        state.armies
+      );
+      return advanceToPlanning(state, {
+        holdStates: settled.holdStates,
+        capturePledges: settled.pledges,
+        factionEvents: [...(state.factionEvents ?? []), ...settled.events].slice(-400),
+      });
     }
 
     default:

@@ -53,9 +53,11 @@ function prisoners(...ids: string[]): PrisonerGroup[] {
 }
 
 describe("dilemma catalog", () => {
-  it("offers about fifty tagged premises", () => {
+  it("offers about fifty tagged premises and a stable subset for preload", () => {
     assert.ok(DILEMMA_KINDS.length >= 50);
     assert.ok(DILEMMA_KINDS.every((k) => k.id && k.premise && k.tags.length > 0));
+    const stable = DILEMMA_KINDS.filter((k) => k.stable !== false);
+    assert.ok(stable.length >= 30);
   });
 });
 

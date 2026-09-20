@@ -234,6 +234,7 @@ export const INITIAL_GAME_STATE: GameState = {
   travellers: [],
   deeds: [],
   audiences: [],
+  mapStatus: "idle",
   seatFatePanelId: null,
   briefingOpen: false,
   briefingShownFor: null,

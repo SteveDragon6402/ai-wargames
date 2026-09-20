@@ -16,7 +16,16 @@ function skipCounsel(state: GameState): GameState {
     faction: "westerlands",
     reason: "walk",
   });
-  return gameReducer(next, { type: "FINISH_COUNSEL" });
+  if ((next.mapStatus ?? "idle") === "idle") {
+    next = gameReducer(next, { type: "ADJUDICATE_MOVES" });
+  }
+  if (next.phase === "resolving" || next.mapStatus === "resolving") {
+    next = gameReducer(next, { type: "BATTLES_RESOLVED", reports: [] });
+  }
+  if (next.phase === "counsel") {
+    next = gameReducer(next, { type: "FINISH_COUNSEL" });
+  }
+  return next;
 }
 
 function passTurn(state: GameState): GameState {
@@ -28,10 +37,8 @@ function passTurn(state: GameState): GameState {
     type: "SUBMIT_FACTION",
     faction: "westerlands",
   });
-  assert.equal(afterBoth.phase, "resolving");
-  return skipCounsel(
-    gameReducer(afterBoth, { type: "BATTLES_RESOLVED", reports: [] })
-  );
+  assert.ok(afterBoth.phase === "counsel" || afterBoth.phase === "resolving");
+  return skipCounsel(afterBoth);
 }
 
 describe("walk the opening board to a win", () => {

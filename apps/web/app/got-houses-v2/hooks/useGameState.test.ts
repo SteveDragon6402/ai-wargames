@@ -487,6 +487,7 @@ function counselState(
     phase: "counsel",
     turn: 1,
     activeFaction,
+    mapStatus: "resolved",
     audiences,
   };
 }
@@ -607,6 +608,21 @@ describe("counsel answers", () => {
     assert.equal(next.turn, 2);
   });
 
+  it("does not finish while the map is still being settled", () => {
+    const start: GameState = {
+      ...counselState(
+        [
+          skippedAudience("north", 1, "propose failed"),
+          skippedAudience("westerlands", 1, "propose failed"),
+        ],
+        "north"
+      ),
+      mapStatus: "resolving",
+    };
+    const next = gameReducer(start, { type: "FINISH_COUNSEL" });
+    assert.equal(next.phase, "counsel");
+  });
+
   it("does not finish while a side still owes an answer", () => {
     const start = counselState(
       [
@@ -618,6 +634,26 @@ describe("counsel answers", () => {
     const next = gameReducer(start, { type: "FINISH_COUNSEL" });
     assert.equal(next.phase, "counsel");
     assert.equal(next.turn, 1);
+  });
+
+  it("opens counsel as soon as both sides lock", () => {
+    let s = gameReducer(INITIAL_GAME_STATE, {
+      type: "SUBMIT_FACTION",
+      faction: "north",
+    });
+    s = gameReducer(s, { type: "SUBMIT_FACTION", faction: "westerlands" });
+    assert.equal(s.phase, "counsel");
+    assert.equal(s.mapStatus ?? "idle", "idle");
+  });
+
+  it("preloads a dilemma during planning", () => {
+    const audience = voicedAudience("north");
+    const next = gameReducer(INITIAL_GAME_STATE, {
+      type: "APPLY_AUDIENCE_PROPOSAL",
+      audience: { ...audience, text: "", options: [] },
+    });
+    assert.equal(next.phase, "planning");
+    assert.equal((next.audiences ?? [])[0]?.speakerId, "roose-bolton");
   });
 
   it("records a counsel_given deed after a chosen option", () => {

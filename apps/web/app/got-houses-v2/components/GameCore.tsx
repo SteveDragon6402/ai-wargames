@@ -149,6 +149,7 @@ export default function GameCore({
         characters: remoteState.characters,
         holdStates: remoteState.holdStates,
         prisoners: remoteState.prisoners ?? [],
+        audiences: remoteState.audiences ?? [],
       });
       return;
     }
@@ -225,16 +226,18 @@ export default function GameCore({
     dispatch,
   ]);
 
-  // Host (and only the host) resolves once both locks are on the merged board.
+  // Host (and solo): once both sides lock, open counsel, then settle the map under it.
   const adjudicatedTurnRef = useRef<number | null>(null);
   useEffect(() => {
     if (isGuest) return;
-    if (state.phase !== "planning") return;
-    if (!state.north.submitted || !state.westerlands.submitted) return;
-    if (!twoBrowser) return;
-    // Split children live on the other browser until we pull them. Resolving
-    // against the unsplit parent no-ops those marches and looks like a cancel.
-    if (!moveOrdersResolvable(state)) return;
+    if (state.phase === "planning") {
+      if (!state.north.submitted || !state.westerlands.submitted) return;
+      dispatch({ type: "ENTER_COUNSEL" });
+      return;
+    }
+    if (state.phase !== "counsel") return;
+    if ((state.mapStatus ?? "idle") !== "idle") return;
+    if (twoBrowser && !moveOrdersResolvable(state)) return;
     if (adjudicatedTurnRef.current === state.turn) return;
     adjudicatedTurnRef.current = state.turn;
     dispatch({ type: "ADJUDICATE_MOVES" });
@@ -242,6 +245,7 @@ export default function GameCore({
     isGuest,
     twoBrowser,
     state.phase,
+    state.mapStatus,
     state.north.submitted,
     state.westerlands.submitted,
     state.turn,
@@ -291,35 +295,28 @@ export default function GameCore({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state.phase, state.turn, dispatch, isGuest]);
 
-  // Host-only counsel: propose → voice → wait for both answers → outcome → next planning.
+  // Pre-load this turn's dilemmas during planning so counsel is ready on lock.
   useEffect(() => {
     if (isGuest) return;
-    if (state.phase !== "counsel") {
-      counselKeyRef.current = "";
-      return;
-    }
+    if (state.phase !== "planning" && state.phase !== "counsel") return;
 
     const sides: Faction[] = ["north", "westerlands"];
     const snapshot = sides.map((faction) =>
       audienceThisTurn(state.audiences, state.turn, faction)
     );
-    const key = snapshot
+    const key = `${state.turn}|${snapshot
       .map((a, i) => {
         const f = sides[i];
         if (!a) return `${f}:none`;
         if (a.skipped) return `${f}:skip`;
         if (!a.text) return `${f}:voice`;
-        if (!a.answer) return `${f}:wait`;
-        if (!a.effectsApplied) return `${f}:out`;
-        return `${f}:done`;
+        return `${f}:ready`;
       })
-      .join("|");
+      .join("|")}`;
     if (counselKeyRef.current === key) return;
     counselKeyRef.current = key;
 
-    const bothAnswered = snapshot.every((a) => a && (a.skipped || !!a.answer));
-
-    async function runCounsel() {
+    async function preload() {
       const missing = sides.find(
         (f) => !audienceThisTurn(state.audiences, state.turn, f)
       );
@@ -388,110 +385,130 @@ export default function GameCore({
       }
 
       const voiceless = snapshot.find((a) => a && !a.skipped && !a.text);
-      if (voiceless) {
-        try {
-          const res = await fetch("/api/got-houses-v2/counsel/voice", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ audience: voiceless, state }),
-          });
-          if (!res.ok) {
-            dispatch({
-              type: "SKIP_AUDIENCE",
-              faction: voiceless.faction,
-              reason: "voice failed",
-            });
-            return;
-          }
-          const data = (await res.json()) as {
-            text?: string;
-            options?: { id: string; label: string }[];
-            patches?: NpcRuntimePatch[];
-          };
-          if (!data.text || !data.options?.length) {
-            dispatch({
-              type: "SKIP_AUDIENCE",
-              faction: voiceless.faction,
-              reason: "voice failed",
-            });
-            return;
-          }
-          dispatch({
-            type: "APPLY_AUDIENCE_VOICE",
-            audienceId: voiceless.id,
-            text: data.text,
-            options: data.options,
-            patches: data.patches,
-          });
-        } catch (err) {
-          console.warn("Counsel voice failed", err);
+      if (!voiceless) return;
+      try {
+        const res = await fetch("/api/got-houses-v2/counsel/voice", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ audience: voiceless, state }),
+        });
+        if (!res.ok) {
           dispatch({
             type: "SKIP_AUDIENCE",
             faction: voiceless.faction,
             reason: "voice failed",
           });
+          return;
         }
-        return;
-      }
-
-      if (!bothAnswered) return;
-
-      const pendingOutcome = snapshot.find(
-        (a) => a && !a.skipped && a.answer && !a.effectsApplied
-      );
-      if (pendingOutcome) {
-        try {
-          const res = await fetch("/api/got-houses-v2/counsel/outcome", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ audience: pendingOutcome, state }),
-          });
-          if (!res.ok) {
-            dispatch({
-              type: "SKIP_AUDIENCE",
-              faction: pendingOutcome.faction,
-              reason: "outcome failed",
-            });
-            return;
-          }
-          const data = (await res.json()) as {
-            narration?: string;
-            effects?: AudienceEffects;
-            patches?: NpcRuntimePatch[];
-          };
-          if (!data.effects) {
-            dispatch({
-              type: "SKIP_AUDIENCE",
-              faction: pendingOutcome.faction,
-              reason: "outcome failed",
-            });
-            return;
-          }
-          dispatch({
-            type: "APPLY_AUDIENCE_OUTCOME",
-            audienceId: pendingOutcome.id,
-            narration: data.narration ?? "",
-            effects: data.effects,
-            patches: data.patches,
-          });
-        } catch (err) {
-          console.warn("Counsel outcome failed", err);
+        const data = (await res.json()) as {
+          text?: string;
+          options?: { id: string; label: string }[];
+          patches?: NpcRuntimePatch[];
+        };
+        if (!data.text || !data.options?.length) {
           dispatch({
             type: "SKIP_AUDIENCE",
-            faction: pendingOutcome.faction,
-            reason: "outcome failed",
+            faction: voiceless.faction,
+            reason: "voice failed",
           });
+          return;
         }
-        return;
-      }
-
-      if (audiencesReadyToFinish(state)) {
-        dispatch({ type: "FINISH_COUNSEL" });
+        dispatch({
+          type: "APPLY_AUDIENCE_VOICE",
+          audienceId: voiceless.id,
+          text: data.text,
+          options: data.options,
+          patches: data.patches,
+        });
+      } catch (err) {
+        console.warn("Counsel voice failed", err);
+        dispatch({
+          type: "SKIP_AUDIENCE",
+          faction: voiceless.faction,
+          reason: "voice failed",
+        });
       }
     }
 
-    void runCounsel();
+    void preload();
   }, [isGuest, state.phase, state.turn, state.audiences, dispatch, state]);
+
+  // Consequence GM runs after the map has settled, including during the next planning turn.
+  const outcomeKeyRef = useRef<string>("");
+  useEffect(() => {
+    if (isGuest) return;
+    const mapReady =
+      state.phase === "planning" ||
+      state.mapStatus === "resolved" ||
+      state.phase === "retreat" ||
+      state.phase === "rename_commanders";
+    if (!mapReady) return;
+    const pending = (state.audiences ?? []).find(
+      (a) => !a.skipped && a.answer && !a.effectsApplied
+    );
+    if (!pending) {
+      outcomeKeyRef.current = "";
+      return;
+    }
+    if (outcomeKeyRef.current === pending.id) return;
+    outcomeKeyRef.current = pending.id;
+
+    async function applyOutcome() {
+      const fallbackEffects: AudienceEffects = {
+        armyUpdates: [],
+        garrisonUpdates: [],
+        prisonerActs: [],
+        forageHolds: [],
+        deedSummary: "The lord answered a bannerman.",
+        deedDetail: "The camp took the word as it could.",
+      };
+      const settleFailed = () =>
+        dispatch({
+          type: "APPLY_AUDIENCE_OUTCOME",
+          audienceId: pending!.id,
+          narration: "The camp took the word as it could.",
+          effects: fallbackEffects,
+        });
+      try {
+        const res = await fetch("/api/got-houses-v2/counsel/outcome", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ audience: pending, state }),
+        });
+        if (!res.ok) {
+          settleFailed();
+          return;
+        }
+        const data = (await res.json()) as {
+          narration?: string;
+          effects?: AudienceEffects;
+          patches?: NpcRuntimePatch[];
+        };
+        if (!data.effects) {
+          settleFailed();
+          return;
+        }
+        dispatch({
+          type: "APPLY_AUDIENCE_OUTCOME",
+          audienceId: pending!.id,
+          narration: data.narration ?? "",
+          effects: data.effects,
+          patches: data.patches,
+        });
+      } catch (err) {
+        console.warn("Counsel outcome failed", err);
+        settleFailed();
+      }
+    }
+
+    void applyOutcome();
+  }, [isGuest, state.phase, state.mapStatus, state.audiences, dispatch, state]);
+
+  useEffect(() => {
+    if (isGuest) return;
+    if (!audiencesReadyToFinish(state)) return;
+    dispatch({ type: "FINISH_COUNSEL" });
+  }, [isGuest, state, dispatch]);
 
   const viewer = viewerFaction ?? state.activeFaction;
   useEffect(() => {
@@ -519,7 +536,10 @@ export default function GameCore({
 
   useEffect(() => {
     if (isGuest) return;
-    if (state.phase !== "resolving") {
+    const mapBusy =
+      state.phase === "resolving" ||
+      (state.phase === "counsel" && state.mapStatus === "resolving");
+    if (!mapBusy) {
       resolvedBatchRef.current = null;
       return;
     }
@@ -972,7 +992,7 @@ export default function GameCore({
     }
 
     runBattles();
-  }, [state.phase, state.pendingBattles, state.turn, state.armies, state.turnHistory, dispatch, isGuest]);
+  }, [state.phase, state.mapStatus, state.pendingBattles, state.turn, state.armies, state.turnHistory, dispatch, isGuest]);
 
   const isResolving = state.phase === "resolving";
   const isRetreat = state.phase === "retreat";

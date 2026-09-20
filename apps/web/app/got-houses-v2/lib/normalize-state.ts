@@ -81,6 +81,7 @@ export function normalizeState(raw: GameState): GameState {
     travellers: raw.travellers ?? [],
     deeds: raw.deeds ?? [],
     audiences: raw.audiences ?? [],
+    mapStatus: raw.mapStatus ?? (raw.phase === "resolving" ? "resolving" : "idle"),
     seatFatePanelId: raw.seatFatePanelId ?? null,
     briefingOpen: raw.briefingOpen ?? false,
     briefingShownFor: raw.briefingShownFor ?? null,

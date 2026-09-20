@@ -58,7 +58,7 @@ export default function CounselPanel({ state, dispatch, viewerFaction }: Props) 
       <div className="w-[480px] max-w-[92vw] max-h-[90vh] overflow-y-auto rounded-sm border border-border bg-card p-5 shadow-xl">
         <div className="font-display text-2xl text-foreground">Counsel</div>
         <p className="mt-1 text-[13px] text-muted-foreground">
-          After the march, a bannerman seeks a word.
+          A bannerman seeks a word.
         </p>
 
         {mineStatus === "seeking" && (
@@ -132,6 +132,10 @@ export default function CounselPanel({ state, dispatch, viewerFaction }: Props) 
             {audience.narration ? (
               <p className="text-[14px] leading-relaxed text-foreground/90">
                 {audience.narration}
+              </p>
+            ) : state.mapStatus === "resolving" ? (
+              <p className="text-[14px] text-muted-foreground">
+                The hosts are still on the road…
               </p>
             ) : (
               <p className="text-[14px] text-muted-foreground">

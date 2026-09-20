@@ -189,6 +189,41 @@ describe("moveOrdersResolvable", () => {
 });
 
 describe("counsel merge", () => {
+  it("does not let a West planning save wipe a preloaded dilemma", () => {
+    const north = {
+      id: "aud-north-1-roose-bolton",
+      turn: 1,
+      faction: "north" as const,
+      speakerId: "roose-bolton",
+      addresseeId: "robb-stark",
+      kind: "prisoners_fate",
+      situation: "Captives.",
+      whyNow: "Now.",
+      text: "My lord, the captives?",
+      options: [
+        { id: "a", label: "Keep" },
+        { id: "b", label: "Free" },
+        { id: "c", label: "Hang" },
+      ],
+      answer: null,
+      narration: null,
+      effects: null,
+      effectsApplied: false,
+      skipped: false,
+    };
+    const host: GameState = {
+      ...INITIAL_GAME_STATE,
+      phase: "planning",
+      audiences: [north],
+    };
+    const guest: GameState = {
+      ...INITIAL_GAME_STATE,
+      phase: "planning",
+      audiences: [],
+    };
+    const merged = mergeRoomState(host, guest, "westerlands");
+    assert.equal(merged.audiences?.[0]?.text, "My lord, the captives?");
+  });
   it("does not let a West save clobber North's answer or the board", () => {
     const north = {
       id: "aud-north-1-roose-bolton",
@@ -289,10 +324,14 @@ describe("counsel merge", () => {
     assert.notEqual(boardFingerprint(voiced), boardFingerprint(answered));
   });
 
-  it("ranks counsel after retreat so a guest cannot rewind the host", () => {
+  it("ranks counsel after planning so a guest cannot rewind the host", () => {
     assert.ok(
       stateProgress({ turn: 1, phase: "counsel" }) >
-        stateProgress({ turn: 1, phase: "retreat" })
+        stateProgress({ turn: 1, phase: "planning" })
+    );
+    assert.ok(
+      stateProgress({ turn: 1, phase: "resolving" }) >
+        stateProgress({ turn: 1, phase: "counsel" })
     );
     assert.ok(
       stateProgress({ turn: 1, phase: "ended" }) >
