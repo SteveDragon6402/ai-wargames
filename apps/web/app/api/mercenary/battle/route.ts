@@ -68,7 +68,7 @@ const RECORD: Anthropic.Tool = {
             lines: {
               type: "array",
               items: { type: "string" },
-              description: "What the unit seems like after the fight. One to ten lines. Rewrite, drop, or add a line only when the fight would change it.",
+              description: "What the unit seems like after the fight. One to ten lines. Change a line only when the chronicle shows that change. Do not give them a trick that is not already in their lines.",
             },
           },
           required: ["unitId", "lines"],
@@ -81,7 +81,7 @@ const RECORD: Anthropic.Tool = {
 
 function battlePrompt(state: GameState): string {
   const pending = state.pendingBattle;
-  const place = NODES.blackwood;
+  const place = NODES[state.location];
   const how =
     pending?.reason === "retreat"
       ? "The company was trying to retreat when the band found them."
@@ -93,7 +93,7 @@ function battlePrompt(state: GameState): string {
       (unit) =>
         `  ${unit.name} [${unit.id}] ${unit.count} ${WIKI[unit.type].title} (entry id: ${unit.type})
     Origin, fixed: ${unit.origin}
-    Living lines: ${unit.lines.join(" / ")}
+    What they can do: ${unit.lines.join(" / ")}
     Battles: ${unit.battles.length ? unit.battles.map((battle) => `week ${battle.week} at ${battle.place}, lost ${battle.deaths}: ${battle.result}`).join("; ") : "none"}`
     )
     .join("\n");
@@ -138,7 +138,7 @@ Bandits alive at the start: ${bandits}. banditDeaths is an integer from 0 to ${b
 Each deaths count is an integer from 0 to that unit's men. Omit a unit, or use 0, if nobody in it died.
 playerHoldsField is true or false.
 morale, stance, and condition are one sentence each.
-lines: for every unit that still has men, the description of what they seem like now, from 1 to 10 lines. Rewrite, drop, or add a line only when the fight would change it.
+lines: for every unit that still has men, what they seem like now, from 1 to 10 lines. Their current lines are what they can do. If the approach asks for a trick that is not in those lines, the chronicle says they fail at it. Rewrite, drop, or add a line only when the chronicle shows that change, and put the new sentence in the chronicle so it can be kept.
 Do not name a unit that is not listed.`;
 }
 

@@ -45,11 +45,56 @@ export interface ChatTurn {
 
 export type WeekAction =
   | { kind: "move"; to: NodeId }
+  | { kind: "rest" }
   | { kind: "train"; unitIds: [string, string]; drill: string }
   | { kind: "forage" }
   | { kind: "convert"; direction: "to-good" | "to-basic" }
   | { kind: "recruit"; type: UnitTypeId; count: number; names: string[]; into?: string | "new" }
   | { kind: "buy"; store: "basic" | "good" | "supply"; amount: number };
+
+export type WeekOrder = "action-first" | "movement-first";
+
+export type MovementOrder = { kind: "rest" } | { kind: "march"; to: NodeId };
+
+export type DeedOrder =
+  | { kind: "rest" }
+  | { kind: "train"; unitIds: [string, string]; drill: string }
+  | { kind: "forage" }
+  | { kind: "convert"; direction: "to-good" | "to-basic" }
+  | { kind: "recruit"; type: UnitTypeId; count: number; names: string[]; into?: string | "new" }
+  | { kind: "buy"; store: "basic" | "good" | "supply"; amount: number };
+
+export interface WeekPlan {
+  movement: MovementOrder;
+  deed: DeedOrder;
+  order: WeekOrder;
+}
+
+export interface LineDiff {
+  unitId: string;
+  name: string;
+  before: string[];
+  after: string[];
+}
+
+export interface ReputationShift {
+  key: ReputationKey;
+  text: string;
+}
+
+export interface ContractOffer {
+  id: string;
+  payer: ReputationKey;
+  place: NodeId;
+  payAt: NodeId;
+  bandName: string;
+  leaderName: string;
+  count: number;
+  purse: number;
+  offer: string;
+  blurb: string;
+  status: "offered" | "taken";
+}
 
 export interface BanditForce {
   count: number;
@@ -103,9 +148,24 @@ export interface GameState {
   nextUnitId: number;
   reputation: Record<ReputationKey, string>;
   decisions: Decision[];
+  weekPlan: WeekPlan;
   queue: WeekAction[];
   resolveIndex: number;
   movedThisWeek: boolean;
+  /** Marches since the company last rested its movement. */
+  weeksSinceRest: number;
+  /** Double rests in a row. */
+  weeksDoubleRest: number;
+  /** Where the current band is waiting. Arrival there opens the encounter. */
+  bandAt: NodeId;
+  payAt: NodeId;
+  contract: ContractOffer | null;
+  contractStep: number;
+  hungerNote: string | null;
+  weekScene: string | null;
+  drillDiffs: LineDiff[];
+  reputationShift: ReputationShift[];
+  yearClosing: string | null;
   notices: string[];
   villageWork: boolean;
   rewardClaimed: boolean;

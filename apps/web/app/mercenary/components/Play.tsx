@@ -12,14 +12,16 @@ import {
   defaultNamesFor,
   describeAction,
   foodWarning,
+  foodWeeks,
   headcount,
   manPrice,
+  nextContractTemplate,
   namesForSurvivors,
   recruitableTypes,
   recruitmentPlan,
   wordCount,
 } from "../lib/engine";
-import { REPUTATION_KEYS, REPUTATION_LABEL, type Aftermath, type GameState, type WeekAction } from "../lib/types";
+import { REPUTATION_KEYS, REPUTATION_LABEL, type Aftermath, type DeedOrder, type GameState, type MovementOrder, type WeekAction, type WeekOrder } from "../lib/types";
 
 type GameApi = {
   busy: string | null;
@@ -27,8 +29,12 @@ type GameApi = {
   rewardReady: boolean;
   queue: (action: WeekAction) => void;
   unqueue: (index: number) => void;
+  move: (movement: MovementOrder) => void;
+  act: (deed: DeedOrder) => void;
+  order: (next: WeekOrder) => void;
   ration: (value: "hearty" | "plain") => void;
-  stance: (value: string) => void;
+  hearContract: () => void;
+  takeOffer: () => void;
   show: (screen: GameState["screen"]) => void;
   liveWeek: () => void;
   suggestDrills: (unitIds: [string, string]) => Promise<string[] | null>;
@@ -79,7 +85,9 @@ export default function Play({ state, api }: { state: GameState; api: GameApi })
             {state.basicFood + state.goodFood} food
           </span>
           <span>
-            {state.queue.length} of 2 actions
+            {state.weekPlan.movement.kind === "march" ? "Marching" : "Staying"}
+            {", "}
+            {state.weekPlan.deed.kind === "rest" ? "resting" : "one action"}
           </span>
         </p>
       )}
@@ -96,7 +104,7 @@ export default function Play({ state, api }: { state: GameState; api: GameApi })
       )}
 
       {state.phase === "wiped" && <End title="The company is gone" body="There is no one left to lead." onReset={api.reset} />}
-      {state.phase === "year-end" && <End title="The year is over" body={`${state.companyName} is still in the field.`} onReset={api.reset} />}
+      {state.phase === "year-end" && <YearEnd state={state} onReset={api.reset} />}
 
       {state.phase === "play" && state.screen === "map" && <MapScreen state={state} api={api} />}
       {state.phase === "play" && state.screen === "elder" && <ElderScreen state={state} api={api} />}
@@ -106,6 +114,43 @@ export default function Play({ state, api }: { state: GameState; api: GameApi })
       {state.phase === "play" && state.screen === "choice" && <ChoiceScreen state={state} api={api} />}
       {state.phase === "play" && state.screen === "dashboard" && <Dashboard state={state} api={api} locked={locked} />}
     </main>
+  );
+}
+
+function YearEnd({ state, onReset }: { state: GameState; onReset: () => void }) {
+  return (
+    <section className="mt-8 space-y-6">
+      <div>
+        <h2 className="font-display text-3xl text-foreground">The year is over</h2>
+        <p className="mt-3 text-[15px] leading-relaxed text-foreground">{state.yearClosing ?? `${state.companyName} is still in the field.`}</p>
+      </div>
+      <ul className="space-y-4">
+        {state.units.map((unit) => (
+          <li key={unit.id}>
+            <p className="font-display text-xl text-foreground">
+              {unit.name} <span className="font-sans text-[14px] text-muted-foreground">{unit.count}</span>
+            </p>
+            {unit.lines.map((line, index) => (
+              <p key={`${unit.id}-${index}`} className="mt-1 text-[14px] leading-relaxed text-muted-foreground">
+                {line}
+              </p>
+            ))}
+          </li>
+        ))}
+      </ul>
+      {state.decisions.length > 0 && (
+        <ul className="space-y-1 text-[14px] text-muted-foreground">
+          {state.decisions.map((decision) => (
+            <li key={`${decision.week}-${decision.text}`}>
+              Week {decision.week}. {decision.text}
+            </li>
+          ))}
+        </ul>
+      )}
+      <Button type="button" variant="outline" onClick={onReset} className="h-10 text-[13px]">
+        Raise another company
+      </Button>
+    </section>
   );
 }
 
@@ -127,9 +172,13 @@ function Dashboard({ state, api, locked }: { state: GameState; api: GameApi; loc
   const food = state.basicFood + state.goodFood;
   const shortage = foodWarning(state);
   const atMarket = place.kind !== "wild";
-  const moved = state.movedThisWeek || state.queue.some((action) => action.kind === "move");
-  const canForage = isForest(state.location);
-  const slotsLeft = 2 - state.queue.length;
+  const movement = state.weekPlan.movement;
+  const deed = state.weekPlan.deed;
+  const marching = movement.kind === "march";
+  const forageAt = state.weekPlan.order === "movement-first" && marching ? movement.to : state.location;
+  const canForage = isForest(forageAt);
+  const weeks = foodWeeks(state);
+  const coming = nextContractTemplate(state);
   const [panel, setPanel] = useState<null | "recruit" | "buy" | "train" | "cook">(null);
   const [selected, setSelected] = useState<string[]>([]);
   const offerWork = place.id === "millcross" && !state.villageWork && !!state.bandits;
@@ -154,7 +203,7 @@ function Dashboard({ state, api, locked }: { state: GameState; api: GameApi; loc
             {state.money} <span className="font-sans text-[15px] font-normal text-muted-foreground">coin</span>
           </p>
           <p className={food < men ? "font-display text-3xl font-semibold leading-none text-bad" : "font-display text-3xl font-semibold leading-none text-foreground"}>
-            {food} <span className={food < men ? "font-sans text-[15px] font-normal text-bad" : "font-sans text-[15px] font-normal text-muted-foreground"}>{food < men ? "food, short" : "food"}</span>
+            {weeks} <span className={food < men ? "font-sans text-[15px] font-normal text-bad" : "font-sans text-[15px] font-normal text-muted-foreground"}>{weeks === 1 ? "week of food" : "weeks of food"}</span>
           </p>
           <p className="font-display text-3xl font-semibold leading-none text-foreground">
             {state.supply} <span className="font-sans text-[15px] font-normal text-muted-foreground">supply</span>
@@ -180,13 +229,84 @@ function Dashboard({ state, api, locked }: { state: GameState; api: GameApi; loc
         </div>
       </section>
 
-      <p className="text-[15px] leading-relaxed text-foreground">{state.morale}</p>
+      {(state.weekScene || state.drillDiffs.length > 0 || state.reputationShift.length > 0) && (
+        <section aria-label="Last week" className="space-y-4">
+          {state.weekScene && <p className="text-[16px] leading-relaxed text-foreground">{state.weekScene}</p>}
+          {state.drillDiffs.map((diff) => (
+            <div key={diff.unitId}>
+              <p className="font-display text-xl text-foreground">{diff.name}</p>
+              {diff.after.map((line, index) => (
+                <p key={`${diff.unitId}-${index}`} className={line === diff.before[index] ? "mt-1 text-[14px] leading-relaxed text-muted-foreground" : "mt-1 text-[14px] leading-relaxed text-foreground"}>
+                  {line}
+                </p>
+              ))}
+            </div>
+          ))}
+          {state.reputationShift.length > 0 && (
+            <ul className="space-y-2">
+              {state.reputationShift.map((shift) => (
+                <li key={shift.key} className="text-[14px] leading-relaxed text-foreground">
+                  <span className="text-muted-foreground">{REPUTATION_LABEL[shift.key]}. </span>
+                  {shift.text}
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+      )}
+
+      <dl className="space-y-2">
+        <div>
+          <dt className="text-[13px] text-muted-foreground">Morale</dt>
+          <dd className="text-[15px] leading-relaxed text-foreground">{state.morale}</dd>
+        </div>
+        <div>
+          <dt className="text-[13px] text-muted-foreground">Condition</dt>
+          <dd className="text-[15px] leading-relaxed text-foreground">{state.condition}</dd>
+        </div>
+        <div>
+          <dt className="text-[13px] text-muted-foreground">Stance</dt>
+          <dd className="text-[15px] leading-relaxed text-foreground">{state.stance}</dd>
+        </div>
+      </dl>
 
       {offerWork && <p className="text-[15px] leading-relaxed text-foreground">The elder of Millcross is in the yard. The Blackwood road is not safe.</p>}
       {place.id === "millcross" && state.villageWork && state.bandits && (
         <p className="text-[15px] leading-relaxed text-foreground">You took the work. Harl the Reed is still in Blackwood.</p>
       )}
-      {api.rewardReady && <p className="text-[15px] leading-relaxed text-foreground">Millcross owes you for the Blackwood road.</p>}
+      {api.rewardReady && <p className="text-[15px] leading-relaxed text-foreground">{NODES[state.payAt].name} owes you for the work.</p>}
+      {state.bandits && state.location === state.bandAt && state.resolveIndex === 0 && (
+        <div className="space-y-2">
+          <p className="text-[15px] leading-relaxed text-foreground">{state.leader.name} is here, with {state.bandits.count}.</p>
+          <Button type="button" variant="outline" onClick={() => api.show("forest")} className="h-11 text-[15px]">
+            Face them
+          </Button>
+        </div>
+      )}
+      {coming && (
+        <div className="space-y-2">
+          <p className="text-[15px] leading-relaxed text-foreground">Another court has work, if you will hear it.</p>
+          <Button type="button" variant="outline" disabled={!!api.busy} onClick={api.hearContract} className="h-11 text-[15px]">
+            Hear the offer
+          </Button>
+        </div>
+      )}
+      {state.contract?.status === "offered" && (
+        <div className="space-y-3">
+          <p className="text-[15px] leading-relaxed text-foreground">{state.contract.offer}</p>
+          <p className="text-[14px] text-muted-foreground">
+            {state.contract.purse} coins at {NODES[state.contract.payAt].name}, when {state.contract.bandName} are gone from {NODES[state.contract.place].name}.
+          </p>
+          <Button type="button" disabled={!!api.busy} onClick={api.takeOffer} className="h-11 text-[15px]">
+            Take the work
+          </Button>
+        </div>
+      )}
+      {state.contract?.status === "taken" && (
+        <p className="text-[15px] leading-relaxed text-foreground">
+          {state.contract.leaderName} is at {NODES[state.contract.place].name}.
+        </p>
+      )}
 
       {(api.rewardReady || place.id === "millcross") && (
       <div className="flex flex-wrap gap-3">
@@ -210,8 +330,7 @@ function Dashboard({ state, api, locked }: { state: GameState; api: GameApi; loc
 
       <section aria-label="The company">
         <h2 className="font-display text-2xl text-foreground">The company</h2>
-        <p className="mt-1 text-[13px] text-muted-foreground">Select the units you want to drill.</p>
-        <StanceLine state={state} api={api} />
+        <p className="mt-1 text-[13px] text-muted-foreground">Select two units, then drill them.</p>
         <ul className="mt-3 space-y-2">
           {state.units.map((unit) => (
             <UnitRow key={unit.id} unit={unit} selected={selected.includes(unit.id)} onToggle={() => toggleUnit(unit.id)} />
@@ -222,7 +341,7 @@ function Dashboard({ state, api, locked }: { state: GameState; api: GameApi; loc
       <section aria-label="This week" className="rounded-sm border border-border bg-card p-4 sm:p-6">
         <div className="flex items-baseline justify-between gap-3">
           <h2 className="max-w-[12ch] text-balance font-display text-3xl font-semibold text-foreground">This week</h2>
-          <p className="text-[15px] text-muted-foreground">{state.queue.length} of 2 actions</p>
+          <p className="text-[15px] text-muted-foreground">{state.weekPlan.order === "action-first" ? "Action, then movement" : "Movement, then action"}</p>
         </div>
         {shortage && (
           <p id="food-warning" role="alert" className="mt-4 text-[15px] leading-relaxed text-bad">
@@ -230,81 +349,64 @@ function Dashboard({ state, api, locked }: { state: GameState; api: GameApi; loc
           </p>
         )}
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
-          {[0, 1].map((index) => {
-            const action = state.queue[index];
-            const done = index < state.resolveIndex;
-            return (
-              <div key={index} className="flex min-h-16 items-start justify-between gap-3 bg-background px-3 py-3">
-                {action ? (
-                  <p className="text-[15px] leading-snug text-foreground">
-                    {done ? "Done. " : ""}
-                    {describeAction(action)}
-                  </p>
-                ) : (
-                  <p className="text-[15px] text-muted-foreground">{index === 0 ? "First action is open" : "Second action is open"}</p>
-                )}
-                {action && state.resolveIndex === 0 && (
-                  <button
-                    type="button"
-                    onClick={() => api.unqueue(index)}
-                    className="shrink-0 text-[13px] text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-                  >
-                    Drop
-                  </button>
-                )}
-              </div>
-            );
-          })}
+          <div className="min-h-16 bg-background px-3 py-3">
+            <p className="text-[13px] text-muted-foreground">Movement</p>
+            <p className="mt-1 text-[15px] text-foreground">{movement.kind === "march" ? `March to ${NODES[movement.to].name}` : "Rest here"}</p>
+          </div>
+          <div className="min-h-16 bg-background px-3 py-3">
+            <p className="text-[13px] text-muted-foreground">Action</p>
+            <p className="mt-1 text-[15px] text-foreground">{deed.kind === "rest" ? "Rest" : describeAction(deed)}</p>
+          </div>
         </div>
 
-        {!locked && slotsLeft > 0 && (
+        {!locked && (
           <div className="mt-6">
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                disabled={moved}
-                onClick={() => api.show("map")}
-                className="h-11 text-[15px]"
-              >
+            <p className="text-[13px] text-muted-foreground">Movement</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button type="button" variant={marching ? "default" : "outline"} onClick={() => api.show("map")} className="h-11 text-[15px]">
                 March
               </Button>
+              <Button type="button" variant={movement.kind === "rest" ? "default" : "outline"} onClick={() => api.move({ kind: "rest" })} className="h-11 text-[15px]">
+                Rest
+              </Button>
+            </div>
+            <p className="mt-4 text-[13px] text-muted-foreground">Action</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Button type="button" variant={deed.kind === "rest" ? "default" : "outline"} onClick={() => api.act({ kind: "rest" })} className="h-11 text-[15px]">
+                Rest
+              </Button>
+              <Button type="button" variant={deed.kind === "train" ? "default" : "outline"} aria-expanded={panel === "train"} onClick={() => openPanel("train")} className="h-11 text-[15px]">
+                Train
+              </Button>
               {canForage && (
-                <Button type="button" variant="outline" onClick={() => api.queue({ kind: "forage" })} className="h-11 text-[15px]">
+                <Button type="button" variant={deed.kind === "forage" ? "default" : "outline"} onClick={() => api.act({ kind: "forage" })} className="h-11 text-[15px]">
                   Forage
                 </Button>
               )}
-              <Button
-                type="button"
-                variant="outline"
-                disabled={!atMarket}
-                aria-expanded={panel === "recruit"}
-                onClick={() => openPanel("recruit")}
-                className="h-11 text-[15px]"
-              >
+              <Button type="button" variant="outline" disabled={!atMarket} aria-expanded={panel === "recruit"} onClick={() => openPanel("recruit")} className="h-11 text-[15px]">
                 Recruit
               </Button>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={!atMarket}
-                aria-expanded={panel === "buy"}
-                onClick={() => openPanel("buy")}
-                className="h-11 text-[15px]"
-              >
+              <Button type="button" variant="outline" disabled={!atMarket} aria-expanded={panel === "buy"} onClick={() => openPanel("buy")} className="h-11 text-[15px]">
                 Buy
               </Button>
-            </div>
-            {!atMarket && <p className="mt-3 text-[15px] text-muted-foreground">Recruit and buy in a village or a capital.</p>}
-            {moved && <p className="mt-3 text-[15px] text-muted-foreground">The march is already ordered.</p>}
-            <div className="mt-3 flex gap-4">
-              <Button type="button" variant="link" aria-expanded={panel === "train"} onClick={() => openPanel("train")} className="h-9 px-0 text-[15px]">
-                Train
-              </Button>
-              <Button type="button" variant="link" aria-expanded={panel === "cook"} onClick={() => openPanel("cook")} className="h-9 px-0 text-[15px]">
+              <Button type="button" variant="outline" aria-expanded={panel === "cook"} onClick={() => openPanel("cook")} className="h-11 text-[15px]">
                 Cook
               </Button>
             </div>
+            {!atMarket && <p className="mt-3 text-[15px] text-muted-foreground">Recruit and buy in a village or a capital.</p>}
+            {movement.kind === "rest" && deed.kind === "rest" && (
+              <p className="mt-3 text-[15px] text-foreground">Both at rest. They stay, and the week is the place.</p>
+            )}
+            {!(movement.kind === "rest" && deed.kind === "rest") && (
+              <div className="mt-3 flex gap-4">
+                <button type="button" aria-pressed={state.weekPlan.order === "action-first"} onClick={() => api.order("action-first")} className={state.weekPlan.order === "action-first" ? "text-[15px] font-semibold text-foreground underline decoration-primary underline-offset-4" : "text-[15px] text-muted-foreground"}>
+                  Action first
+                </button>
+                <button type="button" aria-pressed={state.weekPlan.order === "movement-first"} onClick={() => api.order("movement-first")} className={state.weekPlan.order === "movement-first" ? "text-[15px] font-semibold text-foreground underline decoration-primary underline-offset-4" : "text-[15px] text-muted-foreground"}>
+                  March first
+                </button>
+              </div>
+            )}
           </div>
         )}
 
@@ -352,22 +454,6 @@ function Dashboard({ state, api, locked }: { state: GameState; api: GameApi; loc
         </dl>
       </details>
     </div>
-  );
-}
-
-function StanceLine({ state, api }: { state: GameState; api: GameApi }) {
-  const [value, setValue] = useState(state.stance);
-  return (
-    <label className="mt-3 block text-[13px] text-muted-foreground">
-      Stance
-      <Input
-        value={value}
-        maxLength={240}
-        onChange={(event) => setValue(event.target.value)}
-        onBlur={() => api.stance(value)}
-        className="mt-1 h-9 bg-background text-foreground"
-      />
-    </label>
   );
 }
 
@@ -518,7 +604,7 @@ function RecruitPanel({ state, api, onDone }: { state: GameState; api: GameApi; 
           type="button"
           disabled={price * count > state.money}
           onClick={() => {
-            api.queue({
+            api.act({
               kind: "recruit",
               type,
               count,
@@ -563,7 +649,7 @@ function BuyPanel({ state, api, onDone }: { state: GameState; api: GameApi; onDo
                 variant="outline"
                 disabled={state.money < row.price * amount}
                 onClick={() => {
-                  api.queue({ kind: "buy", store: row.store, amount });
+                  api.act({ kind: "buy", store: row.store, amount });
                   onDone();
                 }}
                 className="h-9 text-[13px]"
@@ -593,7 +679,7 @@ function CookPanel({ api, onDone }: { api: GameApi; onDone: () => void }) {
           type="button"
           variant="outline"
           onClick={() => {
-            api.queue({ kind: "convert", direction: "to-good" });
+            api.act({ kind: "convert", direction: "to-good" });
             onDone();
           }}
           className="h-10 text-[13px]"
@@ -604,7 +690,7 @@ function CookPanel({ api, onDone }: { api: GameApi; onDone: () => void }) {
           type="button"
           variant="outline"
           onClick={() => {
-            api.queue({ kind: "convert", direction: "to-basic" });
+            api.act({ kind: "convert", direction: "to-basic" });
             onDone();
           }}
           className="h-10 text-[13px]"
@@ -637,7 +723,7 @@ function TrainBox({ state, api, selected, onDone }: { state: GameState; api: Gam
         onSubmit={(event) => {
           event.preventDefault();
           if (!pair) return;
-          api.queue({ kind: "train", unitIds: pair, drill: drill.trim() || DEFAULT_DRILL });
+          api.act({ kind: "train", unitIds: pair, drill: drill.trim() || DEFAULT_DRILL });
           setIdeas([]);
           onDone();
         }}
@@ -697,7 +783,7 @@ function MapScreen({ state, api }: { state: GameState; api: GameApi }) {
               disabled={!canMarch}
               aria-current={here ? "true" : undefined}
               onClick={() => {
-                api.queue({ kind: "move", to: node.id });
+                api.move({ kind: "march", to: node.id });
                 api.show("dashboard");
               }}
               style={{ left: `${node.x}%`, top: `${node.y}%` }}
@@ -714,7 +800,7 @@ function MapScreen({ state, api }: { state: GameState; api: GameApi }) {
           );
         })}
       </div>
-      <p className="mt-3 text-[13px] text-muted-foreground">A tap on a neighbouring place queues the march. This march uses one of your two actions.</p>
+      <p className="mt-3 text-[13px] text-muted-foreground">A tap on a neighbouring place sets the week's march. Food bought after the march is not eaten until next week. The road into a watched wood opens the encounter, and the action still follows if the place allows it.</p>
     </section>
   );
 }
@@ -774,7 +860,7 @@ function ForestScreen({ state, api }: { state: GameState; api: GameApi }) {
   return (
     <section className="mt-8 rounded-sm border border-border bg-card p-4 sm:p-6">
       <h2 className="font-display text-3xl font-semibold">{state.leader.name}</h2>
-      <p className="mt-2 text-[15px] text-muted-foreground">Blackwood</p>
+      <p className="mt-2 text-[15px] text-muted-foreground">{NODES[state.location].name}</p>
       <p className="mt-4 text-[15px] leading-relaxed text-foreground">{state.leader.blurb}</p>
       <p className="mt-2 text-[13px] text-muted-foreground">{state.bandits ? `${state.bandits.count} of them are in the trees.` : ""}</p>
       <div className="mt-5 flex flex-col gap-2">
@@ -835,6 +921,16 @@ function ResultScreen({ state, api }: { state: GameState; api: GameApi }) {
       </button>
       <h2 className="mt-3 font-display text-3xl">The fight</h2>
       <p className="mt-3 text-[16px] leading-relaxed text-foreground">{state.lastBrief}</p>
+      {state.reputationShift.length > 0 && (
+        <ul className="mt-4 space-y-2">
+          {state.reputationShift.map((shift) => (
+            <li key={shift.key} className="text-[14px] leading-relaxed text-foreground">
+              <span className="text-muted-foreground">{REPUTATION_LABEL[shift.key]}. </span>
+              {shift.text}
+            </li>
+          ))}
+        </ul>
+      )}
       <button type="button" onClick={() => api.show(full ? "dashboard" : "chronicle")} className="mt-3 text-[13px] text-muted-foreground">
         {full ? "Hide the account" : "Read the account"}
       </button>
@@ -852,6 +948,16 @@ function ChoiceScreen({ state, api }: { state: GameState; api: GameApi }) {
     <section className="mt-6 rounded-sm border border-foreground/20 bg-card p-5">
       <h2 className="font-display text-3xl">After the fight</h2>
       <p className="mt-3 text-[15px] leading-relaxed">{state.lastBrief}</p>
+      {state.reputationShift.length > 0 && (
+        <ul className="mt-3 space-y-2">
+          {state.reputationShift.map((shift) => (
+            <li key={shift.key} className="text-[14px] leading-relaxed text-foreground">
+              <span className="text-muted-foreground">{REPUTATION_LABEL[shift.key]}. </span>
+              {shift.text}
+            </li>
+          ))}
+        </ul>
+      )}
       <button type="button" onClick={() => setAccount((open) => !open)} className="mt-2 text-[13px] text-muted-foreground">
         {account ? "Hide the account" : "Read the account"}
       </button>

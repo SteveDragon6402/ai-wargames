@@ -1,3 +1,4 @@
+import { CONTRACTS } from "../data/contracts";
 import { KINGDOM_SPECIAL, NODES, isForest, isSettlement, neighbors, type NodeId } from "../data/map";
 import {
   APPROACH_WORDS,
@@ -28,11 +29,16 @@ import {
   type ForceComparison,
   type GameState,
   type ReputationKey,
+  type DeedOrder,
+  type LineDiff,
+  type MovementOrder,
   type Result,
   type Step,
   type Unit,
   type ValidatedBattle,
   type WeekAction,
+  type WeekOrder,
+  type WeekPlan,
 } from "./types";
 
 export function wordCount(text: string): number {
@@ -41,6 +47,16 @@ export function wordCount(text: string): number {
 
 export function headcount(units: Unit[]): number {
   return units.reduce((sum, unit) => sum + unit.count, 0);
+}
+
+export function foodWeeks(state: GameState): number {
+  const men = headcount(state.units);
+  if (men < 1) return 0;
+  return Math.floor((state.basicFood + state.goodFood) / men);
+}
+
+export function defaultWeekPlan(): WeekPlan {
+  return { movement: { kind: "rest" }, deed: { kind: "rest" }, order: "action-first" };
 }
 
 export function freshGame(): GameState {
@@ -68,9 +84,21 @@ export function freshGame(): GameState {
     nextUnitId: 1,
     reputation: { holt: "", ashmarch: "", mere: "", nobles: "", peasants: "" },
     decisions: [],
+    weekPlan: defaultWeekPlan(),
     queue: [],
     resolveIndex: 0,
     movedThisWeek: false,
+    weeksSinceRest: 0,
+    weeksDoubleRest: 0,
+    bandAt: "blackwood",
+    payAt: "millcross",
+    contract: null,
+    contractStep: 0,
+    hungerNote: null,
+    weekScene: null,
+    drillDiffs: [],
+    reputationShift: [],
+    yearClosing: null,
     notices: [],
     villageWork: false,
     rewardClaimed: false,
@@ -289,7 +317,21 @@ interface Projected {
   foraged: boolean;
 }
 
-function project(state: GameState, extra?: WeekAction): Projected | { error: string } {
+function movementAction(movement: MovementOrder): WeekAction {
+  return movement.kind === "rest" ? { kind: "rest" } : { kind: "move", to: movement.to };
+}
+
+function deedAction(deed: DeedOrder): WeekAction {
+  return deed.kind === "rest" ? { kind: "rest" } : deed;
+}
+
+export function composeQueue(plan: WeekPlan): WeekAction[] {
+  const deed = deedAction(plan.deed);
+  const movement = movementAction(plan.movement);
+  return plan.order === "movement-first" ? [movement, deed] : [deed, movement];
+}
+
+function project(state: GameState): Projected | { error: string } {
   const projected: Projected = {
     money: state.money,
     basicFood: state.basicFood,
@@ -300,7 +342,7 @@ function project(state: GameState, extra?: WeekAction): Projected | { error: str
     foraged: false,
   };
   const counts = state.units.map((unit) => ({ ...unit }));
-  const actions = extra ? [...state.queue, extra] : state.queue;
+  const actions = state.resolveIndex > 0 ? state.queue : composeQueue(state.weekPlan);
   for (const action of actions) {
     if (action.kind === "move") {
       if (projected.moved) return { error: "The company can march once this week." };
@@ -368,39 +410,83 @@ function project(state: GameState, extra?: WeekAction): Projected | { error: str
   return projected;
 }
 
-export function canEnqueue(state: GameState, action: WeekAction): string | null {
+function weekOpen(state: GameState): string | null {
   if (state.phase !== "play" || state.resolveIndex > 0 || state.pendingBattle) return "The week is already in motion.";
-  if (state.queue.length >= 2) return "Two actions, no more.";
-  const projected = project(state, action);
-  if ("error" in projected) return projected.error;
   return null;
+}
+
+export function setMovement(state: GameState, movement: MovementOrder): Result {
+  const closed = weekOpen(state);
+  if (closed) return fail(closed);
+  const next = { ...state, weekPlan: { ...state.weekPlan, movement } };
+  const projected = project(next);
+  if ("error" in projected) return fail(projected.error);
+  return { ok: true, state: next };
+}
+
+export function setDeed(state: GameState, deed: DeedOrder): Result {
+  const closed = weekOpen(state);
+  if (closed) return fail(closed);
+  const next = { ...state, weekPlan: { ...state.weekPlan, deed } };
+  const projected = project(next);
+  if ("error" in projected) return fail(projected.error);
+  return { ok: true, state: next };
+}
+
+export function setWeekOrder(state: GameState, order: WeekOrder): Result {
+  const closed = weekOpen(state);
+  if (closed) return fail(closed);
+  const next = { ...state, weekPlan: { ...state.weekPlan, order } };
+  const projected = project(next);
+  if ("error" in projected) return fail(projected.error);
+  return { ok: true, state: next };
+}
+
+export function canEnqueue(state: GameState, action: WeekAction): string | null {
+  const closed = weekOpen(state);
+  if (closed) return closed;
+  if (action.kind === "move") {
+    if (state.weekPlan.movement.kind === "march") return "The company can march once this week.";
+    const result = setMovement(state, { kind: "march", to: action.to });
+    return result.ok ? null : result.error;
+  }
+  if (state.weekPlan.deed.kind !== "rest") return "One action this week.";
+  if (action.kind === "rest") return null;
+  const result = setDeed(state, action);
+  return result.ok ? null : result.error;
 }
 
 export function enqueue(state: GameState, action: WeekAction): Result {
   const error = canEnqueue(state, action);
   if (error) return fail(error);
-  return { ok: true, state: { ...state, queue: [...state.queue, action] } };
+  if (action.kind === "move") return setMovement(state, { kind: "march", to: action.to });
+  if (action.kind === "rest") return setDeed(state, { kind: "rest" });
+  return setDeed(state, action);
 }
 
 export function dequeue(state: GameState, index: number): Result {
   if (state.resolveIndex > 0) return fail("The week has already started.");
-  if (!state.queue[index]) return fail("That action is gone.");
-  return { ok: true, state: { ...state, queue: state.queue.filter((_, i) => i !== index) } };
+  const slot = state.weekPlan.order === "movement-first" ? (index === 0 ? "movement" : index === 1 ? "deed" : null) : index === 0 ? "deed" : index === 1 ? "movement" : null;
+  if (!slot) return fail("That action is gone.");
+  if (slot === "movement") return { ok: true, state: { ...state, weekPlan: { ...state.weekPlan, movement: { kind: "rest" } } } };
+  return { ok: true, state: { ...state, weekPlan: { ...state.weekPlan, deed: { kind: "rest" } } } };
 }
 
 export function setRation(state: GameState, ration: "hearty" | "plain"): GameState {
   return { ...state, ration };
 }
 
-export function setStance(state: GameState, stance: string): GameState {
-  const trimmed = stance.trim().slice(0, 240);
-  if (!trimmed) return state;
-  return { ...state, stance: trimmed };
-}
-
 export function beginResolution(state: GameState): GameState {
   if (state.resolveIndex > 0) return state;
-  return { ...state, notices: [] };
+  return {
+    ...state,
+    queue: composeQueue(state.weekPlan),
+    notices: [],
+    drillDiffs: [],
+    weekScene: null,
+    reputationShift: [],
+    hungerNote: null,
+  };
 }
 
 function applyListed(state: GameState, action: WeekAction): GameState {
@@ -473,7 +559,7 @@ export function stepQueue(state: GameState): Step {
   if (action.kind === "forage") return { kind: "forage", state };
   const applied = applyListed(state, action);
   const advanced = { ...applied, resolveIndex: state.resolveIndex + 1 };
-  if (action.kind === "move" && action.to === "blackwood" && advanced.location === "blackwood" && advanced.bandits) {
+  if (action.kind === "move" && state.bandits && action.to === state.bandAt && advanced.location === state.bandAt) {
     return { kind: "forest", state: { ...advanced, screen: "forest" } };
   }
   return { kind: "continue", state: advanced };
@@ -486,19 +572,18 @@ export function applyTraining(state: GameState, linesByUnit: Record<string, stri
     const lines = linesByUnit[id];
     if (!lines || lines.every((line) => !line.trim())) return fail("The drill came back without lines for both units.");
   }
+  const drillDiffs: LineDiff[] = [];
+  const units = state.units.map((unit) => {
+    const lines = linesByUnit[unit.id];
+    if (!lines) return unit;
+    const next = clampDescription(lines);
+    if (next.length < 1) return unit;
+    drillDiffs.push({ unitId: unit.id, name: unit.name, before: [...unit.lines], after: next });
+    return { ...unit, lines: next };
+  });
   return {
     ok: true,
-    state: {
-      ...state,
-      resolveIndex: state.resolveIndex + 1,
-      units: state.units.map((unit) => {
-        const lines = linesByUnit[unit.id];
-        if (!lines) return unit;
-        const next = clampDescription(lines);
-        if (next.length < 1) return unit;
-        return { ...unit, lines: next };
-      }),
-    },
+    state: { ...state, resolveIndex: state.resolveIndex + 1, units, drillDiffs },
   };
 }
 
@@ -596,25 +681,17 @@ export function finishWeek(state: GameState): GameState {
 
   const foodLine =
     hunger === "well"
-      ? "Good food has them in high spirits."
+      ? "They ate well."
       : hunger === "mixed"
-        ? "The good food ran out. The rest ate plain, and they know it."
+        ? "The good food ran out. The rest ate plain."
         : hunger === "hungry"
           ? "They are hungry. The missing rations have soured them."
           : hunger === "starving"
             ? "They are starving."
-            : "They are fed. It does little for their spirits.";
-
-  const morale =
-    hunger === "hungry" || hunger === "starving"
-      ? foodLine
-      : state.moraleFromBattle
-        ? `${state.morale} ${foodLine}`
-        : foodLine;
-
-  const condition = state.movedThisWeek
-    ? `They are road-worn from the week's march. ${foodLine}`
-    : foodLine;
+            : "They ate plain.";
+  const hungry = hunger === "hungry" || hunger === "starving";
+  const doubleRest = state.weekPlan.movement.kind === "rest" && state.weekPlan.deed.kind === "rest" && !state.movedThisWeek;
+  const marched = state.weekPlan.movement.kind === "march" || state.movedThisWeek;
 
   const closed: GameState = {
     ...next,
@@ -623,15 +700,19 @@ export function finishWeek(state: GameState): GameState {
     goodFood: good + lateGood,
     lateBasic: 0,
     lateGood: 0,
-    morale,
-    condition,
+    morale: hungry ? `${state.morale} ${foodLine}`.trim() : state.morale,
+    condition: hungry ? `${state.condition} ${foodLine}`.trim() : state.condition,
+    hungerNote: foodLine,
     moraleFromBattle: false,
+    weeksSinceRest: marched ? state.weeksSinceRest + 1 : 0,
+    weeksDoubleRest: doubleRest ? state.weeksDoubleRest + 1 : 0,
+    weekPlan: defaultWeekPlan(),
     queue: [],
     resolveIndex: 0,
     movedThisWeek: false,
     cameFrom: null,
     pendingBattle: null,
-    screen: "dashboard",
+    screen: next.phase === "wiped" ? next.screen : "dashboard",
   };
   if (headcount(closed.units) === 0) return { ...closed, phase: "wiped" };
   if (state.week >= MAX_WEEK) return { ...closed, phase: "year-end" };
@@ -643,7 +724,7 @@ export function retreatStartsFight(roll: number): boolean {
 }
 
 export function cancelRest(state: GameState): GameState {
-  return { ...state, queue: state.queue.slice(0, state.resolveIndex) };
+  return state;
 }
 
 export function retreatQuiet(state: GameState): GameState {
@@ -856,7 +937,8 @@ export function carriedRations(state: GameState): number {
   let money = state.money;
   let location = state.location;
   let marched = state.movedThisWeek;
-  for (const action of state.queue) {
+  const actions = state.resolveIndex > 0 ? state.queue.slice(state.resolveIndex) : composeQueue(state.weekPlan);
+  for (const action of actions) {
     if (action.kind === "move" && !marched && neighbors(location).includes(action.to)) {
       marched = true;
       location = action.to;
@@ -892,7 +974,8 @@ export function foodWarning(state: GameState): string | null {
   if (have >= need) return null;
   const short = need - have;
   const rations = `Short ${short} ration${short === 1 ? "" : "s"}.`;
-  if (state.queue.some((action) => action.kind === "forage")) {
+  const planned = state.resolveIndex > 0 ? state.queue : composeQueue(state.weekPlan);
+  if (planned.some((action) => action.kind === "forage")) {
     return `${rations} The forest may feed them. It is not promised.`;
   }
   return `${rations} You can still march. Buy before the march if you want them fed this week.`;
@@ -913,15 +996,17 @@ export function applyOutcome(state: GameState, outcome: ValidatedBattle, brief: 
           ...unit.battles,
           {
             week: state.week,
-            place: "Blackwood",
-            foe: "the Blackwood bandits",
+            place: NODES[state.location].name,
+            foe: state.leader.name,
             approach,
             result: brief,
             deaths,
           },
         ],
       };
-      if (rewritten && next.count > 0 && rewritten.lines.length > 0) next.lines = rewritten.lines;
+      if (rewritten && next.count > 0 && rewritten.lines.length > 0) {
+        next.lines = linesTouchedByChronicle(unit.lines, rewritten.lines, `${brief}\n${chronicle}`);
+      }
       return next;
     })
     .filter((unit) => unit.count > 0);
@@ -965,14 +1050,22 @@ export function applyAftermath(state: GameState, choice: Aftermath, names: strin
   if (state.screen !== "choice") return fail("There is no choice waiting.");
   const survivors = state.banditSurvivors ?? 0;
   if (survivors <= 0 && choice !== "kill") return fail("No one lived to be spared.");
-  let next: GameState = { ...state, bandits: null, banditSurvivors: null, screen: "dashboard" };
+  const contracted = state.contract?.status === "taken" ? state.contract : null;
+  let next: GameState = {
+    ...state,
+    bandits: null,
+    banditSurvivors: null,
+    screen: "dashboard",
+    contract: null,
+    contractStep: contracted ? state.contractStep + 1 : state.contractStep,
+  };
   if (choice === "kill") {
     next = decide(next, "After the fight, the company killed whoever was left.");
-    next.rewardPurse = REWARD_FULL;
+    next.rewardPurse = contracted ? contracted.purse : REWARD_FULL;
     next.villageDeeds = [...next.villageDeeds, "Killed the Blackwood bandits."];
   } else if (choice === "justice") {
-    next = decide(next, "After the fight, the company brought the survivors to Millcross for justice.");
-    next.rewardPurse = REWARD_FULL;
+    next = decide(next, "After the fight, the company brought the survivors in for justice.");
+    next.rewardPurse = contracted ? contracted.purse : REWARD_FULL;
     next.villageDeeds = [...next.villageDeeds, "Brought the Blackwood survivors to Millcross for justice."];
   } else {
     const needed = namesForSurvivors(survivors);
@@ -988,7 +1081,7 @@ export function applyAftermath(state: GameState, choice: Aftermath, names: strin
       next = { ...next, units: [...next.units, made.unit] };
     });
     next = decide(next, "After the fight, the company recruited the surviving bandits.");
-    next.rewardPurse = REWARD_RECRUIT;
+    next.rewardPurse = contracted ? Math.min(contracted.purse, REWARD_RECRUIT) : REWARD_RECRUIT;
     next.villageDeeds = [...next.villageDeeds, "Recruited the Blackwood survivors instead of hanging them."];
   }
   next = rememberLeader(next, `The company chose to ${choice} whoever remained.`);
@@ -1016,7 +1109,7 @@ export function acceptWork(state: GameState): Result {
 export function canClaimReward(state: GameState): boolean {
   return (
     state.phase === "play" &&
-    state.location === "millcross" &&
+    state.location === state.payAt &&
     !state.rewardClaimed &&
     state.rewardPurse !== null &&
     (!state.bandits || state.bandits.count <= 0)
@@ -1024,7 +1117,7 @@ export function canClaimReward(state: GameState): boolean {
 }
 
 export function claimReward(state: GameState): Result {
-  if (!canClaimReward(state) || state.rewardPurse === null) return fail("Millcross has nothing to pay yet.");
+  if (!canClaimReward(state) || state.rewardPurse === null) return fail("There is nothing to pay yet.");
   const purse = state.rewardPurse;
   return {
     ok: true,
@@ -1035,12 +1128,80 @@ export function claimReward(state: GameState): Result {
         rewardClaimed: true,
         villageDeeds: [...state.villageDeeds, `Paid ${purse} coins for clearing the Blackwood road.`],
       },
-      `Claimed Millcross's reward of ${purse} coins for the Blackwood bandits.`
+      `Claimed ${purse} coins for the work.`
     ),
   };
 }
 
+export function nextContractTemplate(state: GameState) {
+  if (state.phase !== "play" || state.bandits || state.contract) return null;
+  return CONTRACTS[state.contractStep] ?? null;
+}
+
+export function offerContract(state: GameState, offer: string): Result {
+  const template = nextContractTemplate(state);
+  if (!template) return fail("No one is offering work.");
+  const text =
+    offer.trim() ||
+    `${template.leaderName} is at ${NODES[template.place].name}. The purse is ${template.purse} coins, paid at ${NODES[template.payAt].name}.`;
+  return { ok: true, state: { ...state, contract: { ...template, offer: text, status: "offered" } } };
+}
+
+export function takeContract(state: GameState): Result {
+  if (!state.contract || state.contract.status !== "offered") return fail("There is no offer to take.");
+  if (state.bandits) return fail("A band is already in the field.");
+  const contract = state.contract;
+  return {
+    ok: true,
+    state: decide(
+      {
+        ...state,
+        contract: { ...contract, status: "taken" },
+        bandAt: contract.place,
+        payAt: contract.payAt,
+        rewardClaimed: false,
+        rewardPurse: null,
+        bandits: {
+          count: contract.count,
+          origin: WIKI.bandit.origin,
+          lines: startingDescription("bandit"),
+          morale: "Wary, and sure of this ground.",
+          stance: "They watch and decline a fight they dislike.",
+        },
+        leader: {
+          name: contract.leaderName,
+          blurb: contract.blurb,
+          generalHistory: `${contract.leaderName} keeps ${contract.bandName} at ${NODES[contract.place].name}.`,
+          withCompany: [],
+        },
+      },
+      `Took the offer against ${contract.bandName} at ${NODES[contract.place].name}. The purse is ${contract.purse} coins at ${NODES[contract.payAt].name}.`
+    ),
+  };
+}
+
+export function linesTouchedByChronicle(previous: string[], proposed: string[], chronicle: string): string[] {
+  const hay = chronicle.toLowerCase();
+  const next = previous.map((line) => line.trim()).filter(Boolean);
+  for (const raw of proposed) {
+    const line = raw.trim();
+    if (!line) continue;
+    const words = line.toLowerCase().split(/[^a-z0-9']+/).filter((word) => word.length > 3);
+    const snippet = line.toLowerCase().split(/\s+/).slice(0, 6).join(" ");
+    if (snippet.length < 12 || !hay.includes(snippet)) continue;
+    const index = next.findIndex((old) => {
+      const oldWords = new Set(old.toLowerCase().split(/[^a-z0-9']+/).filter((word) => word.length > 4));
+      return words.filter((word) => word.length > 4 && oldWords.has(word)).length >= 2;
+    });
+    if (index >= 0) next[index] = line;
+    else if (!next.some((old) => old.toLowerCase() === line.toLowerCase())) next.push(line);
+  }
+  const clamped = clampDescription(next);
+  return clamped.length ? clamped : previous;
+}
+
 export function describeAction(action: WeekAction): string {
+  if (action.kind === "rest") return "Rest";
   if (action.kind === "move") return `March to ${NODES[action.to].name}`;
   if (action.kind === "train") return `Drill two units: ${action.drill}`;
   if (action.kind === "forage") return "Forage in the forest";

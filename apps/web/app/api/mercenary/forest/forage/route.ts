@@ -14,8 +14,9 @@ const TOOL: Anthropic.Tool = {
         description: "Rations carried back. At most one per person who went out.",
       },
       account: { type: "string", description: "One or two sentences of what happened in the trees." },
+      spotted: { type: "boolean", description: "True only when a band that knows this wood finds the foragers." },
     },
-    required: ["meals", "account"],
+    required: ["meals", "account", "spotted"],
   },
 };
 
@@ -46,17 +47,18 @@ export async function POST(req: NextRequest) {
     const response = await createMessage(client, {
       max_tokens: 400,
       system:
-        "You judge one foraging party in a forest. One tool call, report_forage. A thick wood can feed some of them and not all of them. Bad luck, watchers, or a picked-over wood can bring back nothing. Do not start a battle.",
+        "You judge one foraging party in a forest. One tool call, report_forage. A thick wood can feed some of them and not all of them. Bad luck, watchers, or a picked-over wood can bring back nothing. If a band is watching, spotted may be true and the account says they were found. If no band is watching, spotted is false.",
       tools: [TOOL],
       tool_choice: { type: "tool", name: "report_forage" },
       messages,
     });
     if ("error" in response) return NextResponse.json({ error: response.error }, { status: 500 });
     const call = toolUses(response).find((item) => item.name === "report_forage");
-    const input = call?.input as { meals?: unknown; account?: unknown } | undefined;
+    const input = call?.input as { meals?: unknown; account?: unknown; spotted?: unknown } | undefined;
     const meals = typeof input?.meals === "number" ? Math.max(0, Math.min(men, Math.round(input.meals))) : null;
     const account = typeof input?.account === "string" ? input.account.trim() : "";
-    if (meals !== null && account) return NextResponse.json({ meals, account });
+    const spotted = input?.spotted === true && (body.bandits ?? 0) > 0;
+    if (meals !== null && account) return NextResponse.json({ meals, account, spotted });
   }
 
   return NextResponse.json({ error: "The forage came back with no account." }, { status: 500 });

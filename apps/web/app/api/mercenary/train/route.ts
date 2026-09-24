@@ -78,7 +78,7 @@ function readUpdate(input: unknown, expected: TrainUnit[]): Record<string, strin
   return lines;
 }
 
-function drillPrompt(companyName: string, drill: string, units: TrainUnit[]): string {
+function drillPrompt(companyName: string, drill: string, units: TrainUnit[], place: string, ground: string): string {
   const blocks = units
     .map((unit) => {
       const numbered = unit.lines.map((line, index) => `${index + 1}. ${line}`).join("\n");
@@ -91,6 +91,7 @@ Their childhood trade is wiki id "${unit.type ?? ""}". Call read_entry with that
     .join("\n\n");
   return `${blocks}
 
+This week they are at ${place}. ${ground}
 This week they have trained on: ${drill}
 
 How would a week of that training change what they seem like? Call update_descriptions for both units. Each description is 1 to ${DESCRIPTION_MAX} lines. You may rewrite a line, drop a line, or add a line.`;
@@ -104,6 +105,8 @@ export async function POST(req: NextRequest) {
     mode?: string;
     drill?: string;
     companyName?: string;
+    place?: string;
+    ground?: string;
     units?: TrainUnit[];
   } | null;
   if (!body) return NextResponse.json({ error: "The drill request was unreadable." }, { status: 400 });
@@ -118,7 +121,7 @@ export async function POST(req: NextRequest) {
       messages: [
         {
           role: "user",
-          content: units.map((unit) => `${unit.name}. ${unit.lines.join(" ")}`).join("\n"),
+          content: `Place: ${body.place?.trim() || "camp"}. ${body.ground?.trim() || ""}\n${units.map((unit) => `${unit.name}. ${unit.lines.join(" ")}`).join("\n")}`,
         },
       ],
     });
@@ -137,7 +140,7 @@ export async function POST(req: NextRequest) {
   const needed = new Set(units.map((unit) => unit.type).filter((type): type is string => !!type && !!resolveWikiId(type)));
   const seen = new Set<string>();
   const messages: Anthropic.Messages.MessageParam[] = [
-    { role: "user", content: drillPrompt(companyName, body.drill.trim(), units) },
+    { role: "user", content: drillPrompt(companyName, body.drill.trim(), units, body.place?.trim() || "camp", body.ground?.trim() || "") },
   ];
 
   for (let round = 0; round < 6; round++) {

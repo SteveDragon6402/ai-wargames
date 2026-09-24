@@ -15,6 +15,8 @@ import {
   claimReward,
   commitApproach,
   companyDescription,
+  defaultWeekPlan,
+  describeAction,
   dequeue,
   enqueue,
   fallbackForageMeals,
@@ -22,14 +24,19 @@ import {
   freshGame,
   headcount,
   nameStartingUnits,
+  nextContractTemplate,
   openBattle,
   refundApproach,
   rememberLeader,
   retreatQuiet,
   retreatStartsFight,
+  offerContract,
   setCompanyName,
+  setDeed,
+  setMovement,
   setRation,
-  setStance,
+  setWeekOrder,
+  takeContract,
   slipPast,
   stepQueue,
   takeForestForage,
@@ -37,9 +44,19 @@ import {
 } from "../lib/engine";
 import { NODES } from "../data/map";
 import type { BaseTypeId } from "../data/wiki";
-import { REPUTATION_KEYS, type Aftermath, type GameState, type WeekAction } from "../lib/types";
+import { REPUTATION_KEYS, type Aftermath, type DeedOrder, type GameState, type MovementOrder, type ReputationShift, type WeekAction, type WeekOrder } from "../lib/types";
 
 const KEY = "mercenary-band-v1";
+
+function revivePlan(parsed: GameState) {
+  if (parsed.weekPlan?.movement && parsed.weekPlan?.deed) return parsed.weekPlan;
+  const plan = defaultWeekPlan();
+  for (const action of parsed.queue ?? []) {
+    if (action.kind === "move") plan.movement = { kind: "march", to: action.to };
+    else if (action.kind !== "rest") plan.deed = action;
+  }
+  return plan;
+}
 
 function revive(parsed: GameState): GameState {
   const blank = freshGame();
@@ -48,6 +65,18 @@ function revive(parsed: GameState): GameState {
     ...parsed,
     lateBasic: parsed.lateBasic ?? 0,
     lateGood: parsed.lateGood ?? 0,
+    weekPlan: revivePlan(parsed),
+    weeksSinceRest: parsed.weeksSinceRest ?? 0,
+    weeksDoubleRest: parsed.weeksDoubleRest ?? 0,
+    bandAt: parsed.bandAt ?? "blackwood",
+    payAt: parsed.payAt ?? "millcross",
+    contract: parsed.contract ?? null,
+    contractStep: parsed.contractStep ?? 0,
+    hungerNote: parsed.hungerNote ?? null,
+    weekScene: parsed.weekScene ?? null,
+    drillDiffs: Array.isArray(parsed.drillDiffs) ? parsed.drillDiffs : [],
+    reputationShift: Array.isArray(parsed.reputationShift) ? parsed.reputationShift : [],
+    yearClosing: parsed.yearClosing ?? null,
     units: (parsed.units ?? []).map((unit) => ({
       ...unit,
       lines: Array.isArray(unit.lines) ? unit.lines.filter((line) => typeof line === "string" && line.trim()) : [],
@@ -136,6 +165,119 @@ export function useMercenary() {
     return { state: next, failed };
   }
 
+  function shifts(before: GameState, after: GameState): ReputationShift[] {
+    return REPUTATION_KEYS.filter((key) => after.reputation[key] && after.reputation[key] !== before.reputation[key]).map((key) => ({
+      key,
+      text: after.reputation[key],
+    }));
+  }
+
+  async function refreshReputation(base: GameState, happened: string) {
+    const pulled = await pullReputation(base, happened);
+    const current = ref.current;
+    if (!current) return;
+    commit({
+      ...current,
+      reputation: pulled.state.reputation,
+      reputationShift: shifts(base, pulled.state).length ? shifts(base, pulled.state) : current.reputationShift,
+    });
+    if (pulled.failed) setError(pulled.failed);
+  }
+
+  async function closeYear(current: GameState): Promise<string | null> {
+    try {
+      const res = await fetch("/api/mercenary/year/close", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyName: current.companyName,
+          units: current.units.map((unit) => ({ name: unit.name, count: unit.count, lines: unit.lines })),
+          decisions: current.decisions,
+          reputation: current.reputation,
+        }),
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as { closing?: string };
+      return data.closing?.trim() || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function narrateWeek(state: GameState): Promise<GameState> {
+    const plan = state.weekPlan;
+    const place = NODES[state.location];
+    const fought = state.moraleFromBattle;
+    const doubleRest = plan.movement.kind === "rest" && plan.deed.kind === "rest" && !state.movedThisWeek;
+    let closed = finishWeek(state);
+    if (closed.phase === "wiped") return closed;
+    const movement = plan.movement.kind === "march" ? `Marched to ${NODES[plan.movement.to].name}` : "Rested where they were";
+    const deed = describeAction(plan.deed.kind === "rest" ? { kind: "rest" } : plan.deed);
+    const hungry = /hungry|starving/i.test(closed.hungerNote ?? "");
+    if (!fought) {
+      setBusy(doubleRest ? "They are settling in." : "The week is being written.");
+      try {
+        const [sceneRes, conditionRes] = await Promise.all([
+          fetch("/api/mercenary/week/scene", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              doubleRest,
+              movement,
+              deed,
+              place: place.name,
+              ground: place.ground,
+              kind: place.kind,
+              hungerNote: closed.hungerNote,
+              company: companyDescription(state),
+              watched: !!state.bandits && state.location === state.bandAt,
+            }),
+          }),
+          fetch("/api/mercenary/week/condition", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              movement,
+              deed,
+              doubleRest,
+              place: place.name,
+              ground: place.ground,
+              kind: place.kind,
+              hungerNote: closed.hungerNote,
+              hungry,
+              weeksSinceRest: closed.weeksSinceRest,
+              weeksDoubleRest: closed.weeksDoubleRest,
+              morale: closed.morale,
+              condition: closed.condition,
+              stance: closed.stance,
+              fought: false,
+            }),
+          }),
+        ]);
+        if (sceneRes.ok) {
+          const data = (await sceneRes.json()) as { scene?: string };
+          if (data.scene?.trim()) closed = { ...closed, weekScene: data.scene.trim() };
+        }
+        if (conditionRes.ok) {
+          const data = (await conditionRes.json()) as { morale?: string; condition?: string; stance?: string };
+          if (data.morale && data.condition && data.stance) {
+            closed = { ...closed, morale: data.morale, condition: data.condition, stance: data.stance };
+          }
+        }
+      } catch {
+        /* The week's rules already stand. */
+      }
+    } else if (closed.lastBrief) {
+      closed = { ...closed, weekScene: closed.lastBrief };
+    }
+    if (closed.phase === "year-end" && !closed.yearClosing) {
+      setBusy("The year is being closed.");
+      const closing = await closeYear(closed);
+      if (closing) closed = { ...closed, yearClosing: closing };
+    }
+    return closed;
+  }
+
   async function continueWeek(start: GameState) {
     let current = start.resolveIndex === 0 ? beginResolution(start) : start;
     while (true) {
@@ -151,6 +293,7 @@ export function useMercenary() {
         const men = headcount(step.state.units);
         let meals = fallbackForageMeals(men);
         let account = `They foraged in ${place.name} and brought back ${meals} rations.`;
+        let spotted = false;
         try {
           const res = await fetch("/api/mercenary/forest/forage", {
             method: "POST",
@@ -163,9 +306,10 @@ export function useMercenary() {
             }),
           });
           if (res.ok) {
-            const data = (await res.json()) as { meals?: number; account?: string };
+            const data = (await res.json()) as { meals?: number; account?: string; spotted?: boolean };
             if (typeof data.meals === "number" && Number.isFinite(data.meals)) meals = data.meals;
             if (typeof data.account === "string" && data.account.trim()) account = data.account.trim();
+            if (data.spotted) spotted = true;
           }
         } catch {
           /* The fallback ration roll already stands. */
@@ -174,6 +318,11 @@ export function useMercenary() {
         if (!applied.ok) {
           commit(current);
           setError(applied.error);
+          setBusy(null);
+          return;
+        }
+        if (spotted && applied.state.bandits && applied.state.location === applied.state.bandAt) {
+          commit({ ...applied.state, screen: "forest" });
           setBusy(null);
           return;
         }
@@ -190,6 +339,8 @@ export function useMercenary() {
             mode: "apply",
             drill: step.drill,
             companyName: step.state.companyName,
+            place: NODES[step.state.location].name,
+            ground: NODES[step.state.location].ground,
             units,
           }),
         });
@@ -211,7 +362,13 @@ export function useMercenary() {
         continue;
       }
       if (step.kind === "done") {
-        commit(finishWeek(step.state));
+        const narrated = await narrateWeek(step.state);
+        const latest = ref.current;
+        commit({
+          ...narrated,
+          reputation: latest?.reputation ?? narrated.reputation,
+          reputationShift: latest?.reputationShift?.length ? latest.reputationShift : narrated.reputationShift,
+        });
         setBusy(null);
         return;
       }
@@ -299,9 +456,32 @@ export function useMercenary() {
       if (!ref.current) return;
       commit(setRation(ref.current, value));
     },
-    stance(value: string) {
+    move(movement: MovementOrder) {
       if (!ref.current) return;
-      commit(setStance(ref.current, value));
+      const result = setMovement(ref.current, movement);
+      if (!result.ok) setError(result.error);
+      else {
+        setError(null);
+        commit(result.state);
+      }
+    },
+    act(deed: DeedOrder) {
+      if (!ref.current) return;
+      const result = setDeed(ref.current, deed);
+      if (!result.ok) setError(result.error);
+      else {
+        setError(null);
+        commit(result.state);
+      }
+    },
+    order(next: WeekOrder) {
+      if (!ref.current) return;
+      const result = setWeekOrder(ref.current, next);
+      if (!result.ok) setError(result.error);
+      else {
+        setError(null);
+        commit(result.state);
+      }
     },
     show(screen: GameState["screen"]) {
       if (!ref.current) return;
@@ -323,7 +503,12 @@ export function useMercenary() {
       const res = await fetch("/api/mercenary/train", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "suggest", units }),
+        body: JSON.stringify({
+          mode: "suggest",
+          place: NODES[current.location].name,
+          ground: NODES[current.location].ground,
+          units,
+        }),
       });
       setBusy(null);
       if (!res.ok) {
@@ -530,16 +715,16 @@ export function useMercenary() {
         return;
       }
       const applied = applyOutcome(committed.state, validated.value, data.brief, data.chronicle);
-      let next = {
+      const foe = committed.state.leader.name;
+      const next = {
         ...applied.state,
-        decisions: [...applied.state.decisions, { week: committed.state.week, text: `Fought the Blackwood bandits. ${data.brief}` }],
+        decisions: [...applied.state.decisions, { week: committed.state.week, text: `Fought ${foe}. ${data.brief}` }],
       };
-      if (applied.result === "defeat") next = finishWeek(next);
-      setBusy("Word of the company is travelling.");
-      const pulled = await pullReputation(next, `Fought the Blackwood bandits. ${data.brief}`);
-      commit(applied.result === "victory" ? { ...pulled.state, screen: "choice" } : pulled.state);
-      setError(pulled.failed);
+      const shown = applied.result === "victory" ? { ...next, screen: "choice" as const } : { ...next, screen: "result" as const };
+      commit(shown);
       setBusy(null);
+      void refreshReputation(shown, `Fought ${foe}. ${data.brief}`);
+      if (applied.result === "defeat" && shown.phase !== "wiped") await continueWeek(shown);
     },
     async choose(choice: Aftermath, names: string[]) {
       const current = ref.current;
@@ -550,12 +735,55 @@ export function useMercenary() {
         return;
       }
       const happened = result.state.decisions.at(-1)?.text ?? "The company chose what to do with the survivors.";
-      const closed = finishWeek(result.state);
-      setBusy("Word of the company is travelling.");
-      const pulled = await pullReputation(closed, happened);
-      commit(pulled.state);
-      setError(pulled.failed);
+      commit(result.state);
+      void refreshReputation(result.state, happened);
+      await continueWeek(result.state);
+    },
+    async hearContract() {
+      const current = ref.current;
+      if (!current || busy) return;
+      const template = nextContractTemplate(current);
+      if (!template) return;
+      setBusy("Word of work is travelling.");
+      setError(null);
+      const place = NODES[template.place];
+      let offer = "";
+      try {
+        const res = await fetch("/api/mercenary/contract/offer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            companyName: current.companyName,
+            payer: template.payer,
+            place: place.name,
+            ground: place.ground,
+            bandName: template.bandName,
+            leaderName: template.leaderName,
+            purse: template.purse,
+            payAt: NODES[template.payAt].name,
+            standing: current.reputation[template.payer],
+          }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { offer?: string };
+          offer = data.offer?.trim() ?? "";
+        }
+      } catch {
+        offer = "";
+      }
+      const offered = offerContract(ref.current ?? current, offer);
+      if (!offered.ok) setError(offered.error);
+      else commit(offered.state);
       setBusy(null);
+    },
+    takeOffer() {
+      if (!ref.current) return;
+      const result = takeContract(ref.current);
+      if (!result.ok) setError(result.error);
+      else {
+        setError(null);
+        commit(result.state);
+      }
     },
     rewardReady: state ? canClaimReward(state) : false,
   };
