@@ -97,7 +97,7 @@ export default function SecretTestLanding() {
           padding: 4,
         }}
       >
-        <a href="/" className="rose-link" style={{ padding: "8px 16px" }}>
+        <a href="/lobby/five-kings" className="rose-link" style={{ padding: "8px 16px" }}>
           War of the Five Kings
         </a>
         <span

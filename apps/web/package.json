@@ -9,7 +9,7 @@
     "start": "next start -p ${PORT:-3000}",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test lib/gate-auth.test.ts app/got-houses-v2/lib/*.test.ts app/got-houses-v2/hooks/*.test.ts"
+    "test": "tsx --test lib/gate-auth.test.ts app/got-houses-v2/lib/*.test.ts app/got-houses-v2/hooks/*.test.ts app/mercenary/lib/*.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.39.0",
