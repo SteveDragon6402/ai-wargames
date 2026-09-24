@@ -17,6 +17,7 @@ import {
   dequeue,
   enqueue,
   finishWeek,
+  foodBlocksWeek,
   freshGame,
   headcount,
   nameStartingUnits,
@@ -245,6 +246,11 @@ export function useMercenary() {
     async liveWeek() {
       const current = ref.current;
       if (!current || busy) return;
+      const block = foodBlocksWeek(current);
+      if (block) {
+        setError(block);
+        return;
+      }
       setError(null);
       setBusy("The week goes by.");
       await continueWeek(current);

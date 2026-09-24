@@ -131,3 +131,21 @@ export function isBaseType(id: UnitTypeId): id is BaseTypeId {
 export function isSpecialType(id: UnitTypeId): id is SpecialTypeId {
   return (SPECIAL_TYPES as string[]).includes(id);
 }
+
+const WIKI_ALIASES: Record<string, WikiId> = {
+  bandits: "bandit",
+  swordsman: "swordsmen",
+  spearman: "spearmen",
+  archer: "archers",
+  lightcavalry: "light_cavalry",
+  heavycavalry: "heavy_cavalry",
+  berserker: "berserkers",
+  ogre: "ogres",
+};
+
+export function resolveWikiId(raw: string): WikiId | null {
+  const key = raw.trim().toLowerCase().replace(/[\s-]+/g, "_");
+  if (key in WIKI) return key as WikiId;
+  const squashed = key.replace(/_/g, "");
+  return WIKI_ALIASES[key] ?? WIKI_ALIASES[squashed] ?? null;
+}

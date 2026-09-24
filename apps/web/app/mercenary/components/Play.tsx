@@ -7,7 +7,7 @@ import { NODES, neighbors, type NodeId } from "../data/map";
 import { KINGDOM_NAME } from "../data/map";
 import { APPROACH_WORDS, PRICE } from "../data/constants";
 import { WIKI, type UnitTypeId } from "../data/wiki";
-import { describeAction, namesForSurvivors, recruitableTypes, unitsNeeded, wordCount } from "../lib/engine";
+import { describeAction, foodBlocksWeek, headcount, manPrice, namesForSurvivors, recruitableTypes, recruitmentPlan, wordCount } from "../lib/engine";
 import { REPUTATION_KEYS, REPUTATION_LABEL, type Aftermath, type GameState, type WeekAction } from "../lib/types";
 
 type GameApi = {
@@ -38,23 +38,39 @@ export default function Play({ state, api }: { state: GameState; api: GameApi })
 
   return (
     <main className="mx-auto min-h-dvh max-w-3xl px-4 py-6 sm:px-6">
-      <header className="flex items-start justify-between gap-4 border-b border-border pb-4">
-        <div>
-          <a href="/" className="text-[12px] text-muted-foreground hover:text-foreground">
-            All games
-          </a>
-          <h1 className="mt-1 font-display text-4xl font-semibold leading-none text-foreground">{state.companyName}</h1>
-          <p className="mt-2 text-[13px] text-muted-foreground">
-            Week {Math.min(state.week, 52)} of 52 · {place.name} · {KINGDOM_NAME[place.kingdom]}
-          </p>
-        </div>
-        <div className="flex size-16 shrink-0 items-center justify-center border border-border font-display text-2xl text-muted-foreground">
-          ✠
-        </div>
+      <header className="border-b border-border pb-4">
+        <a href="/" className="text-[13px] text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+          All games
+        </a>
+        <h1 className="mt-2 max-w-[18ch] text-balance font-display text-4xl font-semibold leading-none text-foreground">{state.companyName}</h1>
+        <p className="mt-2 text-[15px] text-foreground">
+          Week {Math.min(state.week, 52)} of 52, {place.name}, {KINGDOM_NAME[place.kingdom]}
+        </p>
       </header>
 
-      {api.error && <p className="mt-4 rounded-sm border border-bad/40 bg-bad/10 px-3 py-2 text-[13px] text-bad">{api.error}</p>}
-      {api.busy && <p className="mt-4 text-[13px] text-muted-foreground">{api.busy}</p>}
+      {state.phase === "play" && state.screen !== "dashboard" && (
+        <p className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-muted-foreground">
+          <span>{headcount(state.units)} men</span>
+          <span>{state.money} coin</span>
+          <span className={state.basicFood + state.goodFood < headcount(state.units) ? "text-bad" : undefined}>
+            {state.basicFood + state.goodFood} food
+          </span>
+          <span>
+            {state.queue.length} of 2 actions
+          </span>
+        </p>
+      )}
+
+      {api.error && (
+        <p role="alert" className="mt-4 text-[15px] text-bad">
+          {api.error}
+        </p>
+      )}
+      {api.busy && (
+        <p aria-live="polite" className="mt-4 text-[15px] text-foreground">
+          {api.busy}
+        </p>
+      )}
 
       {state.phase === "wiped" && <End title="The company is gone" body="There is no one left to lead." onReset={api.reset} />}
       {state.phase === "year-end" && <End title="The year is over" body={`${state.companyName} is still in the field.`} onReset={api.reset} />}
@@ -84,47 +100,185 @@ function End({ title, body, onReset }: { title: string; body: string; onReset: (
 
 function Dashboard({ state, api, locked }: { state: GameState; api: GameApi; locked: boolean }) {
   const place = NODES[state.location];
+  const men = headcount(state.units);
+  const food = state.basicFood + state.goodFood;
+  const foodStop = foodBlocksWeek(state);
+  const atMarket = place.kind !== "wild";
+  const moved = state.movedThisWeek || state.queue.some((action) => action.kind === "move");
+  const slotsLeft = 2 - state.queue.length;
+  const [panel, setPanel] = useState<null | "recruit" | "buy" | "train" | "cook">(null);
+  const offerWork = place.id === "millcross" && !state.villageWork && !!state.bandits;
+  const lead = api.rewardReady ? "pay" : offerWork ? "elder" : foodStop && atMarket ? "buy" : foodStop ? "march" : "live";
+
+  function openPanel(next: "recruit" | "buy" | "train" | "cook") {
+    setPanel((current) => (current === next ? null : next));
+  }
+
   return (
-    <div className="mt-6 space-y-6">
-      <section aria-label="Standing" className="rounded-sm border border-border px-4 py-3">
-        <h2 className="text-[12px] uppercase tracking-[0.14em] text-muted-foreground">Standing</h2>
-        <p className="mt-2 text-[15px] leading-relaxed text-foreground">{state.morale}</p>
-        <StanceLine state={state} api={api} />
-        <dl className="mt-3 grid gap-2 sm:grid-cols-2">
-          {REPUTATION_KEYS.map((key) => (
-            <div key={key}>
-              <dt className="text-[12px] text-muted-foreground">{REPUTATION_LABEL[key]}</dt>
-              <dd className="text-[13px] leading-snug text-foreground">{state.reputation[key] || "—"}</dd>
-            </div>
-          ))}
-        </dl>
+    <div className="mt-8 space-y-8">
+      <section aria-label="Status">
+        <div className="flex flex-wrap gap-x-8 gap-y-3">
+          <p className="font-display text-3xl font-semibold leading-none text-foreground">
+            {men} <span className="font-sans text-[15px] font-normal text-muted-foreground">men</span>
+          </p>
+          <p className="font-display text-3xl font-semibold leading-none text-foreground">
+            {state.money} <span className="font-sans text-[15px] font-normal text-muted-foreground">coin</span>
+          </p>
+          <p className={food < men ? "font-display text-3xl font-semibold leading-none text-bad" : "font-display text-3xl font-semibold leading-none text-foreground"}>
+            {food} <span className={food < men ? "font-sans text-[15px] font-normal text-bad" : "font-sans text-[15px] font-normal text-muted-foreground"}>{food < men ? "food, short" : "food"}</span>
+          </p>
+          <p className="font-display text-3xl font-semibold leading-none text-foreground">
+            {state.supply} <span className="font-sans text-[15px] font-normal text-muted-foreground">supply</span>
+          </p>
+        </div>
+        <div role="group" aria-label="Ration for this week" className="mt-4 flex flex-wrap gap-4">
+          <button
+            type="button"
+            aria-pressed={state.ration === "plain"}
+            onClick={() => api.ration("plain")}
+            className={state.ration === "plain" ? "text-[15px] font-semibold text-foreground underline decoration-primary underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" : "text-[15px] text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"}
+          >
+            Plain ration
+          </button>
+          <button
+            type="button"
+            aria-pressed={state.ration === "hearty"}
+            onClick={() => api.ration("hearty")}
+            className={state.ration === "hearty" ? "text-[15px] font-semibold text-foreground underline decoration-primary underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" : "text-[15px] text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"}
+          >
+            Hearty ration
+          </button>
+        </div>
       </section>
 
-      <section aria-label="The company">
-        <h2 className="font-display text-2xl text-foreground">The company</h2>
-        <ul className="mt-3 space-y-2">
-          {state.units.map((unit) => (
-            <UnitRow key={unit.id} unit={unit} />
-          ))}
-        </ul>
-      </section>
+      <p className="text-[15px] leading-relaxed text-foreground">{state.morale}</p>
 
-      <section aria-label="Stores" className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-        <Store label="Coin" value={String(state.money)} />
-        <Store label="Plain food" value={String(state.basicFood)} />
-        <Store label="Good food" value={String(state.goodFood)} />
-        <Store label="Supply" value={String(state.supply)} />
-      </section>
+      {offerWork && <p className="text-[15px] leading-relaxed text-foreground">The elder of Millcross is in the yard. The Blackwood road is not safe.</p>}
+      {place.id === "millcross" && state.villageWork && state.bandits && (
+        <p className="text-[15px] leading-relaxed text-foreground">You took the work. Harl the Reed is still in Blackwood.</p>
+      )}
+      {api.rewardReady && <p className="text-[15px] leading-relaxed text-foreground">Millcross owes you for the Blackwood road.</p>}
 
-      <div className="flex flex-wrap gap-2 text-[13px]">
-        <span className="text-muted-foreground">Ration</span>
-        <button type="button" onClick={() => api.ration("plain")} className={state.ration === "plain" ? "text-foreground" : "text-muted-foreground"}>
-          Plain
-        </button>
-        <button type="button" onClick={() => api.ration("hearty")} className={state.ration === "hearty" ? "text-foreground" : "text-muted-foreground"}>
-          Hearty
-        </button>
+      {(api.rewardReady || place.id === "millcross") && (
+      <div className="flex flex-wrap gap-3">
+        {api.rewardReady && (
+          <Button type="button" variant={lead === "pay" ? "default" : "outline"} onClick={api.takeReward} disabled={!!api.busy} className="h-12 px-5 text-[15px]">
+            Collect the village's pay
+          </Button>
+        )}
+        {offerWork && (
+          <Button type="button" variant={lead === "elder" ? "default" : "outline"} onClick={() => api.show("elder")} className="h-12 px-5 text-[15px]">
+            Ask the elder for work
+          </Button>
+        )}
+        {place.id === "millcross" && !offerWork && (
+          <Button type="button" variant="link" onClick={() => api.show("elder")} className="h-12 px-0 text-[15px]">
+            Talk to the elder
+          </Button>
+        )}
       </div>
+      )}
+
+      <section aria-label="This week" className="rounded-sm border border-border bg-card p-4 sm:p-6">
+        <div className="flex items-baseline justify-between gap-3">
+          <h2 className="max-w-[12ch] text-balance font-display text-3xl font-semibold text-foreground">This week</h2>
+          <p className="text-[15px] text-muted-foreground">{state.queue.length} of 2 actions</p>
+        </div>
+        {foodStop && (
+          <p id="food-stop" role="alert" className="mt-4 text-[15px] leading-relaxed text-bad">
+            {foodStop}
+          </p>
+        )}
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          {[0, 1].map((index) => {
+            const action = state.queue[index];
+            const done = index < state.resolveIndex;
+            return (
+              <div key={index} className="flex min-h-16 items-start justify-between gap-3 bg-background px-3 py-3">
+                {action ? (
+                  <p className="text-[15px] leading-snug text-foreground">
+                    {done ? "Done. " : ""}
+                    {describeAction(action)}
+                  </p>
+                ) : (
+                  <p className="text-[15px] text-muted-foreground">{index === 0 ? "First action is open" : "Second action is open"}</p>
+                )}
+                {action && state.resolveIndex === 0 && (
+                  <button
+                    type="button"
+                    onClick={() => api.unqueue(index)}
+                    className="shrink-0 text-[13px] text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                  >
+                    Drop
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+
+        {!locked && slotsLeft > 0 && (
+          <div className="mt-6">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant={lead === "march" ? "default" : "outline"}
+                disabled={moved}
+                onClick={() => api.show("map")}
+                className="h-11 text-[15px]"
+              >
+                March
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={!atMarket}
+                aria-expanded={panel === "recruit"}
+                onClick={() => openPanel("recruit")}
+                className="h-11 text-[15px]"
+              >
+                Recruit
+              </Button>
+              <Button
+                type="button"
+                variant={lead === "buy" ? "default" : "outline"}
+                disabled={!atMarket}
+                aria-expanded={panel === "buy"}
+                onClick={() => openPanel("buy")}
+                className="h-11 text-[15px]"
+              >
+                Buy
+              </Button>
+            </div>
+            {!atMarket && <p className="mt-3 text-[15px] text-muted-foreground">Recruit and buy in a village or a capital.</p>}
+            {moved && <p className="mt-3 text-[15px] text-muted-foreground">The march is already ordered.</p>}
+            <div className="mt-3 flex gap-4">
+              <Button type="button" variant="link" disabled={state.units.length < 2} aria-expanded={panel === "train"} onClick={() => openPanel("train")} className="h-9 px-0 text-[15px]">
+                Train
+              </Button>
+              <Button type="button" variant="link" aria-expanded={panel === "cook"} onClick={() => openPanel("cook")} className="h-9 px-0 text-[15px]">
+                Cook
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {panel === "recruit" && atMarket && <RecruitPanel state={state} api={api} onDone={() => setPanel(null)} />}
+        {panel === "buy" && atMarket && <BuyPanel state={state} api={api} onDone={() => setPanel(null)} />}
+        {panel === "train" && <TrainBox state={state} api={api} onDone={() => setPanel(null)} />}
+        {panel === "cook" && <CookPanel api={api} onDone={() => setPanel(null)} />}
+
+        <Button
+          type="button"
+          variant={lead === "live" ? "default" : "outline"}
+          onClick={api.liveWeek}
+          disabled={!!api.busy || !!foodStop}
+          aria-describedby={foodStop ? "food-stop" : undefined}
+          className="mt-6 h-12 w-full text-[15px]"
+        >
+          {state.resolveIndex > 0 ? "Continue the week" : "Live this week"}
+        </Button>
+      </section>
 
       {state.notices.length > 0 && (
         <ul className="text-[13px] text-muted-foreground">
@@ -141,48 +295,36 @@ function Dashboard({ state, api, locked }: { state: GameState; api: GameApi; loc
         </button>
       )}
 
-      <section aria-label="This week" className="rounded-sm border border-foreground/20 bg-card p-4">
-        <h2 className="font-display text-2xl text-foreground">This week</h2>
-        <ol className="mt-3 space-y-2">
-          {state.queue.map((action, index) => (
-            <li key={`${action.kind}-${index}`} className="flex items-center justify-between gap-3 text-[14px]">
-              <span>
-                {index < state.resolveIndex ? "Done. " : `${index + 1}. `}
-                {describeAction(action)}
-              </span>
-              {state.resolveIndex === 0 && (
-                <button type="button" onClick={() => api.unqueue(index)} className="text-[12px] text-muted-foreground">
-                  Drop
-                </button>
-              )}
-            </li>
+      <section aria-label="The company">
+        <h2 className="font-display text-2xl text-foreground">The company</h2>
+        <StanceLine state={state} api={api} />
+        <ul className="mt-3 space-y-2">
+          {state.units.map((unit) => (
+            <UnitRow key={unit.id} unit={unit} />
           ))}
-          {state.queue.length === 0 && <li className="text-[13px] text-muted-foreground">Nothing ordered. A quiet week still spends food.</li>}
-        </ol>
-        {!locked && state.phase === "play" && (
-          <div className="mt-4 flex flex-wrap gap-2">
-            <Button type="button" variant="outline" onClick={() => api.show("map")} className="h-9 text-[13px]">
-              Map
-            </Button>
-            {place.kind !== "wild" && <RecruitBuy state={state} api={api} />}
-            <ConvertButtons api={api} />
-            {state.units.length >= 2 && <TrainBox state={state} api={api} />}
-            {place.id === "millcross" && (
-              <Button type="button" variant="outline" onClick={() => api.show("elder")} className="h-9 text-[13px]">
-                Talk to the elder
-              </Button>
-            )}
-            {api.rewardReady && (
-              <Button type="button" onClick={api.takeReward} disabled={!!api.busy} className="h-9 text-[13px]">
-                Collect the village's pay
-              </Button>
-            )}
-          </div>
-        )}
-        <Button type="button" onClick={api.liveWeek} disabled={!!api.busy} className="mt-4 h-10 w-full text-[13px]">
-          {state.resolveIndex > 0 ? "Continue the week" : "Live this week"}
-        </Button>
+        </ul>
       </section>
+
+      <details className="rounded-sm border border-border px-4 py-3">
+        <summary className="cursor-pointer text-[15px] text-muted-foreground">What people say of you</summary>
+        <dl className="mt-3 grid gap-3 sm:grid-cols-2">
+          {REPUTATION_KEYS.map((key) => (
+            <div key={key}>
+              <dt className="text-[13px] text-muted-foreground">{REPUTATION_LABEL[key]}</dt>
+              <dd className="text-[15px] leading-snug text-foreground">{state.reputation[key] || "—"}</dd>
+            </div>
+          ))}
+        </dl>
+        <button
+          type="button"
+          onClick={() => {
+            if (window.confirm("Disband this company and start again?")) api.reset();
+          }}
+          className="mt-4 text-[13px] text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          Disband the company
+        </button>
+      </details>
     </div>
   );
 }
@@ -207,7 +349,7 @@ function UnitRow({ unit }: { unit: GameState["units"][number] }) {
   const [open, setOpen] = useState(false);
   return (
     <li className="rounded-sm border border-border bg-card">
-      <button type="button" onClick={() => setOpen((value) => !value)} className="flex w-full items-baseline justify-between px-4 py-3 text-left">
+      <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="flex w-full items-baseline justify-between px-4 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
         <span className="font-display text-xl text-foreground">{unit.name}</span>
         <span className="text-[13px] text-muted-foreground">
           {unit.count} {WIKI[unit.type].title.toLowerCase()}
@@ -236,65 +378,103 @@ function UnitRow({ unit }: { unit: GameState["units"][number] }) {
   );
 }
 
-function Store({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-sm border border-border px-3 py-2">
-      <div className="text-[12px] text-muted-foreground">{label}</div>
-      <div className="font-display text-2xl text-foreground">{value}</div>
-    </div>
-  );
-}
-
-function ConvertButtons({ api }: { api: GameApi }) {
-  return (
-    <>
-      <Button type="button" variant="outline" onClick={() => api.queue({ kind: "convert", direction: "to-good" })} className="h-9 text-[13px]">
-        Improve food
-      </Button>
-      <Button type="button" variant="outline" onClick={() => api.queue({ kind: "convert", direction: "to-basic" })} className="h-9 text-[13px]">
-        Stretch food
-      </Button>
-    </>
-  );
-}
-
-function RecruitBuy({ state, api }: { state: GameState; api: GameApi }) {
+function RecruitPanel({ state, api, onDone }: { state: GameState; api: GameApi; onDone: () => void }) {
   const types = recruitableTypes(state.location);
   const [type, setType] = useState<UnitTypeId>(types[0] ?? "swordsmen");
-  const [count, setCount] = useState(1);
-  const [names, setNames] = useState<string[]>([""]);
-  const [store, setStore] = useState<"basic" | "good" | "supply">("basic");
-  const [amount, setAmount] = useState(5);
-  const plan = unitsNeeded(state.units, type, count);
+  const [count, setCount] = useState<3 | 5 | 10 | null>(null);
+  const [into, setInto] = useState<string | null>(null);
+  const [names, setNames] = useState<string[]>([]);
+  const price = manPrice(type);
+  const targets = state.units.filter((unit) => unit.type === type && unit.count < 10);
+  const plan = count && into ? recruitmentPlan(state.units, type, count, into) : null;
+  const named = plan ? plan.fresh.every((_, index) => (names[index] ?? "").trim()) : false;
+
+  function chooseType(next: UnitTypeId) {
+    setType(next);
+    setCount(null);
+    setInto(null);
+    setNames([]);
+  }
+
+  function chooseInto(next: string) {
+    if (!count) return;
+    setInto(next);
+    setNames(recruitmentPlan(state.units, type, count, next).fresh.map(() => ""));
+  }
 
   return (
-    <div className="flex w-full flex-col gap-2 border-t border-border pt-3">
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="text-[12px] text-muted-foreground">
-          Hire
-          <select value={type} onChange={(event) => setType(event.target.value as UnitTypeId)} className="mt-1 block h-9 bg-background px-2 text-[13px] text-foreground">
-            {types.map((item) => (
-              <option key={item} value={item}>
-                {WIKI[item].title} · {PRICE[item === "light_cavalry" || item === "heavy_cavalry" || item === "berserkers" ? "specialMan" : "baseMan"]} coin
-              </option>
-            ))}
-          </select>
-        </label>
-        <Input type="number" min={1} max={40} value={count} onChange={(event) => setCount(Number(event.target.value))} className="h-9 w-20 bg-background" />
-        <Button
-          type="button"
-          variant="outline"
-          className="h-9 text-[13px]"
-          onClick={() => api.queue({ kind: "recruit", type, count, names: plan.fresh.map((_, index) => names[index] ?? "") })}
-        >
-          Add hiring
-        </Button>
+    <div className="mt-4 border-t border-border pt-4">
+      <div className="flex items-baseline justify-between">
+        <h3 className="font-display text-xl text-foreground">Who will take service</h3>
+        <button type="button" onClick={onDone} className="text-[12px] text-muted-foreground">
+          Close
+        </button>
       </div>
-      {plan.fresh.length > 0 &&
+      <ul className="mt-3 space-y-1">
+        {types.map((item) => (
+          <li key={item}>
+            <button
+              type="button"
+              aria-pressed={item === type}
+              onClick={() => chooseType(item)}
+              className={item === type ? "text-[15px] font-semibold text-foreground underline decoration-primary underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" : "text-[15px] text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"}
+            >
+              {WIKI[item].title}, {manPrice(item)} coin a man
+            </button>
+          </li>
+        ))}
+      </ul>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {([3, 5, 10] as const).map((size) => (
+          <Button
+            key={size}
+            type="button"
+            variant={count === size ? "default" : "outline"}
+            aria-pressed={count === size}
+            disabled={price * size > state.money}
+            onClick={() => {
+              setCount(size);
+              setInto(null);
+              setNames([]);
+            }}
+            className="h-10 text-[13px]"
+          >
+            {size} for {price * size} coin
+          </Button>
+        ))}
+      </div>
+      {count && (
+        <div className="mt-4">
+          <p className="text-[15px] text-foreground">Add them to</p>
+          <div role="group" aria-label="Add them to" className="mt-2 flex flex-col items-start gap-2">
+            {targets.map((unit) => (
+              <button
+                key={unit.id}
+                type="button"
+                aria-pressed={into === unit.id}
+                onClick={() => chooseInto(unit.id)}
+                className={into === unit.id ? "text-[15px] font-semibold text-foreground underline decoration-primary underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" : "text-[15px] text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"}
+              >
+                {unit.name}, {unit.count} of 10
+              </button>
+            ))}
+            <button
+              type="button"
+              aria-pressed={into === "new"}
+              onClick={() => chooseInto("new")}
+              className={into === "new" ? "text-[15px] font-semibold text-foreground underline decoration-primary underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" : "text-[15px] text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"}
+            >
+              A new unit
+            </button>
+          </div>
+        </div>
+      )}
+      {plan &&
         plan.fresh.map((fresh, index) => (
+          <label key={`${type}-${into}-${index}`} htmlFor={`recruit-name-${index}`} className="mt-3 block text-[15px] text-foreground">
+            Name the new unit of {fresh}
           <Input
-            key={`${type}-${index}`}
-            placeholder={`Name the new unit of ${fresh}`}
+            id={`recruit-name-${index}`}
             value={names[index] ?? ""}
             maxLength={40}
             onChange={(event) =>
@@ -304,28 +484,114 @@ function RecruitBuy({ state, api }: { state: GameState; api: GameApi }) {
                 return next;
               })
             }
-            className="h-9 bg-background"
+            className="mt-2 h-9 bg-background"
           />
+          </label>
         ))}
-      <div className="flex flex-wrap items-end gap-2">
-        <label className="text-[12px] text-muted-foreground">
-          Buy
-          <select value={store} onChange={(event) => setStore(event.target.value as "basic" | "good" | "supply")} className="mt-1 block h-9 bg-background px-2 text-[13px] text-foreground">
-            <option value="basic">Plain food · {PRICE.basic}</option>
-            <option value="good">Good food · {PRICE.good}</option>
-            <option value="supply">Supply · {PRICE.supply}</option>
-          </select>
-        </label>
-        <Input type="number" min={1} max={100} value={amount} onChange={(event) => setAmount(Number(event.target.value))} className="h-9 w-20 bg-background" />
-        <Button type="button" variant="outline" className="h-9 text-[13px]" onClick={() => api.queue({ kind: "buy", store, amount })}>
-          Add purchase
+      {plan && count && into && (
+        <Button
+          type="button"
+          disabled={!named || price * count > state.money}
+          onClick={() => {
+            api.queue({
+              kind: "recruit",
+              type,
+              count,
+              names: plan.fresh.map((_, index) => (names[index] ?? "").trim()),
+              into,
+            });
+            onDone();
+          }}
+          className="mt-3 h-10 text-[13px]"
+        >
+          Hire {count} {WIKI[type].title.toLowerCase()}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+function BuyPanel({ state, api, onDone }: { state: GameState; api: GameApi; onDone: () => void }) {
+  const rows = [
+    { store: "basic" as const, label: "Plain food", price: PRICE.basic },
+    { store: "good" as const, label: "Good food", price: PRICE.good },
+    { store: "supply" as const, label: "Supply", price: PRICE.supply },
+  ];
+  return (
+    <div className="mt-4 space-y-3 border-t border-border pt-4">
+      <div className="flex items-baseline justify-between">
+        <h3 className="font-display text-xl text-foreground">The stores</h3>
+        <button type="button" onClick={onDone} className="text-[12px] text-muted-foreground">
+          Close
+        </button>
+      </div>
+      {rows.map((row) => (
+        <div key={row.store} className="flex flex-wrap items-center justify-between gap-2">
+          <span className="text-[14px] text-foreground">
+            {row.label}, {row.price} coin
+          </span>
+          <div className="flex gap-2">
+            {[5, 10, 20].map((amount) => (
+              <Button
+                key={amount}
+                type="button"
+                variant="outline"
+                disabled={state.money < row.price * amount}
+                onClick={() => {
+                  api.queue({ kind: "buy", store: row.store, amount });
+                  onDone();
+                }}
+                className="h-9 text-[13px]"
+              >
+                {amount}
+              </Button>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function CookPanel({ api, onDone }: { api: GameApi; onDone: () => void }) {
+  return (
+    <div className="mt-4 border-t border-border pt-4">
+      <div className="flex items-baseline justify-between">
+        <h3 className="font-display text-xl text-foreground">The cook</h3>
+        <button type="button" onClick={onDone} className="text-[12px] text-muted-foreground">
+          Close
+        </button>
+      </div>
+      <p className="mt-2 text-[13px] text-muted-foreground">Two plain meals become one good meal, up to ten. Or the other way.</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            api.queue({ kind: "convert", direction: "to-good" });
+            onDone();
+          }}
+          className="h-10 text-[13px]"
+        >
+          Improve food
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => {
+            api.queue({ kind: "convert", direction: "to-basic" });
+            onDone();
+          }}
+          className="h-10 text-[13px]"
+        >
+          Stretch food
         </Button>
       </div>
     </div>
   );
 }
 
-function TrainBox({ state, api }: { state: GameState; api: GameApi }) {
+function TrainBox({ state, api, onDone }: { state: GameState; api: GameApi; onDone: () => void }) {
   const [ids, setIds] = useState<string[]>([]);
   const [drill, setDrill] = useState("");
   const [ideas, setIdeas] = useState<string[]>([]);
@@ -339,16 +605,21 @@ function TrainBox({ state, api }: { state: GameState; api: GameApi }) {
   }
 
   return (
-    <div className="w-full border-t border-border pt-3">
-      <p className="text-[12px] text-muted-foreground">Drill two units</p>
-      <div className="mt-2 flex flex-wrap gap-2">
+    <div className="mt-4 border-t border-border pt-4">
+      <div className="flex items-baseline justify-between">
+        <h3 className="font-display text-xl text-foreground">Drill two units</h3>
+        <button type="button" onClick={onDone} className="text-[12px] text-muted-foreground">
+          Close
+        </button>
+      </div>
+      <div className="mt-3 flex flex-col items-start gap-1">
         {state.units.map((unit) => (
-          <button key={unit.id} type="button" onClick={() => toggle(unit.id)} className={ids.includes(unit.id) ? "text-[13px] text-foreground" : "text-[13px] text-muted-foreground"}>
+          <button key={unit.id} type="button" onClick={() => toggle(unit.id)} className={ids.includes(unit.id) ? "text-[15px] text-foreground" : "text-[15px] text-muted-foreground"}>
             {unit.name}
           </button>
         ))}
       </div>
-      <div className="mt-2 flex flex-wrap gap-2">
+      <div className="mt-3 flex flex-wrap gap-2">
         <Input value={drill} onChange={(event) => setDrill(event.target.value)} placeholder="How they train" className="h-9 max-w-sm bg-background" />
         <Button
           type="button"
@@ -371,6 +642,7 @@ function TrainBox({ state, api }: { state: GameState; api: GameApi }) {
             api.queue({ kind: "train", unitIds: [ids[0], ids[1]], drill: drill.trim() });
             setDrill("");
             setIdeas([]);
+            onDone();
           }}
         >
           Add drill
@@ -395,8 +667,8 @@ function MapScreen({ state, api }: { state: GameState; api: GameApi }) {
     <section className="mt-6">
       <div className="flex items-center justify-between">
         <h2 className="font-display text-2xl">The country</h2>
-        <button type="button" onClick={() => api.show("dashboard")} className="text-[13px] text-muted-foreground">
-          Back
+        <button type="button" onClick={() => api.show("dashboard")} className="text-[15px] text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+          Back to the company
         </button>
       </div>
       <div className="relative mt-4 h-[28rem] rounded-sm border border-border bg-card">
@@ -408,6 +680,7 @@ function MapScreen({ state, api }: { state: GameState; api: GameApi }) {
               key={node.id}
               type="button"
               disabled={!canMarch}
+              aria-current={here ? "true" : undefined}
               onClick={() => {
                 api.queue({ kind: "move", to: node.id });
                 api.show("dashboard");
@@ -417,14 +690,16 @@ function MapScreen({ state, api }: { state: GameState; api: GameApi }) {
             >
               <span className="block text-[13px] text-foreground">
                 {node.name}
-                {node.id === "blackwood" && state.bandits ? " !" : ""}
+                {here ? ", here" : ""}
               </span>
-              <span className="block text-[11px] text-muted-foreground">{node.kind}</span>
+              <span className="block text-[11px] text-muted-foreground">
+                {node.id === "blackwood" && state.bandits ? "bandits" : node.kind}
+              </span>
             </button>
           );
         })}
       </div>
-      <p className="mt-3 text-[13px] text-muted-foreground">A tap on a neighbouring place queues the march. One march is a week.</p>
+      <p className="mt-3 text-[13px] text-muted-foreground">A tap on a neighbouring place queues the march. This march uses one of your two actions.</p>
     </section>
   );
 }
@@ -435,8 +710,8 @@ function ElderScreen({ state, api }: { state: GameState; api: GameApi }) {
     <section className="mt-6">
       <div className="flex items-center justify-between">
         <h2 className="font-display text-2xl">The elder of Millcross</h2>
-        <button type="button" onClick={() => api.show("dashboard")} className="text-[13px] text-muted-foreground">
-          Back
+        <button type="button" onClick={() => api.show("dashboard")} className="text-[15px] text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+          Back to the company
         </button>
       </div>
       <div className="mt-4 space-y-3 rounded-sm border border-border bg-card p-4">
@@ -456,14 +731,17 @@ function ElderScreen({ state, api }: { state: GameState; api: GameApi }) {
           setText("");
         }}
       >
-        <Input value={text} onChange={(event) => setText(event.target.value)} className="h-10 bg-background" />
-        <Button type="submit" disabled={!!api.busy} className="h-10 text-[13px]">
+        <label htmlFor="elder-say" className="sr-only">
+          Say to the elder
+        </label>
+        <Input id="elder-say" value={text} onChange={(event) => setText(event.target.value)} className="h-10 bg-background" />
+        <Button type="submit" disabled={!!api.busy} className="h-10 text-[15px]">
           Say it
         </Button>
       </form>
       <div className="mt-3 flex flex-wrap gap-2">
         {!state.villageWork && state.bandits && (
-          <Button type="button" variant="outline" disabled={!!api.busy} onClick={api.takeWork} className="h-9 text-[13px]">
+          <Button type="button" disabled={!!api.busy} onClick={api.takeWork} className="h-11 text-[15px]">
             Take the work
           </Button>
         )}
@@ -479,10 +757,10 @@ function ElderScreen({ state, api }: { state: GameState; api: GameApi }) {
 
 function ForestScreen({ state, api }: { state: GameState; api: GameApi }) {
   return (
-    <section className="mt-6 rounded-sm border border-foreground/20 bg-card p-5">
-      <p className="text-[12px] uppercase tracking-[0.14em] text-muted-foreground">Blackwood</p>
-      <h2 className="mt-1 font-display text-3xl">{state.leader.name}</h2>
-      <p className="mt-3 text-[15px] leading-relaxed text-foreground">{state.leader.blurb}</p>
+    <section className="mt-8 rounded-sm border border-border bg-card p-4 sm:p-6">
+      <h2 className="font-display text-3xl font-semibold">{state.leader.name}</h2>
+      <p className="mt-2 text-[15px] text-muted-foreground">Blackwood</p>
+      <p className="mt-4 text-[15px] leading-relaxed text-foreground">{state.leader.blurb}</p>
       <p className="mt-2 text-[13px] text-muted-foreground">{state.bandits ? `${state.bandits.count} of them are in the trees.` : ""}</p>
       <div className="mt-5 flex flex-col gap-2">
         <Button type="button" disabled={!!api.busy} onClick={api.fight} className="h-10 text-[13px]">
@@ -505,20 +783,23 @@ function ApproachScreen({ state, api }: { state: GameState; api: GameApi }) {
   const words = wordCount(approach);
   return (
     <section className="mt-6 rounded-sm border border-border bg-card p-5">
-      <h2 className="font-display text-3xl">Before the fight</h2>
-      <p className="mt-2 text-[13px] text-muted-foreground">Say how you mean to fight, in {APPROACH_WORDS} words or fewer, and how much supply to spend.</p>
+      <h2 className="font-display text-3xl font-semibold">Before the fight</h2>
+      <label htmlFor="approach" className="mt-4 block text-[15px] text-foreground">
+        How you mean to fight, in {APPROACH_WORDS} words or fewer
+      </label>
       <textarea
+        id="approach"
         value={approach}
         onChange={(event) => setApproach(event.target.value)}
         rows={4}
-        className="mt-4 w-full rounded-sm border border-border bg-background p-3 text-[14px]"
+        className="mt-2 w-full rounded-sm border border-border bg-background p-3 text-[15px]"
       />
       <p className="mt-1 text-[12px] text-muted-foreground">
         {words} / {APPROACH_WORDS}
       </p>
-      <label className="mt-3 block text-[13px] text-muted-foreground">
-        Supply, up to {state.supply}
-        <Input type="number" min={0} max={state.supply} value={supply} onChange={(event) => setSupply(Number(event.target.value))} className="mt-1 h-9 w-24 bg-background" />
+      <label htmlFor="supply-spent" className="mt-4 block text-[15px] text-foreground">
+        Supply to spend, up to {state.supply}
+        <Input id="supply-spent" type="number" min={0} max={state.supply} value={supply} onChange={(event) => setSupply(Number(event.target.value))} className="mt-2 h-9 w-24 bg-background" />
       </label>
       <Button type="button" disabled={!!api.busy || words < 1 || words > APPROACH_WORDS} onClick={() => api.sendBattle(approach, supply)} className="mt-4 h-10 w-full text-[13px]">
         {api.busy ?? "Send them in"}
@@ -531,7 +812,7 @@ function ResultScreen({ state, api }: { state: GameState; api: GameApi }) {
   const full = state.screen === "chronicle";
   return (
     <section className="mt-6">
-      <button type="button" onClick={() => api.show("dashboard")} className="text-[13px] text-muted-foreground">
+      <button type="button" onClick={() => api.show("dashboard")} className="text-[15px] text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
         Back to the company
       </button>
       <h2 className="mt-3 font-display text-3xl">The fight</h2>
@@ -567,29 +848,31 @@ function ChoiceScreen({ state, api }: { state: GameState; api: GameApi }) {
       ) : (
         <div className="mt-4 flex flex-col gap-2">
           <p className="text-[14px] text-muted-foreground">{survivors} of them are still alive.</p>
-          <Button type="button" disabled={!!api.busy} onClick={() => api.choose("kill", [])} className="h-10 text-[13px]">
+          <Button type="button" variant="outline" disabled={!!api.busy} onClick={() => api.choose("kill", [])} className="h-11 text-[15px]">
             Kill them
           </Button>
-          <Button type="button" variant="outline" disabled={!!api.busy} onClick={() => api.choose("justice", [])} className="h-10 text-[13px]">
+          <Button type="button" variant="outline" disabled={!!api.busy} onClick={() => api.choose("justice", [])} className="h-11 text-[15px]">
             Bring them to justice
           </Button>
           {names.map((name, index) => (
-            <Input
-              key={index}
-              value={name}
-              placeholder={needed === 1 ? "Name the unit" : `Name unit ${index + 1}`}
-              maxLength={40}
-              onChange={(event) =>
-                setNames((current) => {
-                  const next = [...current];
-                  next[index] = event.target.value;
-                  return next;
-                })
-              }
-              className="h-9 bg-background"
-            />
+            <label key={index} htmlFor={`survivor-name-${index}`} className="text-[15px] text-foreground">
+              {needed === 1 ? "Name the unit" : `Name unit ${index + 1}`}
+              <Input
+                id={`survivor-name-${index}`}
+                value={name}
+                maxLength={40}
+                onChange={(event) =>
+                  setNames((current) => {
+                    const next = [...current];
+                    next[index] = event.target.value;
+                    return next;
+                  })
+                }
+                className="mt-2 h-9 bg-background"
+              />
+            </label>
           ))}
-          <Button type="button" variant="outline" disabled={!!api.busy} onClick={() => api.choose("recruit", names)} className="h-10 text-[13px]">
+          <Button type="button" variant="outline" disabled={!!api.busy} onClick={() => api.choose("recruit", names)} className="h-11 text-[15px]">
             Recruit them
           </Button>
         </div>

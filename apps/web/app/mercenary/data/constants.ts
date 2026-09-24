@@ -17,7 +17,7 @@ export const PRICE = {
 } as const;
 
 export const STARTING = {
-  money: 36,
+  money: 100,
   basicFood: 40,
   goodFood: 0,
   supply: 6,

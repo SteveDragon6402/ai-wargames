@@ -198,6 +198,20 @@ export function unitsNeeded(units: Unit[], type: UnitTypeId, adding: number): { 
   return { fills, fresh };
 }
 
+export function recruitmentPlan(
+  units: Unit[],
+  type: UnitTypeId,
+  count: number,
+  into?: string | "new"
+): { fills: { id: string; add: number }[]; fresh: number[] } {
+  if (into === "new") return unitsNeeded([], type, count);
+  if (into) {
+    const target = units.find((unit) => unit.id === into && unit.type === type);
+    if (target) return unitsNeeded([target], type, count);
+  }
+  return unitsNeeded(units, type, count);
+}
+
 export function recruitableTypes(location: NodeId): UnitTypeId[] {
   const node = NODES[location];
   if (node.kind === "wild") return [];
@@ -251,7 +265,7 @@ function project(state: GameState, extra?: WeekAction): Projected | { error: str
       if (!isSettlement(projected.location)) return { error: "Nobody here will take the coin." };
       if (!recruitableTypes(projected.location).includes(action.type)) return { error: "That trade is not hired here." };
       if (!Number.isInteger(action.count) || action.count < 1 || action.count > 40) return { error: "Hire a sensible number." };
-      const plan = unitsNeeded(counts, action.type, action.count);
+      const plan = recruitmentPlan(counts, action.type, action.count, action.into);
       if (action.names.length !== plan.fresh.length) return { error: "Each new unit needs a name." };
       if (action.names.some((name) => !name.trim() || name.trim().length > 40)) return { error: "Name each new unit, forty characters or fewer." };
       const cost = manPrice(action.type) * action.count;
@@ -358,7 +372,7 @@ function applyListed(state: GameState, action: WeekAction): GameState {
     }
     const cost = manPrice(action.type) * action.count;
     if (state.money < cost) return notice(state, "The coin was short, and the hiring failed.");
-    const plan = unitsNeeded(state.units, action.type, action.count);
+    const plan = recruitmentPlan(state.units, action.type, action.count, action.into);
     if (plan.fresh.length !== action.names.length) return notice(state, "A new unit had no name, and the hiring failed.");
     let next: GameState = { ...state, money: state.money - cost, units: state.units.map((unit) => ({ ...unit })) };
     next.units = next.units.map((unit) => {
@@ -605,65 +619,176 @@ function nonEmpty(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value.trim() : null;
 }
 
+function asInt(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.max(0, Math.round(value));
+  if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Math.max(0, Math.round(Number(value)));
+  return null;
+}
+
+function asBool(value: unknown): boolean | null {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const text = value.trim().toLowerCase();
+    if (["true", "yes", "held", "company", "player", "win", "won"].includes(text)) return true;
+    if (["false", "no", "lost", "bandits", "bandit", "loss"].includes(text)) return false;
+  }
+  return null;
+}
+
+function unitByToken(state: GameState, token: string): Unit | undefined {
+  const key = token.trim().toLowerCase();
+  return state.units.find((unit) => unit.id.toLowerCase() === key || unit.name.toLowerCase() === key);
+}
+
+export function clipWords(text: string, max: number): string {
+  const words = text.replace(/\s+/g, " ").trim().split(" ").filter(Boolean);
+  if (words.length <= max) return words.join(" ");
+  return `${words.slice(0, max).join(" ")}…`;
+}
+
+export function parseReport(text: string): { brief: string; chronicle: string } | null {
+  const cleaned = text
+    .replace(/\r/g, "")
+    .replace(/\*\*/g, "")
+    .replace(/^#+\s*/gm, "")
+    .trim();
+  if (cleaned.length < 40) return null;
+  const labelled = cleaned.match(/(?:^|\n)\s*brief\s*[:\-—]\s*([\s\S]+)/i);
+  let brief = "";
+  let chronicle = cleaned;
+  if (labelled?.[1]) {
+    const body = labelled[1].trim();
+    const stop = body.search(/\n\s*\n|\n\s*(?:phase|chronicle|report)\b/i);
+    brief = (stop === -1 ? body : body.slice(0, stop)).replace(/\s+/g, " ").trim();
+    const without = cleaned.replace(labelled[0], "").trim();
+    chronicle = without.length > 40 ? without : cleaned;
+  }
+  if (wordCount(brief) < 8) brief = clipWords(cleaned, 50);
+  else if (wordCount(brief) > 70) brief = clipWords(brief, 60);
+  return { brief, chronicle };
+}
+
 export function validateOutcome(state: GameState, raw: unknown): { ok: true; value: ValidatedBattle } | { ok: false; error: string } {
-  if (!raw || typeof raw !== "object") return { ok: false, error: "The executor returned nothing usable." };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ok: false, error: "The executor returned nothing usable." };
   const body = raw as Record<string, unknown>;
-  if (typeof body.playerHoldsField !== "boolean") return { ok: false, error: "The executor did not say who held the field." };
-  if (typeof body.banditDeaths !== "number" || !Number.isInteger(body.banditDeaths) || body.banditDeaths < 0) {
-    return { ok: false, error: "Bandit deaths were not a whole number." };
-  }
-  const banditCount = state.bandits?.count ?? 0;
-  if (body.banditDeaths > banditCount) return { ok: false, error: "The executor killed more bandits than there were." };
-  if (!Array.isArray(body.deaths)) return { ok: false, error: "The executor listed no deaths." };
-  const known = new Set(state.units.map((unit) => unit.id));
-  const deaths: { unitId: string; count: number }[] = [];
-  for (const row of body.deaths) {
-    if (!row || typeof row !== "object") return { ok: false, error: "A death row was unreadable." };
-    const unitId = (row as { unitId?: unknown }).unitId;
-    const count = (row as { count?: unknown }).count;
-    if (typeof unitId !== "string" || !known.has(unitId)) return { ok: false, error: "The executor named a unit that is not in the company." };
-    if (typeof count !== "number" || !Number.isInteger(count) || count < 0) return { ok: false, error: "A death count was not a whole number." };
-    const unit = state.units.find((item) => item.id === unitId);
-    if (!unit || count > unit.count) return { ok: false, error: "The executor killed more men than a unit has." };
-    deaths.push({ unitId, count });
-  }
-  const morale = nonEmpty(body.morale);
-  const stance = nonEmpty(body.stance);
-  const condition = nonEmpty(body.condition);
-  if (!morale || !stance || !condition) return { ok: false, error: "Morale, stance, or condition came back empty." };
-  if (!Array.isArray(body.lines)) return { ok: false, error: "The living lines were missing." };
-  const lines: ValidatedBattle["lines"] = [];
-  for (const row of body.lines) {
-    if (!row || typeof row !== "object") return { ok: false, error: "A description row was unreadable." };
-    const unitId = (row as { unitId?: unknown }).unitId;
-    const line2 = nonEmpty((row as { line2?: unknown }).line2);
-    const line3 = nonEmpty((row as { line3?: unknown }).line3);
-    const line4 = nonEmpty((row as { line4?: unknown }).line4);
-    if (typeof unitId !== "string" || !known.has(unitId) || !line2 || !line3 || !line4) {
-      return { ok: false, error: "A unit's new lines were incomplete." };
+  const knownKeys = ["playerHoldsField", "holdsField", "winner", "banditDeaths", "enemyDeaths", "deaths", "casualties", "morale", "lines", "descriptions"];
+  if (!knownKeys.some((key) => key in body)) return { ok: false, error: "The executor returned no battle fields." };
+
+  const deaths = new Map<string, number>();
+  const deathSource = body.deaths ?? body.casualties;
+  const noteDeath = (token: string, count: number) => {
+    const unit = unitByToken(state, token);
+    if (!unit) return;
+    deaths.set(unit.id, Math.min(unit.count, (deaths.get(unit.id) ?? 0) + count));
+  };
+  if (Array.isArray(deathSource)) {
+    for (const row of deathSource) {
+      if (!row || typeof row !== "object") continue;
+      const record = row as Record<string, unknown>;
+      const count = asInt(record.count ?? record.deaths ?? record.dead ?? record.losses) ?? 0;
+      const token = [record.unitId, record.id, record.unit, record.name].find((item) => typeof item === "string") as string | undefined;
+      if (token) noteDeath(token, count);
     }
-    lines.push({ unitId, line2, line3, line4 });
+  } else if (deathSource && typeof deathSource === "object") {
+    for (const [key, value] of Object.entries(deathSource as Record<string, unknown>)) noteDeath(key, asInt(value) ?? 0);
   }
-  const deadIds = new Set(deaths.filter((row) => {
-    const unit = state.units.find((item) => item.id === row.unitId);
-    return unit && row.count >= unit.count;
-  }).map((row) => row.unitId));
+
+  const banditCount = state.bandits?.count ?? 0;
+  const banditDeaths = Math.min(banditCount, asInt(body.banditDeaths ?? body.enemyDeaths ?? body.bandit_deaths) ?? 0);
+  const playerDeaths = [...deaths.values()].reduce((sum, count) => sum + count, 0);
+  let holds = asBool(body.playerHoldsField ?? body.holdsField);
+  if (holds === null && typeof body.winner === "string") {
+    const winner = body.winner.toLowerCase();
+    if (winner.includes("bandit")) holds = false;
+    else holds = true;
+  }
+  if (holds === null) {
+    const playerGone = playerDeaths >= headcount(state.units) && headcount(state.units) > 0;
+    if (playerGone) holds = false;
+    else if (banditCount > 0 && banditDeaths >= banditCount) holds = true;
+    else holds = banditDeaths >= playerDeaths;
+  }
+
+  const lines: ValidatedBattle["lines"] = [];
+  const lineSource = body.lines ?? body.descriptions;
+  if (Array.isArray(lineSource)) {
+    for (const row of lineSource) {
+      if (!row || typeof row !== "object") continue;
+      const record = row as Record<string, unknown>;
+      const token = [record.unitId, record.id, record.unit, record.name].find((item) => typeof item === "string") as string | undefined;
+      const unit = token ? unitByToken(state, token) : undefined;
+      if (!unit) continue;
+      const bundle = Array.isArray(record.lines) ? record.lines : [record.line2, record.line3, record.line4];
+      const line2 = nonEmpty(bundle[0]) ?? unit.lines[0];
+      const line3 = nonEmpty(bundle[1]) ?? unit.lines[1];
+      const line4 = nonEmpty(bundle[2]) ?? unit.lines[2];
+      lines.push({ unitId: unit.id, line2, line3, line4 });
+    }
+  }
   for (const unit of state.units) {
-    if (deadIds.has(unit.id)) continue;
-    if (!lines.some((row) => row.unitId === unit.id)) return { ok: false, error: `No new lines for ${unit.name}.` };
+    if ((deaths.get(unit.id) ?? 0) >= unit.count) continue;
+    if (!lines.some((row) => row.unitId === unit.id)) {
+      lines.push({ unitId: unit.id, line2: unit.lines[0], line3: unit.lines[1], line4: unit.lines[2] });
+    }
   }
+
   return {
     ok: true,
     value: {
-      playerHoldsField: body.playerHoldsField,
-      banditDeaths: body.banditDeaths,
-      deaths,
-      morale,
-      stance,
-      condition,
+      playerHoldsField: holds,
+      banditDeaths,
+      deaths: [...deaths.entries()].map(([unitId, count]) => ({ unitId, count })),
+      morale: nonEmpty(body.morale) ?? state.morale,
+      stance: nonEmpty(body.stance) ?? state.stance,
+      condition: nonEmpty(body.condition) ?? state.condition,
       lines,
     },
   };
+}
+
+export function projectedRations(state: GameState): number {
+  let basic = state.basicFood;
+  let good = state.goodFood;
+  let money = state.money;
+  let location = state.location;
+  let moved = state.movedThisWeek;
+  for (const action of state.queue) {
+    if (action.kind === "move" && !moved && neighbors(location).includes(action.to)) {
+      moved = true;
+      location = action.to;
+    } else if (action.kind === "buy" && isSettlement(location)) {
+      const cost = PRICE[action.store] * action.amount;
+      if (money >= cost && action.amount > 0) {
+        money -= cost;
+        if (action.store === "basic") basic += action.amount;
+        if (action.store === "good") good += action.amount;
+      }
+    } else if (action.kind === "convert") {
+      if (action.direction === "to-good") {
+        const pairs = Math.min(CONVERT_CAP, Math.floor(basic / 2));
+        basic -= pairs * 2;
+        good += pairs;
+      } else {
+        const meals = Math.min(CONVERT_CAP, good);
+        good -= meals;
+        basic += meals * 2;
+      }
+    }
+  }
+  return basic + good;
+}
+
+export function foodBlocksWeek(state: GameState): string | null {
+  if (state.phase !== "play" || state.resolveIndex > 0) return null;
+  const need = headcount(state.units);
+  const have = projectedRations(state);
+  if (have >= need) return null;
+  const short = need - have;
+  const rations = `Short ${short} ration${short === 1 ? "" : "s"}.`;
+  if (NODES[state.location].kind === "wild") {
+    return `${rations} March to a village or a capital, then buy food. Both fit in this week if the march comes first.`;
+  }
+  return `${rations} Buy food before this week can pass.`;
 }
 
 export function applyOutcome(state: GameState, outcome: ValidatedBattle, brief: string, chronicle: string): { state: GameState; result: "victory" | "defeat" } {
@@ -812,7 +937,10 @@ export function describeAction(action: WeekAction): string {
   if (action.kind === "move") return `March to ${NODES[action.to].name}`;
   if (action.kind === "train") return `Drill two units: ${action.drill}`;
   if (action.kind === "convert") return action.direction === "to-good" ? "Improve plain food" : "Break good food down";
-  if (action.kind === "recruit") return `Hire ${action.count} ${WIKI[action.type].title.toLowerCase()}`;
+  if (action.kind === "recruit") {
+    const asNew = action.into === "new" ? " as a new unit" : "";
+    return `Hire ${action.count} ${WIKI[action.type].title.toLowerCase()}${asNew}`;
+  }
   return `Buy ${action.amount} ${action.store === "basic" ? "plain food" : action.store === "good" ? "good food" : "supply"}`;
 }
 

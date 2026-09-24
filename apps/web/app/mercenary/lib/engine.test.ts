@@ -14,9 +14,12 @@ import {
   commitApproach,
   enqueue,
   finishWeek,
+  foodBlocksWeek,
   forceComparison,
   freshGame,
   nameStartingUnits,
+  parseReport,
+  recruitmentPlan,
   openBattle,
   recruitableTypes,
   retreatStartsFight,
@@ -253,7 +256,7 @@ describe("blackwood", () => {
 });
 
 describe("validator", () => {
-  it("rejects deaths the company cannot have suffered", () => {
+  it("salvages deaths the company cannot have suffered", () => {
     const state = playing();
     const over = validateOutcome(state, {
       playerHoldsField: true,
@@ -264,7 +267,10 @@ describe("validator", () => {
       condition: "Hurt.",
       lines: [],
     });
-    assert.equal(over.ok, false);
+    assert.equal(over.ok, true);
+    if (!over.ok) return;
+    assert.equal(over.value.deaths.find((row) => row.unitId === state.units[0].id)?.count, state.units[0].count);
+
     const unknown = validateOutcome(state, {
       playerHoldsField: true,
       banditDeaths: 3,
@@ -274,9 +280,12 @@ describe("validator", () => {
       condition: "Hurt.",
       lines: [],
     });
-    assert.equal(unknown.ok, false);
+    assert.equal(unknown.ok, true);
+    if (!unknown.ok) return;
+    assert.equal(unknown.value.deaths.length, 0);
+
     const negative = validateOutcome(state, {
-      playerHoldsField: true,
+      playerHoldsField: "yes",
       banditDeaths: -1,
       deaths: [],
       morale: "Grim.",
@@ -284,7 +293,58 @@ describe("validator", () => {
       condition: "Hurt.",
       lines: state.units.map((unit) => ({ unitId: unit.id, line2: "A", line3: "B", line4: "C" })),
     });
-    assert.equal(negative.ok, false);
+    assert.equal(negative.ok, true);
+    if (!negative.ok) return;
+    assert.equal(negative.value.banditDeaths, 0);
+    assert.equal(negative.value.playerHoldsField, true);
+
+    assert.equal(validateOutcome(state, null).ok, false);
+    assert.equal(validateOutcome(state, { notes: "they fought" }).ok, false);
+  });
+
+  it("reads a report that is not labelled exactly", () => {
+    const loose = parseReport(
+      "The file held the track while the bows broke the rush, and by dusk the band had scattered into the trees with half their number down."
+    );
+    assert.ok(loose);
+    assert.ok((loose?.brief.length ?? 0) > 20);
+
+    const labelled = parseReport("The opening was ugly.\n\nBrief: The company held the track and the band broke before dusk, leaving their dead in the ferns.\n\nOpening\nThey met on the path.");
+    assert.match(labelled?.brief ?? "", /held the track/);
+  });
+});
+
+describe("week gates", () => {
+  it("will not pass a week the company cannot feed", () => {
+    let state = playing();
+    state = { ...state, basicFood: 0, goodFood: 0 };
+    assert.match(foodBlocksWeek(state) ?? "", /Short 10 rations/);
+    state = must(enqueue(state, { kind: "buy", store: "basic", amount: 10 }));
+    assert.equal(foodBlocksWeek(state), null);
+    state = { ...playing(), basicFood: 0, goodFood: 0, location: "blackwood", resolveIndex: 0 };
+    assert.match(foodBlocksWeek(state) ?? "", /March/);
+  });
+
+  it("hires a group as its own unit", () => {
+    const start = playing();
+    const plan = recruitmentPlan(start.units, "swordsmen", 5, "new");
+    assert.equal(plan.fills.length, 0);
+    assert.deepEqual(plan.fresh, [5]);
+    let state = must(enqueue(start, { kind: "recruit", type: "swordsmen", count: 5, names: ["The Second File"], into: "new" }));
+    const step = stepQueue(beginResolution(state));
+    assert.equal(step.kind, "continue");
+    if (step.kind !== "continue") return;
+    const swords = step.state.units.filter((unit) => unit.type === "swordsmen");
+    assert.equal(swords.length, 2);
+    assert.deepEqual(
+      swords.map((unit) => unit.count).sort((a, b) => a - b),
+      [5, 5]
+    );
+    assert.equal(step.state.money, start.money - 25);
+  });
+
+  it("opens with a purse that can hire and eat", () => {
+    assert.equal(playing().money, 100);
   });
 });
 
