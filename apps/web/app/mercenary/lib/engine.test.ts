@@ -14,7 +14,11 @@ import {
   commitApproach,
   enqueue,
   finishWeek,
-  foodBlocksWeek,
+  applyForage,
+  foodWarning,
+  headcount,
+  clampDescription,
+  startingDescription,
   forceComparison,
   freshGame,
   nameStartingUnits,
@@ -26,6 +30,7 @@ import {
   setCompanyName,
   settleLeaderAttack,
   stepQueue,
+  takeForestForage,
   unitsNeeded,
   validateOutcome,
 } from "./engine";
@@ -128,20 +133,28 @@ describe("company", () => {
     );
   });
 
-  it("does not rewrite the origin line", () => {
+  it("starts each unit on four lines and lets a drill replace them", () => {
     let state = playing();
-    const origin = state.units[0].origin;
+    assert.equal(state.units[0].lines.length, 4);
+    assert.deepEqual(state.units[0].lines, startingDescription("swordsmen"));
     state = must(
       enqueue(state, { kind: "train", unitIds: [state.units[0].id, state.units[1].id], drill: "Hold the hedge" })
     );
     const step = stepQueue(beginResolution(state));
     assert.equal(step.kind, "train");
     if (step.kind !== "train") return;
-    const lines = Object.fromEntries(state.units.map((unit) => [unit.id, ["They hold.", "They listen.", "They are harder."] as [string, string, string]]));
-    const trained = must(applyTraining(step.state, lines));
-    assert.equal(trained.units[0].origin, origin);
+    const long = Array.from({ length: 12 }, (_, index) => `Line ${index + 1}.`);
+    const trained = must(
+      applyTraining(step.state, {
+        [state.units[0].id]: long,
+        [state.units[1].id]: ["They shoot from behind the hedge."],
+      })
+    );
     assert.equal(trained.units[0].origin, WIKI.swordsmen.origin);
-    assert.equal(trained.units[0].lines[0], "They hold.");
+    assert.equal(trained.units[0].lines.length, 10);
+    assert.equal(trained.units[0].lines[0], "Line 1.");
+    assert.deepEqual(trained.units[1].lines, ["They shoot from behind the hedge."]);
+    assert.equal(clampDescription(["  a  ", "", "b"]).join("|"), "a|b");
   });
 
   it("allows one march in a week", () => {
@@ -216,9 +229,7 @@ describe("blackwood", () => {
     state = must(commitApproach(state, "The bows shoot, then the file closes.", 0));
     const lines = state.units.map((unit) => ({
       unitId: unit.id,
-      line2: "They have seen a fight.",
-      line3: "They listen faster.",
-      line4: "They are not green.",
+      lines: ["They have seen a fight.", "They listen faster.", "They are not green."],
     }));
     const fought = applyOutcome(
       state,
@@ -291,7 +302,7 @@ describe("validator", () => {
       morale: "Grim.",
       stance: "They hold.",
       condition: "Hurt.",
-      lines: state.units.map((unit) => ({ unitId: unit.id, line2: "A", line3: "B", line4: "C" })),
+      lines: state.units.map((unit) => ({ unitId: unit.id, lines: ["A", "B", "C"] })),
     });
     assert.equal(negative.ok, true);
     if (!negative.ok) return;
@@ -315,14 +326,52 @@ describe("validator", () => {
 });
 
 describe("week gates", () => {
-  it("will not pass a week the company cannot feed", () => {
-    let state = playing();
-    state = { ...state, basicFood: 0, goodFood: 0 };
-    assert.match(foodBlocksWeek(state) ?? "", /Short 10 rations/);
-    state = must(enqueue(state, { kind: "buy", store: "basic", amount: 10 }));
-    assert.equal(foodBlocksWeek(state), null);
-    state = { ...playing(), basicFood: 0, goodFood: 0, location: "blackwood", resolveIndex: 0 };
-    assert.match(foodBlocksWeek(state) ?? "", /March/);
+  it("warns when food is short and still allows the march", () => {
+    let state = { ...playing(), basicFood: 0, goodFood: 0 };
+    assert.match(foodWarning(state) ?? "", /Short 10 rations/);
+    assert.match(foodWarning(state) ?? "", /still march/);
+    assert.doesNotMatch(foodWarning(state) ?? "", /then buy/);
+    state = must(enqueue(state, { kind: "move", to: "blackwood" }));
+    assert.match(foodWarning(state) ?? "", /Short 10 rations/);
+    const stocked = must(enqueue({ ...playing(), basicFood: 0, goodFood: 0 }, { kind: "buy", store: "basic", amount: 10 }));
+    assert.equal(foodWarning(stocked), null);
+  });
+
+  it("does not let food bought after a march feed that week", () => {
+    const hungry = { ...playing(), basicFood: 0, goodFood: 0 };
+    let state = must(enqueue(hungry, { kind: "move", to: "harrow" }));
+    const marched = stepQueue(beginResolution(state));
+    assert.equal(marched.kind, "continue");
+    if (marched.kind !== "continue") return;
+    const camped = { ...marched.state, queue: [], resolveIndex: 0 };
+    state = must(enqueue(camped, { kind: "buy", store: "basic", amount: 10 }));
+    const bought = stepQueue(beginResolution(state));
+    assert.equal(bought.kind, "continue");
+    if (bought.kind !== "continue") return;
+    const done = finishWeek(bought.state);
+    assert.equal(done.basicFood, 10);
+    assert.equal(done.lateBasic, 0);
+    assert.ok(headcount(done.units) < headcount(hungry.units));
+  });
+
+  it("forages only in a forest and keeps the food", () => {
+    const home = playing();
+    assert.match(canEnqueue(home, { kind: "forage" }) ?? "", /forest/);
+    let state: GameState = { ...home, location: "blackwood" };
+    state = must(enqueue(state, { kind: "forage" }));
+    const step = stepQueue(beginResolution(state));
+    assert.equal(step.kind, "forage");
+    if (step.kind !== "forage") return;
+    const found = must(applyForage(step.state, 4, "They came back with mushrooms and a snared hare."));
+    assert.equal(found.basicFood, home.basicFood + 4);
+    assert.match(found.notices.at(-1) ?? "", /mushrooms/);
+    const arrived = stepQueue(beginResolution(must(enqueue(home, { kind: "move", to: "blackwood" }))));
+    assert.equal(arrived.kind, "forest");
+    if (arrived.kind !== "forest") return;
+    const left = takeForestForage(arrived.state, 3, "They filled a sack with nuts.");
+    assert.equal(left.screen, "dashboard");
+    assert.equal(left.location, "blackwood");
+    assert.equal(left.basicFood, home.basicFood + 3);
   });
 
   it("hires a group as its own unit", () => {
@@ -358,9 +407,7 @@ describe("opening loop", () => {
     assert.equal(state.supply, playing().supply - 1);
     const lines = state.units.map((unit) => ({
       unitId: unit.id,
-      line2: "They have been blooded.",
-      line3: "They trust the file.",
-      line4: "They are quicker to the hedge.",
+      lines: ["They have been blooded.", "They trust the file.", "They are quicker to the hedge."],
     }));
     const fought = applyOutcome(
       state,

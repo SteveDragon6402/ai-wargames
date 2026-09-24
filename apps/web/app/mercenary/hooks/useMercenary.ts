@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import {
   acceptWork,
   applyAftermath,
+  applyForage,
   applyOpeningReputation,
   applyOutcome,
   applyTraining,
@@ -16,8 +17,8 @@ import {
   companyDescription,
   dequeue,
   enqueue,
+  fallbackForageMeals,
   finishWeek,
-  foodBlocksWeek,
   freshGame,
   headcount,
   nameStartingUnits,
@@ -31,12 +32,34 @@ import {
   setStance,
   slipPast,
   stepQueue,
+  takeForestForage,
   validateOutcome,
 } from "../lib/engine";
+import { NODES } from "../data/map";
 import type { BaseTypeId } from "../data/wiki";
 import { REPUTATION_KEYS, type Aftermath, type GameState, type WeekAction } from "../lib/types";
 
 const KEY = "mercenary-band-v1";
+
+function revive(parsed: GameState): GameState {
+  const blank = freshGame();
+  return {
+    ...blank,
+    ...parsed,
+    lateBasic: parsed.lateBasic ?? 0,
+    lateGood: parsed.lateGood ?? 0,
+    units: (parsed.units ?? []).map((unit) => ({
+      ...unit,
+      lines: Array.isArray(unit.lines) ? unit.lines.filter((line) => typeof line === "string" && line.trim()) : [],
+    })),
+    bandits: parsed.bandits
+      ? {
+          ...parsed.bandits,
+          lines: Array.isArray(parsed.bandits.lines) ? parsed.bandits.lines.filter((line) => typeof line === "string" && line.trim()) : [],
+        }
+      : null,
+  };
+}
 
 async function errorText(res: Response): Promise<string> {
   const data = (await res.json().catch(() => null)) as { error?: unknown } | null;
@@ -60,9 +83,10 @@ export function useMercenary() {
       const raw = localStorage.getItem(KEY);
       if (raw) {
         const parsed = JSON.parse(raw) as GameState;
-        if (parsed.version === 1) {
-          ref.current = parsed;
-          setState(parsed);
+        if (parsed.version === 1 && parsed.companyName !== undefined) {
+          const game = revive(parsed);
+          ref.current = game;
+          setState(game);
           return;
         }
       }
@@ -121,13 +145,53 @@ export function useMercenary() {
         setBusy(null);
         return;
       }
+      if (step.kind === "forage") {
+        setBusy("They are out in the trees.");
+        const place = NODES[step.state.location];
+        const men = headcount(step.state.units);
+        let meals = fallbackForageMeals(men);
+        let account = `They foraged in ${place.name} and brought back ${meals} rations.`;
+        try {
+          const res = await fetch("/api/mercenary/forest/forage", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              men,
+              place: place.name,
+              ground: place.ground,
+              bandits: step.state.bandits?.count ?? 0,
+            }),
+          });
+          if (res.ok) {
+            const data = (await res.json()) as { meals?: number; account?: string };
+            if (typeof data.meals === "number" && Number.isFinite(data.meals)) meals = data.meals;
+            if (typeof data.account === "string" && data.account.trim()) account = data.account.trim();
+          }
+        } catch {
+          /* The fallback ration roll already stands. */
+        }
+        const applied = applyForage(step.state, meals, account);
+        if (!applied.ok) {
+          commit(current);
+          setError(applied.error);
+          setBusy(null);
+          return;
+        }
+        current = applied.state;
+        continue;
+      }
       if (step.kind === "train") {
         setBusy("The drill is being written down.");
         const units = step.unitIds.map((id) => current.units.find((unit) => unit.id === id));
         const res = await fetch("/api/mercenary/train", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ mode: "apply", drill: step.drill, units }),
+          body: JSON.stringify({
+            mode: "apply",
+            drill: step.drill,
+            companyName: step.state.companyName,
+            units,
+          }),
         });
         if (!res.ok) {
           commit(current);
@@ -135,7 +199,7 @@ export function useMercenary() {
           setBusy(null);
           return;
         }
-        const data = (await res.json()) as { lines: Record<string, [string, string, string]> };
+        const data = (await res.json()) as { lines: Record<string, string[]> };
         const applied = applyTraining(step.state, data.lines);
         if (!applied.ok) {
           commit(current);
@@ -246,11 +310,6 @@ export function useMercenary() {
     async liveWeek() {
       const current = ref.current;
       if (!current || busy) return;
-      const block = foodBlocksWeek(current);
-      if (block) {
-        setError(block);
-        return;
-      }
       setError(null);
       setBusy("The week goes by.");
       await continueWeek(current);
@@ -345,6 +404,36 @@ export function useMercenary() {
       commit(pulled.state);
       setError(pulled.failed);
       setBusy(null);
+    },
+    async forageHere() {
+      const current = ref.current;
+      if (!current || busy) return;
+      setBusy("They are out in the trees.");
+      setError(null);
+      const place = NODES[current.location];
+      const men = headcount(current.units);
+      let meals = fallbackForageMeals(men);
+      let account = `They foraged in ${place.name} and brought back ${meals} rations.`;
+      try {
+        const res = await fetch("/api/mercenary/forest/forage", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            men,
+            place: place.name,
+            ground: place.ground,
+            bandits: current.bandits?.count ?? 0,
+          }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { meals?: number; account?: string };
+          if (typeof data.meals === "number" && Number.isFinite(data.meals)) meals = data.meals;
+          if (typeof data.account === "string" && data.account.trim()) account = data.account.trim();
+        }
+      } catch {
+        /* The fallback ration roll already stands. */
+      }
+      await continueWeek(takeForestForage(current, meals, account));
     },
     fight() {
       const current = ref.current;

@@ -3,11 +3,22 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { NODES, neighbors, type NodeId } from "../data/map";
-import { KINGDOM_NAME } from "../data/map";
+import { isForest, KINGDOM_NAME, NODES, neighbors, type NodeId } from "../data/map";
 import { APPROACH_WORDS, PRICE } from "../data/constants";
 import { WIKI, type UnitTypeId } from "../data/wiki";
-import { describeAction, foodBlocksWeek, headcount, manPrice, namesForSurvivors, recruitableTypes, recruitmentPlan, wordCount } from "../lib/engine";
+import {
+  DEFAULT_APPROACH,
+  DEFAULT_DRILL,
+  defaultNamesFor,
+  describeAction,
+  foodWarning,
+  headcount,
+  manPrice,
+  namesForSurvivors,
+  recruitableTypes,
+  recruitmentPlan,
+  wordCount,
+} from "../lib/engine";
 import { REPUTATION_KEYS, REPUTATION_LABEL, type Aftermath, type GameState, type WeekAction } from "../lib/types";
 
 type GameApi = {
@@ -27,6 +38,7 @@ type GameApi = {
   fight: () => void;
   retreat: () => void;
   sneak: () => void;
+  forageHere: () => void;
   sendBattle: (approach: string, supply: number) => void;
   choose: (choice: Aftermath, names: string[]) => void;
   reset: () => void;
@@ -38,14 +50,25 @@ export default function Play({ state, api }: { state: GameState; api: GameApi })
 
   return (
     <main className="mx-auto min-h-dvh max-w-3xl px-4 py-6 sm:px-6">
-      <header className="border-b border-border pb-4">
-        <a href="/" className="text-[13px] text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
-          All games
-        </a>
-        <h1 className="mt-2 max-w-[18ch] text-balance font-display text-4xl font-semibold leading-none text-foreground">{state.companyName}</h1>
-        <p className="mt-2 text-[15px] text-foreground">
-          Week {Math.min(state.week, 52)} of 52, {place.name}, {KINGDOM_NAME[place.kingdom]}
-        </p>
+      <header className="flex items-start justify-between gap-4 border-b border-border pb-4">
+        <div>
+          <a href="/" className="text-[13px] text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+            All games
+          </a>
+          <h1 className="mt-2 max-w-[18ch] text-balance font-display text-4xl font-semibold leading-none text-foreground">{state.companyName}</h1>
+          <p className="mt-2 text-[15px] text-foreground">
+            Week {Math.min(state.week, 52)} of 52, {place.name}, {KINGDOM_NAME[place.kingdom]}
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            if (window.confirm("Reset this company and start again?")) api.reset();
+          }}
+          className="mt-1 shrink-0 text-[13px] text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          Reset
+        </button>
       </header>
 
       {state.phase === "play" && state.screen !== "dashboard" && (
@@ -102,13 +125,19 @@ function Dashboard({ state, api, locked }: { state: GameState; api: GameApi; loc
   const place = NODES[state.location];
   const men = headcount(state.units);
   const food = state.basicFood + state.goodFood;
-  const foodStop = foodBlocksWeek(state);
+  const shortage = foodWarning(state);
   const atMarket = place.kind !== "wild";
   const moved = state.movedThisWeek || state.queue.some((action) => action.kind === "move");
+  const canForage = isForest(state.location);
   const slotsLeft = 2 - state.queue.length;
   const [panel, setPanel] = useState<null | "recruit" | "buy" | "train" | "cook">(null);
+  const [selected, setSelected] = useState<string[]>([]);
   const offerWork = place.id === "millcross" && !state.villageWork && !!state.bandits;
-  const lead = api.rewardReady ? "pay" : offerWork ? "elder" : foodStop && atMarket ? "buy" : foodStop ? "march" : "live";
+  const lead = api.rewardReady ? "pay" : offerWork ? "elder" : "live";
+
+  function toggleUnit(id: string) {
+    setSelected((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+  }
 
   function openPanel(next: "recruit" | "buy" | "train" | "cook") {
     setPanel((current) => (current === next ? null : next));
@@ -179,14 +208,25 @@ function Dashboard({ state, api, locked }: { state: GameState; api: GameApi; loc
       </div>
       )}
 
+      <section aria-label="The company">
+        <h2 className="font-display text-2xl text-foreground">The company</h2>
+        <p className="mt-1 text-[13px] text-muted-foreground">Select the units you want to drill.</p>
+        <StanceLine state={state} api={api} />
+        <ul className="mt-3 space-y-2">
+          {state.units.map((unit) => (
+            <UnitRow key={unit.id} unit={unit} selected={selected.includes(unit.id)} onToggle={() => toggleUnit(unit.id)} />
+          ))}
+        </ul>
+      </section>
+
       <section aria-label="This week" className="rounded-sm border border-border bg-card p-4 sm:p-6">
         <div className="flex items-baseline justify-between gap-3">
           <h2 className="max-w-[12ch] text-balance font-display text-3xl font-semibold text-foreground">This week</h2>
           <p className="text-[15px] text-muted-foreground">{state.queue.length} of 2 actions</p>
         </div>
-        {foodStop && (
-          <p id="food-stop" role="alert" className="mt-4 text-[15px] leading-relaxed text-bad">
-            {foodStop}
+        {shortage && (
+          <p id="food-warning" role="alert" className="mt-4 text-[15px] leading-relaxed text-bad">
+            {shortage}
           </p>
         )}
         <div className="mt-4 grid gap-3 sm:grid-cols-2">
@@ -222,13 +262,18 @@ function Dashboard({ state, api, locked }: { state: GameState; api: GameApi; loc
             <div className="flex flex-wrap gap-2">
               <Button
                 type="button"
-                variant={lead === "march" ? "default" : "outline"}
+                variant="outline"
                 disabled={moved}
                 onClick={() => api.show("map")}
                 className="h-11 text-[15px]"
               >
                 March
               </Button>
+              {canForage && (
+                <Button type="button" variant="outline" onClick={() => api.queue({ kind: "forage" })} className="h-11 text-[15px]">
+                  Forage
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="outline"
@@ -241,7 +286,7 @@ function Dashboard({ state, api, locked }: { state: GameState; api: GameApi; loc
               </Button>
               <Button
                 type="button"
-                variant={lead === "buy" ? "default" : "outline"}
+                variant="outline"
                 disabled={!atMarket}
                 aria-expanded={panel === "buy"}
                 onClick={() => openPanel("buy")}
@@ -253,7 +298,7 @@ function Dashboard({ state, api, locked }: { state: GameState; api: GameApi; loc
             {!atMarket && <p className="mt-3 text-[15px] text-muted-foreground">Recruit and buy in a village or a capital.</p>}
             {moved && <p className="mt-3 text-[15px] text-muted-foreground">The march is already ordered.</p>}
             <div className="mt-3 flex gap-4">
-              <Button type="button" variant="link" disabled={state.units.length < 2} aria-expanded={panel === "train"} onClick={() => openPanel("train")} className="h-9 px-0 text-[15px]">
+              <Button type="button" variant="link" aria-expanded={panel === "train"} onClick={() => openPanel("train")} className="h-9 px-0 text-[15px]">
                 Train
               </Button>
               <Button type="button" variant="link" aria-expanded={panel === "cook"} onClick={() => openPanel("cook")} className="h-9 px-0 text-[15px]">
@@ -265,15 +310,15 @@ function Dashboard({ state, api, locked }: { state: GameState; api: GameApi; loc
 
         {panel === "recruit" && atMarket && <RecruitPanel state={state} api={api} onDone={() => setPanel(null)} />}
         {panel === "buy" && atMarket && <BuyPanel state={state} api={api} onDone={() => setPanel(null)} />}
-        {panel === "train" && <TrainBox state={state} api={api} onDone={() => setPanel(null)} />}
+        {panel === "train" && <TrainBox state={state} api={api} selected={selected} onDone={() => setPanel(null)} />}
         {panel === "cook" && <CookPanel api={api} onDone={() => setPanel(null)} />}
 
         <Button
           type="button"
           variant={lead === "live" ? "default" : "outline"}
           onClick={api.liveWeek}
-          disabled={!!api.busy || !!foodStop}
-          aria-describedby={foodStop ? "food-stop" : undefined}
+          disabled={!!api.busy}
+          aria-describedby={shortage ? "food-warning" : undefined}
           className="mt-6 h-12 w-full text-[15px]"
         >
           {state.resolveIndex > 0 ? "Continue the week" : "Live this week"}
@@ -295,16 +340,6 @@ function Dashboard({ state, api, locked }: { state: GameState; api: GameApi; loc
         </button>
       )}
 
-      <section aria-label="The company">
-        <h2 className="font-display text-2xl text-foreground">The company</h2>
-        <StanceLine state={state} api={api} />
-        <ul className="mt-3 space-y-2">
-          {state.units.map((unit) => (
-            <UnitRow key={unit.id} unit={unit} />
-          ))}
-        </ul>
-      </section>
-
       <details className="rounded-sm border border-border px-4 py-3">
         <summary className="cursor-pointer text-[15px] text-muted-foreground">What people say of you</summary>
         <dl className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -315,15 +350,6 @@ function Dashboard({ state, api, locked }: { state: GameState; api: GameApi; loc
             </div>
           ))}
         </dl>
-        <button
-          type="button"
-          onClick={() => {
-            if (window.confirm("Disband this company and start again?")) api.reset();
-          }}
-          className="mt-4 text-[13px] text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-        >
-          Disband the company
-        </button>
       </details>
     </div>
   );
@@ -345,21 +371,20 @@ function StanceLine({ state, api }: { state: GameState; api: GameApi }) {
   );
 }
 
-function UnitRow({ unit }: { unit: GameState["units"][number] }) {
-  const [open, setOpen] = useState(false);
+function UnitRow({ unit, selected, onToggle }: { unit: GameState["units"][number]; selected: boolean; onToggle: () => void }) {
   return (
-    <li className="rounded-sm border border-border bg-card">
-      <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)} className="flex w-full items-baseline justify-between px-4 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
+    <li className={selected ? "rounded-sm border border-foreground/40 bg-secondary" : "rounded-sm border border-border bg-card"}>
+      <button type="button" aria-pressed={selected} onClick={onToggle} className="flex w-full items-baseline justify-between px-4 py-3 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
         <span className="font-display text-xl text-foreground">{unit.name}</span>
         <span className="text-[13px] text-muted-foreground">
           {unit.count} {WIKI[unit.type].title.toLowerCase()}
+          {selected ? <span className="text-foreground"> Selected</span> : null}
         </span>
       </button>
-      {open && (
-        <div className="border-t border-border px-4 py-3 text-[14px] leading-relaxed text-foreground">
-          <p>{unit.origin}</p>
-          {unit.lines.map((line) => (
-            <p key={line} className="mt-1 text-muted-foreground">
+      {selected && (
+        <div className="border-t border-border px-4 py-3 text-[14px] leading-relaxed text-muted-foreground">
+          {unit.lines.map((line, index) => (
+            <p key={`${unit.id}-${index}`} className={index === 0 ? "text-foreground" : "mt-1"}>
               {line}
             </p>
           ))}
@@ -387,7 +412,6 @@ function RecruitPanel({ state, api, onDone }: { state: GameState; api: GameApi; 
   const price = manPrice(type);
   const targets = state.units.filter((unit) => unit.type === type && unit.count < 10);
   const plan = count && into ? recruitmentPlan(state.units, type, count, into) : null;
-  const named = plan ? plan.fresh.every((_, index) => (names[index] ?? "").trim()) : false;
 
   function chooseType(next: UnitTypeId) {
     setType(next);
@@ -399,7 +423,8 @@ function RecruitPanel({ state, api, onDone }: { state: GameState; api: GameApi; 
   function chooseInto(next: string) {
     if (!count) return;
     setInto(next);
-    setNames(recruitmentPlan(state.units, type, count, next).fresh.map(() => ""));
+    const fresh = recruitmentPlan(state.units, type, count, next).fresh;
+    setNames(defaultNamesFor(type, fresh.length, state.units.map((unit) => unit.name)));
   }
 
   return (
@@ -491,7 +516,7 @@ function RecruitPanel({ state, api, onDone }: { state: GameState; api: GameApi; 
       {plan && count && into && (
         <Button
           type="button"
-          disabled={!named || price * count > state.money}
+          disabled={price * count > state.money}
           onClick={() => {
             api.queue({
               kind: "recruit",
@@ -591,67 +616,57 @@ function CookPanel({ api, onDone }: { api: GameApi; onDone: () => void }) {
   );
 }
 
-function TrainBox({ state, api, onDone }: { state: GameState; api: GameApi; onDone: () => void }) {
-  const [ids, setIds] = useState<string[]>([]);
-  const [drill, setDrill] = useState("");
+function TrainBox({ state, api, selected, onDone }: { state: GameState; api: GameApi; selected: string[]; onDone: () => void }) {
+  const ids = selected.filter((id) => state.units.some((unit) => unit.id === id));
+  const pair = ids.length === 2 ? ([ids[0], ids[1]] as [string, string]) : null;
+  const [drill, setDrill] = useState(DEFAULT_DRILL);
   const [ideas, setIdeas] = useState<string[]>([]);
-
-  function toggle(id: string) {
-    setIds((current) => {
-      if (current.includes(id)) return current.filter((item) => item !== id);
-      if (current.length >= 2) return [current[1], id];
-      return [...current, id];
-    });
-  }
+  const named = pair ? pair.map((id) => state.units.find((unit) => unit.id === id)?.name).filter(Boolean).join(" and ") : "";
 
   return (
     <div className="mt-4 border-t border-border pt-4">
       <div className="flex items-baseline justify-between">
-        <h3 className="font-display text-xl text-foreground">Drill two units</h3>
+        <h3 className="font-display text-xl text-foreground">Drill</h3>
         <button type="button" onClick={onDone} className="text-[12px] text-muted-foreground">
           Close
         </button>
       </div>
-      <div className="mt-3 flex flex-col items-start gap-1">
-        {state.units.map((unit) => (
-          <button key={unit.id} type="button" onClick={() => toggle(unit.id)} className={ids.includes(unit.id) ? "text-[15px] text-foreground" : "text-[15px] text-muted-foreground"}>
-            {unit.name}
-          </button>
-        ))}
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        <Input value={drill} onChange={(event) => setDrill(event.target.value)} placeholder="How they train" className="h-9 max-w-sm bg-background" />
+      <p className="mt-2 text-[15px] text-foreground">{pair ? named : "Select two units in the company."}</p>
+      <form
+        className="mt-3 flex flex-wrap gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!pair) return;
+          api.queue({ kind: "train", unitIds: pair, drill: drill.trim() || DEFAULT_DRILL });
+          setIdeas([]);
+          onDone();
+        }}
+      >
+        <label htmlFor="drill" className="sr-only">
+          How they train
+        </label>
+        <Input id="drill" value={drill} onChange={(event) => setDrill(event.target.value)} className="h-9 max-w-sm bg-background" />
         <Button
           type="button"
           variant="outline"
-          disabled={ids.length !== 2 || !!api.busy}
+          disabled={!pair || !!api.busy}
           className="h-9 text-[13px]"
           onClick={async () => {
-            const drills = await api.suggestDrills([ids[0], ids[1]]);
+            if (!pair) return;
+            const drills = await api.suggestDrills(pair);
             if (drills) setIdeas(drills);
           }}
         >
           Suggest
         </Button>
-        <Button
-          type="button"
-          variant="outline"
-          disabled={ids.length !== 2 || !drill.trim()}
-          className="h-9 text-[13px]"
-          onClick={() => {
-            api.queue({ kind: "train", unitIds: [ids[0], ids[1]], drill: drill.trim() });
-            setDrill("");
-            setIdeas([]);
-            onDone();
-          }}
-        >
+        <Button type="submit" variant="outline" disabled={!pair} className="h-9 text-[13px]">
           Add drill
         </Button>
-      </div>
+      </form>
       {ideas.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">
           {ideas.map((idea) => (
-            <button key={idea} type="button" onClick={() => setDrill(idea)} className="rounded-sm border border-border px-2 py-1 text-[13px]">
+            <button key={idea} type="button" onClick={() => setDrill(idea)} className="rounded-sm border border-border px-2 py-1 text-[13px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring">
               {idea}
             </button>
           ))}
@@ -772,13 +787,16 @@ function ForestScreen({ state, api }: { state: GameState; api: GameApi }) {
         <Button type="button" variant="outline" disabled={!!api.busy} onClick={api.sneak} className="h-10 text-[13px]">
           Try to sneak past
         </Button>
+        <Button type="button" variant="outline" disabled={!!api.busy} onClick={api.forageHere} className="h-10 text-[13px]">
+          Forage instead
+        </Button>
       </div>
     </section>
   );
 }
 
 function ApproachScreen({ state, api }: { state: GameState; api: GameApi }) {
-  const [approach, setApproach] = useState("");
+  const [approach, setApproach] = useState(DEFAULT_APPROACH);
   const [supply, setSupply] = useState(0);
   const words = wordCount(approach);
   return (
@@ -828,7 +846,7 @@ function ResultScreen({ state, api }: { state: GameState; api: GameApi }) {
 function ChoiceScreen({ state, api }: { state: GameState; api: GameApi }) {
   const survivors = state.banditSurvivors ?? 0;
   const needed = namesForSurvivors(survivors);
-  const [names, setNames] = useState<string[]>(Array.from({ length: needed }, () => ""));
+  const [names, setNames] = useState<string[]>(() => defaultNamesFor("bandit", needed, state.units.map((unit) => unit.name)));
   const [account, setAccount] = useState(false);
   return (
     <section className="mt-6 rounded-sm border border-foreground/20 bg-card p-5">

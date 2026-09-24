@@ -1,8 +1,11 @@
-import { KINGDOM_SPECIAL, NODES, isSettlement, neighbors, type NodeId } from "../data/map";
+import { KINGDOM_SPECIAL, NODES, isForest, isSettlement, neighbors, type NodeId } from "../data/map";
 import {
   APPROACH_WORDS,
   BANDIT_COUNT,
   CONVERT_CAP,
+  DESCRIPTION_MAX,
+  DESCRIPTION_START,
+  FORAGE_CHANCE,
   MAX_WEEK,
   PRICE,
   RETREAT_FIGHT_CHANCE,
@@ -57,6 +60,8 @@ export function freshGame(): GameState {
     money: STARTING.money,
     basicFood: STARTING.basicFood,
     goodFood: STARTING.goodFood,
+    lateBasic: 0,
+    lateGood: 0,
     supply: STARTING.supply,
     ration: "plain",
     units: [],
@@ -73,7 +78,7 @@ export function freshGame(): GameState {
     bandits: {
       count: BANDIT_COUNT,
       origin: WIKI.bandit.origin,
-      lines: [...WIKI.bandit.start],
+      lines: startingDescription("bandit"),
       morale: "Wary, and sure of these trees.",
       stance: "They watch the paths and decline a fight they dislike.",
     },
@@ -124,7 +129,7 @@ function makeUnit(state: GameState, type: UnitTypeId, count: number, name: strin
     type,
     count,
     origin: entry.origin,
-    lines: [...entry.start],
+    lines: startingDescription(type),
     battles: [],
   };
   return { state: { ...state, nextUnitId: state.nextUnitId + 1 }, unit };
@@ -226,6 +231,54 @@ export function manPrice(type: UnitTypeId): number {
   return 0;
 }
 
+export const DEFAULT_COMPANY_NAME = "The Free Company";
+export const DEFAULT_APPROACH = "We go straight at them.";
+export const DEFAULT_DRILL = "The ordinary drill";
+
+const DEFAULT_UNIT_NAME: Record<UnitTypeId, string> = {
+  swordsmen: "The File",
+  spearmen: "The Hedge",
+  archers: "The Bows",
+  light_cavalry: "The Outriders",
+  heavy_cavalry: "The Hammer",
+  berserkers: "The Mad",
+  bandit: "The Taken",
+};
+
+export function defaultUnitName(type: UnitTypeId, taken: string[]): string {
+  const base = DEFAULT_UNIT_NAME[type];
+  const used = new Set(taken.map((name) => name.trim().toLowerCase()).filter(Boolean));
+  if (!used.has(base.toLowerCase())) return base;
+  let n = 2;
+  while (used.has(`${base} ${n}`.toLowerCase())) n += 1;
+  return `${base} ${n}`;
+}
+
+export function defaultNamesFor(type: UnitTypeId, count: number, taken: string[]): string[] {
+  const names: string[] = [];
+  for (let i = 0; i < count; i += 1) names.push(defaultUnitName(type, [...taken, ...names]));
+  return names;
+}
+
+export function startingDescription(type: UnitTypeId): string[] {
+  const entry = WIKI[type];
+  return [entry.origin, ...entry.start].slice(0, DESCRIPTION_START);
+}
+
+/** The model may rewrite, drop, or add lines. The card starts at four and stops at ten. */
+export function clampDescription(lines: string[]): string[] {
+  return lines.map((line) => line.trim()).filter(Boolean).slice(0, DESCRIPTION_MAX);
+}
+
+export function fallbackForageMeals(men: number, roll: () => number = Math.random): number {
+  let meals = 0;
+  const count = Math.max(0, Math.floor(men));
+  for (let i = 0; i < count; i += 1) {
+    if (roll() < FORAGE_CHANCE) meals += 1;
+  }
+  return meals;
+}
+
 interface Projected {
   money: number;
   basicFood: number;
@@ -233,6 +286,7 @@ interface Projected {
   supply: number;
   location: NodeId;
   moved: boolean;
+  foraged: boolean;
 }
 
 function project(state: GameState, extra?: WeekAction): Projected | { error: string } {
@@ -243,6 +297,7 @@ function project(state: GameState, extra?: WeekAction): Projected | { error: str
     supply: state.supply,
     location: state.location,
     moved: state.movedThisWeek,
+    foraged: false,
   };
   const counts = state.units.map((unit) => ({ ...unit }));
   const actions = extra ? [...state.queue, extra] : state.queue;
@@ -282,10 +337,14 @@ function project(state: GameState, extra?: WeekAction): Projected | { error: str
           type: action.type,
           count,
           origin: "",
-          lines: ["", "", ""],
+          lines: [],
           battles: [],
         });
       }
+    } else if (action.kind === "forage") {
+      if (!isForest(projected.location)) return { error: "There is no forest here to forage." };
+      if (projected.foraged) return { error: "The company is already foraging this week." };
+      projected.foraged = true;
     } else if (action.kind === "convert") {
       if (action.direction === "to-good") {
         const pairs = Math.min(CONVERT_CAP, Math.floor(projected.basicFood / 2));
@@ -361,8 +420,14 @@ function applyListed(state: GameState, action: WeekAction): GameState {
     const cost = PRICE[action.store] * action.amount;
     if (state.money < cost) return notice(state, "The coin ran out, and the purchase was lost.");
     const next = { ...state, money: state.money - cost };
-    if (action.store === "basic") next.basicFood += action.amount;
-    if (action.store === "good") next.goodFood += action.amount;
+    if (action.store === "basic") {
+      next.basicFood += action.amount;
+      if (state.movedThisWeek) next.lateBasic += action.amount;
+    }
+    if (action.store === "good") {
+      next.goodFood += action.amount;
+      if (state.movedThisWeek) next.lateGood += action.amount;
+    }
     if (action.store === "supply") next.supply += action.amount;
     return next;
   }
@@ -405,6 +470,7 @@ export function stepQueue(state: GameState): Step {
   if (action.kind === "train") {
     return { kind: "train", state, unitIds: action.unitIds, drill: action.drill };
   }
+  if (action.kind === "forage") return { kind: "forage", state };
   const applied = applyListed(state, action);
   const advanced = { ...applied, resolveIndex: state.resolveIndex + 1 };
   if (action.kind === "move" && action.to === "blackwood" && advanced.location === "blackwood" && advanced.bandits) {
@@ -413,15 +479,12 @@ export function stepQueue(state: GameState): Step {
   return { kind: "continue", state: advanced };
 }
 
-export function applyTraining(
-  state: GameState,
-  linesByUnit: Record<string, [string, string, string]>
-): Result {
+export function applyTraining(state: GameState, linesByUnit: Record<string, string[]>): Result {
   const action = state.queue[state.resolveIndex];
   if (!action || action.kind !== "train") return fail("No drill is waiting.");
   for (const id of action.unitIds) {
     const lines = linesByUnit[id];
-    if (!lines || lines.some((line) => !line.trim())) return fail("The drill came back without lines for both units.");
+    if (!lines || lines.every((line) => !line.trim())) return fail("The drill came back without lines for both units.");
   }
   return {
     ok: true,
@@ -431,9 +494,30 @@ export function applyTraining(
       units: state.units.map((unit) => {
         const lines = linesByUnit[unit.id];
         if (!lines) return unit;
-        return { ...unit, lines: [lines[0].trim(), lines[1].trim(), lines[2].trim()] };
+        const next = clampDescription(lines);
+        if (next.length < 1) return unit;
+        return { ...unit, lines: next };
       }),
     },
+  };
+}
+
+export function applyForage(state: GameState, meals: number, account: string): Result {
+  const action = state.queue[state.resolveIndex];
+  if (!action || action.kind !== "forage") return fail("No forage is waiting.");
+  const men = headcount(state.units);
+  const found = Math.max(0, Math.min(men, Math.round(Number.isFinite(meals) ? meals : 0)));
+  const told = account.trim() || `They foraged and brought back ${found} rations.`;
+  return {
+    ok: true,
+    state: notice(
+      {
+        ...state,
+        basicFood: state.basicFood + found,
+        resolveIndex: state.resolveIndex + 1,
+      },
+      told
+    ),
   };
 }
 
@@ -459,8 +543,12 @@ function starveCount(count: number): number {
 
 export function finishWeek(state: GameState): GameState {
   const men = headcount(state.units);
-  let basic = state.basicFood;
-  let good = state.goodFood;
+  const lateBasic = state.lateBasic ?? 0;
+  const lateGood = state.lateGood ?? 0;
+  const eatableBasic = Math.max(0, state.basicFood - lateBasic);
+  const eatableGood = Math.max(0, state.goodFood - lateGood);
+  let basic = eatableBasic;
+  let good = eatableGood;
   let need = men;
   let ateGood = 0;
   let ateBasic = 0;
@@ -487,7 +575,7 @@ export function finishWeek(state: GameState): GameState {
   let units = state.units;
   let hunger: "well" | "plain" | "mixed" | "hungry" | "starving" = "plain";
   let next = state;
-  if (men > 0 && basic === state.basicFood && good === state.goodFood && missing === men) {
+  if (men > 0 && basic === eatableBasic && good === eatableGood && missing === men) {
     units = units
       .map((unit) => ({ ...unit, count: unit.count - starveCount(unit.count) }))
       .filter((unit) => unit.count > 0);
@@ -531,8 +619,10 @@ export function finishWeek(state: GameState): GameState {
   const closed: GameState = {
     ...next,
     units,
-    basicFood: basic,
-    goodFood: good,
+    basicFood: basic + lateBasic,
+    goodFood: good + lateGood,
+    lateBasic: 0,
+    lateGood: 0,
     morale,
     condition,
     moraleFromBattle: false,
@@ -613,6 +703,19 @@ export function settleLeaderAttack(comparison: ForceComparison, modelWantsAttack
 
 export function slipPast(state: GameState, line: string): GameState {
   return rememberLeader({ ...state, screen: "dashboard" }, line);
+}
+
+export function takeForestForage(state: GameState, meals: number, account: string): GameState {
+  const men = headcount(state.units);
+  const found = Math.max(0, Math.min(men, Math.round(Number.isFinite(meals) ? meals : 0)));
+  const told = account.trim() || `They foraged and brought back ${found} rations.`;
+  return notice(
+    rememberLeader(
+      { ...state, basicFood: state.basicFood + found, screen: "dashboard" },
+      "The company foraged in the forest and did not seek a fight."
+    ),
+    told
+  );
 }
 
 function nonEmpty(value: unknown): string | null {
@@ -718,17 +821,17 @@ export function validateOutcome(state: GameState, raw: unknown): { ok: true; val
       const token = [record.unitId, record.id, record.unit, record.name].find((item) => typeof item === "string") as string | undefined;
       const unit = token ? unitByToken(state, token) : undefined;
       if (!unit) continue;
-      const bundle = Array.isArray(record.lines) ? record.lines : [record.line2, record.line3, record.line4];
-      const line2 = nonEmpty(bundle[0]) ?? unit.lines[0];
-      const line3 = nonEmpty(bundle[1]) ?? unit.lines[1];
-      const line4 = nonEmpty(bundle[2]) ?? unit.lines[2];
-      lines.push({ unitId: unit.id, line2, line3, line4 });
+      const bundle = Array.isArray(record.lines)
+        ? record.lines.filter((item): item is string => typeof item === "string")
+        : [record.line2, record.line3, record.line4].filter((item): item is string => typeof item === "string");
+      const nextLines = clampDescription(bundle);
+      lines.push({ unitId: unit.id, lines: nextLines.length ? nextLines : [...unit.lines] });
     }
   }
   for (const unit of state.units) {
     if ((deaths.get(unit.id) ?? 0) >= unit.count) continue;
     if (!lines.some((row) => row.unitId === unit.id)) {
-      lines.push({ unitId: unit.id, line2: unit.lines[0], line3: unit.lines[1], line4: unit.lines[2] });
+      lines.push({ unitId: unit.id, lines: [...unit.lines] });
     }
   }
 
@@ -746,17 +849,21 @@ export function validateOutcome(state: GameState, raw: unknown): { ok: true; val
   };
 }
 
-export function projectedRations(state: GameState): number {
+/** Rations the company can eat this week. A purchase after the march does not count. */
+export function carriedRations(state: GameState): number {
   let basic = state.basicFood;
   let good = state.goodFood;
   let money = state.money;
   let location = state.location;
-  let moved = state.movedThisWeek;
+  let marched = state.movedThisWeek;
   for (const action of state.queue) {
-    if (action.kind === "move" && !moved && neighbors(location).includes(action.to)) {
-      moved = true;
+    if (action.kind === "move" && !marched && neighbors(location).includes(action.to)) {
+      marched = true;
       location = action.to;
-    } else if (action.kind === "buy" && isSettlement(location)) {
+      continue;
+    }
+    if (marched) continue;
+    if (action.kind === "buy" && isSettlement(location)) {
       const cost = PRICE[action.store] * action.amount;
       if (money >= cost && action.amount > 0) {
         money -= cost;
@@ -778,17 +885,17 @@ export function projectedRations(state: GameState): number {
   return basic + good;
 }
 
-export function foodBlocksWeek(state: GameState): string | null {
+export function foodWarning(state: GameState): string | null {
   if (state.phase !== "play" || state.resolveIndex > 0) return null;
   const need = headcount(state.units);
-  const have = projectedRations(state);
+  const have = carriedRations(state);
   if (have >= need) return null;
   const short = need - have;
   const rations = `Short ${short} ration${short === 1 ? "" : "s"}.`;
-  if (NODES[state.location].kind === "wild") {
-    return `${rations} March to a village or a capital, then buy food. Both fit in this week if the march comes first.`;
+  if (state.queue.some((action) => action.kind === "forage")) {
+    return `${rations} The forest may feed them. It is not promised.`;
   }
-  return `${rations} Buy food before this week can pass.`;
+  return `${rations} You can still march. Buy before the march if you want them fed this week.`;
 }
 
 export function applyOutcome(state: GameState, outcome: ValidatedBattle, brief: string, chronicle: string): { state: GameState; result: "victory" | "defeat" } {
@@ -814,7 +921,7 @@ export function applyOutcome(state: GameState, outcome: ValidatedBattle, brief: 
           },
         ],
       };
-      if (rewritten && next.count > 0) next.lines = [rewritten.line2, rewritten.line3, rewritten.line4];
+      if (rewritten && next.count > 0 && rewritten.lines.length > 0) next.lines = rewritten.lines;
       return next;
     })
     .filter((unit) => unit.count > 0);
@@ -936,6 +1043,7 @@ export function claimReward(state: GameState): Result {
 export function describeAction(action: WeekAction): string {
   if (action.kind === "move") return `March to ${NODES[action.to].name}`;
   if (action.kind === "train") return `Drill two units: ${action.drill}`;
+  if (action.kind === "forage") return "Forage in the forest";
   if (action.kind === "convert") return action.direction === "to-good" ? "Improve plain food" : "Break good food down";
   if (action.kind === "recruit") {
     const asNew = action.into === "new" ? " as a new unit" : "";
@@ -947,14 +1055,14 @@ export function describeAction(action: WeekAction): string {
 export function companyDescription(state: GameState): string {
   const lines = state.units.map(
     (unit) =>
-      `${unit.name}: ${unit.count} ${WIKI[unit.type].title}. ${unit.origin} ${unit.lines.join(" ")} Morale of the company: ${state.morale} Stance: ${state.stance}`
+      `${unit.name}: ${unit.count} ${WIKI[unit.type].title}. ${unit.lines.join(" ")} Morale of the company: ${state.morale} Stance: ${state.stance}`
   );
   return `${state.companyName}, ${headcount(state.units)} men.\n${lines.join("\n")}`;
 }
 
 export function banditDescription(state: GameState): string {
   if (!state.bandits) return "The bandits are gone.";
-  return `${state.leader.name}'s band, ${state.bandits.count} bandits. ${state.bandits.origin} ${state.bandits.lines.join(" ")} ${WIKI.bandit.worth}`;
+  return `${state.leader.name}'s band, ${state.bandits.count} bandits. ${state.bandits.lines.join(" ")} ${WIKI.bandit.worth}`;
 }
 
 export function comparisonSentence(comparison: ForceComparison): string {

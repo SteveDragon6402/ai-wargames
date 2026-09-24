@@ -19,6 +19,7 @@ export default function MercenaryPage() {
         onTypes={game.pickTypes}
         onUnitNames={game.nameUnits}
         onReputation={() => void game.rollReputation()}
+        onReset={game.reset}
       />
     );
   }

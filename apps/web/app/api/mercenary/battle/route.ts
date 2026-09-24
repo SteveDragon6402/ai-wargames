@@ -65,11 +65,13 @@ const RECORD: Anthropic.Tool = {
           type: "object",
           properties: {
             unitId: { type: "string" },
-            line2: { type: "string" },
-            line3: { type: "string" },
-            line4: { type: "string" },
+            lines: {
+              type: "array",
+              items: { type: "string" },
+              description: "What the unit seems like after the fight. One to ten lines. Rewrite, drop, or add a line only when the fight would change it.",
+            },
           },
-          required: ["unitId", "line2", "line3", "line4"],
+          required: ["unitId", "lines"],
         },
       },
     },
@@ -136,7 +138,7 @@ Bandits alive at the start: ${bandits}. banditDeaths is an integer from 0 to ${b
 Each deaths count is an integer from 0 to that unit's men. Omit a unit, or use 0, if nobody in it died.
 playerHoldsField is true or false.
 morale, stance, and condition are one sentence each.
-lines: for every unit that still has men, three sentences as line2, line3, and line4. If you cannot improve a line, repeat the current one.
+lines: for every unit that still has men, the description of what they seem like now, from 1 to 10 lines. Rewrite, drop, or add a line only when the fight would change it.
 Do not name a unit that is not listed.`;
 }
 

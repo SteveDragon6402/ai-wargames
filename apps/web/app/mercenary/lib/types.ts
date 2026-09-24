@@ -28,7 +28,8 @@ export interface Unit {
   type: UnitTypeId;
   count: number;
   origin: string;
-  lines: [string, string, string];
+  /** Living description. Starts as how they were raised, and grows as they drill. */
+  lines: string[];
   battles: BattleRecord[];
 }
 
@@ -45,6 +46,7 @@ export interface ChatTurn {
 export type WeekAction =
   | { kind: "move"; to: NodeId }
   | { kind: "train"; unitIds: [string, string]; drill: string }
+  | { kind: "forage" }
   | { kind: "convert"; direction: "to-good" | "to-basic" }
   | { kind: "recruit"; type: UnitTypeId; count: number; names: string[]; into?: string | "new" }
   | { kind: "buy"; store: "basic" | "good" | "supply"; amount: number };
@@ -52,7 +54,7 @@ export type WeekAction =
 export interface BanditForce {
   count: number;
   origin: string;
-  lines: [string, string, string];
+  lines: string[];
   morale: string;
   stance: string;
 }
@@ -92,6 +94,9 @@ export interface GameState {
   money: number;
   basicFood: number;
   goodFood: number;
+  /** Food bought after this week's march. It is in the stores, and it is not eaten until next week. */
+  lateBasic: number;
+  lateGood: number;
   supply: number;
   ration: "hearty" | "plain";
   units: Unit[];
@@ -123,6 +128,7 @@ export type Step =
   | { kind: "continue"; state: GameState }
   | { kind: "forest"; state: GameState }
   | { kind: "train"; state: GameState; unitIds: [string, string]; drill: string }
+  | { kind: "forage"; state: GameState }
   | { kind: "done"; state: GameState };
 
 export interface ValidatedBattle {
@@ -132,7 +138,7 @@ export interface ValidatedBattle {
   morale: string;
   stance: string;
   condition: string;
-  lines: { unitId: string; line2: string; line3: string; line4: string }[];
+  lines: { unitId: string; lines: string[] }[];
 }
 
 export type ForceComparison = "larger" | "smaller" | "close";

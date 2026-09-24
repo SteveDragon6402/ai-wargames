@@ -158,3 +158,7 @@ export function isSettlement(id: NodeId): boolean {
   const kind = NODES[id].kind;
   return kind === "village" || kind === "capital";
 }
+
+export function isForest(id: NodeId): boolean {
+  return /forest/i.test(NODES[id].ground);
+}

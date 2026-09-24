@@ -7,6 +7,10 @@ export const CONVERT_CAP = 10;
 export const APPROACH_WORDS = 40;
 export const REWARD_FULL = 30;
 export const REWARD_RECRUIT = 10;
+/** Chance each forager brings back one ration when the forest call fails. */
+export const FORAGE_CHANCE = 0.4;
+export const DESCRIPTION_START = 4;
+export const DESCRIPTION_MAX = 10;
 
 export const PRICE = {
   basic: 1,
