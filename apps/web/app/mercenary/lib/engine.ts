@@ -3,7 +3,6 @@ import { KINGDOM_SPECIAL, NODES, isForest, isSettlement, neighbors, type NodeId 
 import {
   APPROACH_WORDS,
   BANDIT_COUNT,
-  CONVERT_CAP,
   DESCRIPTION_MAX,
   DESCRIPTION_START,
   FORAGE_CHANCE,
@@ -355,8 +354,7 @@ function project(state: GameState): Projected | { error: string } {
       const cost = PRICE[action.store] * action.amount;
       if (projected.money < cost) return { error: "Not enough coin." };
       projected.money -= cost;
-      if (action.store === "basic") projected.basicFood += action.amount;
-      if (action.store === "good") projected.goodFood += action.amount;
+      if (action.store === "basic" || action.store === "good") projected.basicFood += action.amount;
       if (action.store === "supply") projected.supply += action.amount;
     } else if (action.kind === "recruit") {
       if (!isSettlement(projected.location)) return { error: "Nobody here will take the coin." };
@@ -387,18 +385,10 @@ function project(state: GameState): Projected | { error: string } {
       if (!isForest(projected.location)) return { error: "There is no forest here to forage." };
       if (projected.foraged) return { error: "The company is already foraging this week." };
       projected.foraged = true;
+    } else if (action.kind === "talk") {
+      if (!isSettlement(projected.location)) return { error: "There is no one here to talk to." };
     } else if (action.kind === "convert") {
-      if (action.direction === "to-good") {
-        const pairs = Math.min(CONVERT_CAP, Math.floor(projected.basicFood / 2));
-        if (pairs < 1) return { error: "Not enough plain food to improve." };
-        projected.basicFood -= pairs * 2;
-        projected.goodFood += pairs;
-      } else {
-        const meals = Math.min(CONVERT_CAP, projected.goodFood);
-        if (meals < 1) return { error: "No good food to break down." };
-        projected.goodFood -= meals;
-        projected.basicFood += meals * 2;
-      }
+      return { error: "Food is one store." };
     } else if (action.kind === "train") {
       if (!action.drill.trim()) return { error: "Say what the drill is." };
       if (action.unitIds[0] === action.unitIds[1]) return { error: "Pick two different units." };
@@ -476,6 +466,25 @@ export function setRation(state: GameState, ration: "hearty" | "plain"): GameSta
   return { ...state, ration };
 }
 
+/** Buy food where you stand. It does not spend the week's action. */
+export function purchaseFood(state: GameState, amount: number): Result {
+  const closed = weekOpen(state);
+  if (closed) return fail(closed);
+  if (!isSettlement(state.location)) return fail("Nobody is selling there.");
+  if (!Number.isInteger(amount) || amount < 1 || amount > 100) return fail("Buy a sensible amount.");
+  const cost = PRICE.basic * amount;
+  if (state.money < cost) return fail("Not enough coin.");
+  return {
+    ok: true,
+    state: {
+      ...state,
+      money: state.money - cost,
+      basicFood: state.basicFood + state.goodFood + amount,
+      goodFood: 0,
+    },
+  };
+}
+
 export function beginResolution(state: GameState): GameState {
   if (state.resolveIndex > 0) return state;
   return {
@@ -506,13 +515,9 @@ function applyListed(state: GameState, action: WeekAction): GameState {
     const cost = PRICE[action.store] * action.amount;
     if (state.money < cost) return notice(state, "The coin ran out, and the purchase was lost.");
     const next = { ...state, money: state.money - cost };
-    if (action.store === "basic") {
+    if (action.store === "basic" || action.store === "good") {
       next.basicFood += action.amount;
       if (state.movedThisWeek) next.lateBasic += action.amount;
-    }
-    if (action.store === "good") {
-      next.goodFood += action.amount;
-      if (state.movedThisWeek) next.lateGood += action.amount;
     }
     if (action.store === "supply") next.supply += action.amount;
     return next;
@@ -538,14 +543,7 @@ function applyListed(state: GameState, action: WeekAction): GameState {
     return next;
   }
   if (action.kind === "convert") {
-    if (action.direction === "to-good") {
-      const pairs = Math.min(CONVERT_CAP, Math.floor(state.basicFood / 2));
-      if (pairs < 1) return notice(state, "There was not enough plain food to improve.");
-      return { ...state, basicFood: state.basicFood - pairs * 2, goodFood: state.goodFood + pairs };
-    }
-    const meals = Math.min(CONVERT_CAP, state.goodFood);
-    if (meals < 1) return notice(state, "There was no good food to break down.");
-    return { ...state, goodFood: state.goodFood - meals, basicFood: state.basicFood + meals * 2 };
+    return notice({ ...state, basicFood: state.basicFood + state.goodFood, goodFood: 0 }, "The stores are one food.");
   }
   return state;
 }
@@ -628,39 +626,14 @@ function starveCount(count: number): number {
 
 export function finishWeek(state: GameState): GameState {
   const men = headcount(state.units);
-  const lateBasic = state.lateBasic ?? 0;
-  const lateGood = state.lateGood ?? 0;
-  const eatableBasic = Math.max(0, state.basicFood - lateBasic);
-  const eatableGood = Math.max(0, state.goodFood - lateGood);
-  let basic = eatableBasic;
-  let good = eatableGood;
-  let need = men;
-  let ateGood = 0;
-  let ateBasic = 0;
-  const take = (kind: "good" | "basic") => {
-    const have = kind === "good" ? good : basic;
-    const used = Math.min(have, need);
-    if (kind === "good") {
-      good -= used;
-      ateGood += used;
-    } else {
-      basic -= used;
-      ateBasic += used;
-    }
-    need -= used;
-  };
-  if (state.ration === "hearty") {
-    take("good");
-    take("basic");
-  } else {
-    take("basic");
-    take("good");
-  }
-  const missing = need;
+  const late = (state.lateBasic ?? 0) + (state.lateGood ?? 0);
+  const stock = Math.max(0, state.basicFood + state.goodFood - late);
+  const missing = Math.max(0, men - stock);
+  const left = Math.max(0, stock - men);
   let units = state.units;
-  let hunger: "well" | "plain" | "mixed" | "hungry" | "starving" = "plain";
+  let hunger: "fed" | "hungry" | "starving" = "fed";
   let next = state;
-  if (men > 0 && basic === eatableBasic && good === eatableGood && missing === men) {
+  if (men > 0 && stock === 0) {
     units = units
       .map((unit) => ({ ...unit, count: unit.count - starveCount(unit.count) }))
       .filter((unit) => unit.count > 0);
@@ -671,24 +644,14 @@ export function finishWeek(state: GameState): GameState {
     units = killFromLargest(units, missing);
     hunger = "hungry";
     next = notice(next, `${missing} went unfed.`);
-  } else if (ateGood > 0 && ateBasic === 0) {
-    hunger = "well";
-  } else if (ateGood > 0 && ateBasic > 0) {
-    hunger = "mixed";
-  } else {
-    hunger = "plain";
   }
 
   const foodLine =
-    hunger === "well"
-      ? "They ate well."
-      : hunger === "mixed"
-        ? "The good food ran out. The rest ate plain."
-        : hunger === "hungry"
-          ? "They are hungry. The missing rations have soured them."
-          : hunger === "starving"
-            ? "They are starving."
-            : "They ate plain.";
+    hunger === "hungry"
+      ? "They are hungry. The missing rations have soured them."
+      : hunger === "starving"
+        ? "They are starving."
+        : "They ate.";
   const hungry = hunger === "hungry" || hunger === "starving";
   const doubleRest = state.weekPlan.movement.kind === "rest" && state.weekPlan.deed.kind === "rest" && !state.movedThisWeek;
   const marched = state.weekPlan.movement.kind === "march" || state.movedThisWeek;
@@ -696,8 +659,8 @@ export function finishWeek(state: GameState): GameState {
   const closed: GameState = {
     ...next,
     units,
-    basicFood: basic + lateBasic,
-    goodFood: good + lateGood,
+    basicFood: left + late,
+    goodFood: 0,
     lateBasic: 0,
     lateGood: 0,
     morale: hungry ? `${state.morale} ${foodLine}`.trim() : state.morale,
@@ -932,8 +895,7 @@ export function validateOutcome(state: GameState, raw: unknown): { ok: true; val
 
 /** Rations the company can eat this week. A purchase after the march does not count. */
 export function carriedRations(state: GameState): number {
-  let basic = state.basicFood;
-  let good = state.goodFood;
+  let basic = state.basicFood + state.goodFood;
   let money = state.money;
   let location = state.location;
   let marched = state.movedThisWeek;
@@ -949,22 +911,11 @@ export function carriedRations(state: GameState): number {
       const cost = PRICE[action.store] * action.amount;
       if (money >= cost && action.amount > 0) {
         money -= cost;
-        if (action.store === "basic") basic += action.amount;
-        if (action.store === "good") good += action.amount;
-      }
-    } else if (action.kind === "convert") {
-      if (action.direction === "to-good") {
-        const pairs = Math.min(CONVERT_CAP, Math.floor(basic / 2));
-        basic -= pairs * 2;
-        good += pairs;
-      } else {
-        const meals = Math.min(CONVERT_CAP, good);
-        good -= meals;
-        basic += meals * 2;
+        if (action.store === "basic" || action.store === "good") basic += action.amount;
       }
     }
   }
-  return basic + good;
+  return basic;
 }
 
 export function foodWarning(state: GameState): string | null {
@@ -1205,12 +1156,14 @@ export function describeAction(action: WeekAction): string {
   if (action.kind === "move") return `March to ${NODES[action.to].name}`;
   if (action.kind === "train") return `Drill two units: ${action.drill}`;
   if (action.kind === "forage") return "Forage in the forest";
-  if (action.kind === "convert") return action.direction === "to-good" ? "Improve plain food" : "Break good food down";
+  if (action.kind === "talk") return "Talk to the elder";
+  if (action.kind === "convert") return "Food";
   if (action.kind === "recruit") {
     const asNew = action.into === "new" ? " as a new unit" : "";
     return `Hire ${action.count} ${WIKI[action.type].title.toLowerCase()}${asNew}`;
   }
-  return `Buy ${action.amount} ${action.store === "basic" ? "plain food" : action.store === "good" ? "good food" : "supply"}`;
+  if (action.store === "supply") return `Buy ${action.amount} supply`;
+  return `Buy ${action.amount} food`;
 }
 
 export function companyDescription(state: GameState): string {

@@ -31,6 +31,7 @@ import {
   retreatQuiet,
   retreatStartsFight,
   offerContract,
+  purchaseFood,
   setCompanyName,
   setDeed,
   setMovement,
@@ -49,12 +50,14 @@ import { REPUTATION_KEYS, type Aftermath, type DeedOrder, type GameState, type M
 const KEY = "mercenary-band-v1";
 
 function revivePlan(parsed: GameState) {
-  if (parsed.weekPlan?.movement && parsed.weekPlan?.deed) return parsed.weekPlan;
-  const plan = defaultWeekPlan();
-  for (const action of parsed.queue ?? []) {
-    if (action.kind === "move") plan.movement = { kind: "march", to: action.to };
-    else if (action.kind !== "rest") plan.deed = action;
+  const plan = parsed.weekPlan?.movement && parsed.weekPlan?.deed ? { ...parsed.weekPlan } : defaultWeekPlan();
+  if (!parsed.weekPlan?.movement || !parsed.weekPlan?.deed) {
+    for (const action of parsed.queue ?? []) {
+      if (action.kind === "move") plan.movement = { kind: "march", to: action.to };
+      else if (action.kind !== "rest" && action.kind !== "buy" && action.kind !== "convert") plan.deed = action;
+    }
   }
+  if (plan.deed.kind === "convert") plan.deed = { kind: "rest" };
   return plan;
 }
 
@@ -63,8 +66,10 @@ function revive(parsed: GameState): GameState {
   return {
     ...blank,
     ...parsed,
-    lateBasic: parsed.lateBasic ?? 0,
-    lateGood: parsed.lateGood ?? 0,
+    basicFood: (parsed.basicFood ?? blank.basicFood) + (parsed.goodFood ?? 0),
+    goodFood: 0,
+    lateBasic: (parsed.lateBasic ?? 0) + (parsed.lateGood ?? 0),
+    lateGood: 0,
     weekPlan: revivePlan(parsed),
     weeksSinceRest: parsed.weeksSinceRest ?? 0,
     weeksDoubleRest: parsed.weeksDoubleRest ?? 0,
@@ -278,6 +283,13 @@ export function useMercenary() {
     return closed;
   }
 
+  function stampScene(line: string) {
+    const latest = ref.current;
+    const text = line.trim();
+    if (!latest || !text || latest.weekScene?.includes(text)) return;
+    commit({ ...latest, weekScene: `${text} ${latest.weekScene ?? ""}`.trim() });
+  }
+
   async function continueWeek(start: GameState) {
     let current = start.resolveIndex === 0 ? beginResolution(start) : start;
     while (true) {
@@ -465,6 +477,15 @@ export function useMercenary() {
         commit(result.state);
       }
     },
+    buyFood(amount: number) {
+      if (!ref.current) return;
+      const result = purchaseFood(ref.current, amount);
+      if (!result.ok) setError(result.error);
+      else {
+        setError(null);
+        commit(result.state);
+      }
+    },
     act(deed: DeedOrder) {
       if (!ref.current) return;
       const result = setDeed(ref.current, deed);
@@ -537,6 +558,13 @@ export function useMercenary() {
           battles,
           deeds: current.villageDeeds,
           company: companyDescription(current),
+          place: NODES[current.location].name,
+          ground: NODES[current.location].ground,
+          rewardReady: canClaimReward(current),
+          purse: current.rewardPurse,
+          workOpen: !current.villageWork && !!current.bandits && current.location === current.payAt,
+          leader: current.leader.name,
+          bandPlace: NODES[current.bandAt].name,
         }),
       });
       if (!res.ok) {
@@ -544,20 +572,28 @@ export function useMercenary() {
         setBusy(null);
         return;
       }
-      const data = (await res.json()) as { line?: string };
+      const data = (await res.json()) as { line?: string; paid?: boolean };
       if (!data.line?.trim()) {
         setError("The elder said nothing.");
         setBusy(null);
         return;
       }
-      commit({
+      let next: GameState = {
         ...current,
         elderTalk: [
           ...current.elderTalk,
           { role: "player", text: message.trim() },
           { role: "elder", text: data.line.trim() },
         ],
-      });
+      };
+      if (data.paid && canClaimReward(next)) {
+        const paid = claimReward(next);
+        if (paid.ok) {
+          next = paid.state;
+          void refreshReputation(next, next.decisions.at(-1)?.text ?? "Claimed the pay.");
+        }
+      }
+      commit(next);
       setBusy(null);
     },
     async takeWork() {
@@ -623,7 +659,33 @@ export function useMercenary() {
     fight() {
       const current = ref.current;
       if (!current) return;
-      commit(openBattle(rememberLeader(current, "The company chose to fight."), "fight", null));
+      const ready = current.resolveIndex > 0 ? current : { ...current, weekPlan: defaultWeekPlan() };
+      commit(openBattle(rememberLeader(ready, "The company chose to fight."), "fight", null));
+    },
+    async runAway() {
+      const current = ref.current;
+      if (!current || busy) return;
+      const line = `${current.leader.name} will not treat with you. The week is spent.`;
+      setBusy("The week goes by.");
+      setError(null);
+      if (current.resolveIndex > 0) {
+        await continueWeek({
+          ...current,
+          screen: "dashboard",
+          resolveIndex: current.queue.length,
+          notices: [...current.notices, line],
+        });
+      } else {
+        const narrated = await narrateWeek({
+          ...current,
+          screen: "dashboard",
+          weekPlan: defaultWeekPlan(),
+          notices: [line],
+        });
+        commit(narrated);
+      }
+      stampScene(line);
+      setBusy(null);
     },
     async retreat() {
       const current = ref.current;
@@ -655,7 +717,10 @@ export function useMercenary() {
       }
       const found = (await detected.json()) as { found: boolean; reason: string };
       if (!found.found) {
-        await continueWeek(slipPast(current, found.reason || "They slipped past the band."));
+        const reason = found.reason || "They slipped past the band.";
+        const base = current.resolveIndex > 0 ? current : { ...current, weekPlan: defaultWeekPlan() };
+        await continueWeek(slipPast(base, reason));
+        stampScene(reason);
         return;
       }
       setBusy("The bandit leader is deciding.");
@@ -682,7 +747,10 @@ export function useMercenary() {
         setBusy(null);
         return;
       }
-      await continueWeek(slipPast(current, decision.reason || "He saw them and let them pass."));
+      const reason = decision.reason || "He saw them and let them pass.";
+      const base = current.resolveIndex > 0 ? current : { ...current, weekPlan: defaultWeekPlan() };
+      await continueWeek(slipPast(base, reason));
+      stampScene(reason);
     },
     async sendBattle(approach: string, supply: number) {
       const current = ref.current;

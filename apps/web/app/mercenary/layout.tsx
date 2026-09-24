@@ -1,4 +1,19 @@
 import type { Metadata } from "next";
+import { Bebas_Neue, Bungee } from "next/font/google";
+
+const poster = Bebas_Neue({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-poster",
+  display: "swap",
+});
+
+const funky = Bungee({
+  weight: "400",
+  subsets: ["latin"],
+  variable: "--font-funky",
+  display: "swap",
+});
 
 export const metadata: Metadata = {
   title: "The Mercenary Band",
@@ -6,5 +21,5 @@ export const metadata: Metadata = {
 };
 
 export default function MercenaryLayout({ children }: { children: React.ReactNode }) {
-  return children;
+  return <div className={`${poster.variable} ${funky.variable}`}>{children}</div>;
 }

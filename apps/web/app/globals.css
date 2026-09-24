@@ -92,6 +92,14 @@
     font-family: var(--font-display), Georgia, serif;
     font-style: italic;
   }
+
+  .font-poster {
+    font-family: var(--font-poster), Impact, "Arial Narrow", sans-serif;
+  }
+
+  .font-funky {
+    font-family: var(--font-funky), Impact, sans-serif;
+  }
 }
 
 /* React Flow — campaign map */

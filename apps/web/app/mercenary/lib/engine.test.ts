@@ -23,6 +23,7 @@ import {
   freshGame,
   nameStartingUnits,
   parseReport,
+  purchaseFood,
   recruitmentPlan,
   linesTouchedByChronicle,
   offerContract,
@@ -182,14 +183,14 @@ describe("company", () => {
 });
 
 describe("stores", () => {
-  it("turns plain food into good food at two for one", () => {
-    let state = playing();
-    state = must(enqueue(state, { kind: "convert", direction: "to-good" }));
-    const step = stepQueue(beginResolution(state));
-    assert.equal(step.kind, "continue");
-    if (step.kind !== "continue") return;
-    assert.equal(step.state.goodFood, 10);
-    assert.equal(step.state.basicFood, 20);
+  it("keeps food as one store", () => {
+    const state = playing();
+    assert.match(canEnqueue(state, { kind: "convert", direction: "to-good" }) ?? "", /one store/);
+    const bought = must(purchaseFood(state, 10));
+    assert.equal(bought.basicFood, state.basicFood + 10);
+    assert.equal(bought.goodFood, 0);
+    assert.equal(bought.money, state.money - 10);
+    assert.equal(bought.weekPlan.deed.kind, "rest");
   });
 
   it("kills men when the stores are empty", () => {

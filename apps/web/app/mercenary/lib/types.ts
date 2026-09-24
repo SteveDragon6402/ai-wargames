@@ -48,6 +48,7 @@ export type WeekAction =
   | { kind: "rest" }
   | { kind: "train"; unitIds: [string, string]; drill: string }
   | { kind: "forage" }
+  | { kind: "talk" }
   | { kind: "convert"; direction: "to-good" | "to-basic" }
   | { kind: "recruit"; type: UnitTypeId; count: number; names: string[]; into?: string | "new" }
   | { kind: "buy"; store: "basic" | "good" | "supply"; amount: number };
@@ -60,6 +61,7 @@ export type DeedOrder =
   | { kind: "rest" }
   | { kind: "train"; unitIds: [string, string]; drill: string }
   | { kind: "forage" }
+  | { kind: "talk" }
   | { kind: "convert"; direction: "to-good" | "to-basic" }
   | { kind: "recruit"; type: UnitTypeId; count: number; names: string[]; into?: string | "new" }
   | { kind: "buy"; store: "basic" | "good" | "supply"; amount: number };
