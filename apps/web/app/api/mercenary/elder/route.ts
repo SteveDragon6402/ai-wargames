@@ -18,8 +18,10 @@ interface ElderBody {
   rewardReady?: boolean;
   purse?: number | null;
   workOpen?: boolean;
+  workHeard?: boolean;
   leader?: string;
   bandPlace?: string;
+  speaker?: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -56,6 +58,11 @@ export async function POST(req: NextRequest) {
       input_schema: { type: "object", properties: {} },
     },
     {
+      name: "tell_of_the_work",
+      description: "Tell them the work that is actually open here. Call this when you explain the job. Until you call it, they cannot take the work. Then call speak.",
+      input_schema: { type: "object", properties: {} },
+    },
+    {
       name: "pay_the_company",
       description: "Pay the purse the company is already owed for finished work. Call this when they say the work is done and a purse is waiting. Then call speak.",
       input_schema: { type: "object", properties: {} },
@@ -79,13 +86,16 @@ export async function POST(req: NextRequest) {
   ];
 
   const placeName = body.place?.trim() || "this place";
+  const speaker = body.speaker?.trim() || "elder";
   const owed = body.rewardReady && typeof body.purse === "number" ? body.purse : null;
+  const canTell = !!body.workOpen && !body.workHeard;
   let paid = false;
+  let workTold = false;
   for (let round = 0; round < 6; round++) {
     const response = await createMessage(client, {
       max_tokens: 800,
-      system: `You are the elder of ${placeName}. ${body.ground?.trim() ?? ""} You speak plainly, in a few sentences.
-${body.workOpen ? `${body.leader ?? "A band"} is at ${body.bandPlace ?? "the wild"}. If they ask whether you need help, tell them that, and that the purse waits when the band is gone. Do not invent a different threat.` : "Do not invent a threat that is not in what you can read."}
+      system: `You are the ${speaker} of ${placeName}. ${body.ground?.trim() ?? ""} You speak plainly, in a few sentences.
+${canTell ? `${body.leader ?? "A band"} is at ${body.bandPlace ?? "the wild"}. If they ask whether you need help, or you explain the job, call tell_of_the_work, then speak. The purse waits when the band is gone. Do not invent a different threat.` : "Do not invent a threat that is not in what you can read. Do not call tell_of_the_work."}
 ${owed !== null ? `They are owed ${owed} coins. If they tell you the work is done, call pay_the_company, then speak.` : "No purse is waiting. Do not call pay_the_company."}
 You may call tools to read reputation, the bible, battle history, the decision log, and what they have done here. Past talks are in the conversation. When you are ready, call speak.`,
       tools,
@@ -96,7 +106,7 @@ You may call tools to read reputation, the bible, battle history, the decision l
     const calls = toolUses(response);
     if (!calls.length) {
       const text = textOf(response);
-      if (text) return NextResponse.json({ line: text, paid });
+      if (text) return NextResponse.json({ line: text, paid, workTold });
       return NextResponse.json({ error: "The elder said nothing." }, { status: 500 });
     }
 
@@ -107,6 +117,15 @@ You may call tools to read reputation, the bible, battle history, the decision l
       if (call.name === "speak") {
         spoken = String(input.line ?? "").trim();
         results.push({ type: "tool_result", tool_use_id: call.id, content: "Said." });
+        continue;
+      }
+      if (call.name === "tell_of_the_work") {
+        if (!canTell) {
+          results.push({ type: "tool_result", tool_use_id: call.id, content: "There is no work left to tell." });
+        } else {
+          workTold = true;
+          results.push({ type: "tool_result", tool_use_id: call.id, content: "They have heard the work. They may take it." });
+        }
         continue;
       }
       if (call.name === "pay_the_company") {
@@ -135,7 +154,7 @@ You may call tools to read reputation, the bible, battle history, the decision l
       }
       results.push({ type: "tool_result", tool_use_id: call.id, content });
     }
-    if (spoken) return NextResponse.json({ line: spoken, paid });
+    if (spoken) return NextResponse.json({ line: spoken, paid, workTold });
     messages.push({ role: "assistant", content: response.content });
     messages.push({ role: "user", content: results });
   }

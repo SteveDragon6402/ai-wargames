@@ -14,8 +14,13 @@ import {
   commitApproach,
   enqueue,
   finishWeek,
+  acceptWork,
+  agreeFoodPrice,
+  armMilitia,
   applyForage,
   foodWarning,
+  hearWork,
+  raiseMilitia,
   headcount,
   clampDescription,
   startingDescription,
@@ -186,7 +191,7 @@ describe("stores", () => {
   it("keeps food as one store", () => {
     const state = playing();
     assert.match(canEnqueue(state, { kind: "convert", direction: "to-good" }) ?? "", /one store/);
-    const bought = must(purchaseFood(state, 10));
+    const bought = must(purchaseFood(state, 10, 1));
     assert.equal(bought.basicFood, state.basicFood + 10);
     assert.equal(bought.goodFood, 0);
     assert.equal(bought.money, state.money - 10);
@@ -199,6 +204,38 @@ describe("stores", () => {
     const next = finishWeek(state);
     assert.equal(next.units.reduce((sum, unit) => sum + unit.count, 0), 8);
     assert.match(next.morale, /starving/i);
+  });
+
+  it("pays a coin a head and sends the unpaid away", () => {
+    let state = playing();
+    state = { ...state, money: 3, basicFood: 40, goodFood: 0 };
+    const next = finishWeek(state);
+    assert.equal(next.money, 0);
+    assert.equal(headcount(next.units), 3);
+    assert.match(next.notices.join(" "), /unpaid/);
+  });
+
+  it("hides the village work until the elder tells it", () => {
+    const state = playing();
+    assert.match(acceptWork(state).ok ? "" : (acceptWork(state) as { error: string }).error, /not told/);
+    const heard = must(hearWork(state));
+    assert.equal(heard.workHeard, true);
+    assert.equal(must(acceptWork(heard)).villageWork, true);
+  });
+
+  it("arms militia for a coin a head and leaves them raw", () => {
+    const raised = must(raiseMilitia(playing(), 4, "The Fields"));
+    const levy = raised.units.find((unit) => unit.name === "The Fields");
+    assert.ok(levy);
+    assert.equal(levy?.type, "militia");
+    assert.equal(raised.money, playing().money);
+    const armed = must(armMilitia(raised, levy!.id, "spearmen"));
+    assert.equal(armed.money, raised.money - 4);
+    const unit = armed.units.find((item) => item.id === levy!.id);
+    assert.equal(unit?.type, "spearmen");
+    assert.equal(unit?.raw, true);
+    const agreed = must(agreeFoodPrice(armed, 1));
+    assert.equal(agreed.foodPrice, 1);
   });
 
   it("refuses supply the company does not have", () => {

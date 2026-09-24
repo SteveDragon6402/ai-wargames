@@ -34,21 +34,21 @@ export function MercenaryPlay({ game }: { game: ReturnType<typeof useMercenary> 
 
 function YearEnd({ state, onReset }: { state: GameState; onReset: () => void }) {
   return (
-    <main className="mx-auto min-h-dvh max-w-3xl px-4 py-6">
-      <h1 className="font-display text-4xl font-semibold">{state.companyName}</h1>
+    <main className="mx-auto min-h-dvh max-w-3xl bg-[#f3f0e8] px-4 py-6 text-[#1a1a1a]">
+      <h1 className="font-gothic text-5xl">{state.companyName}</h1>
       <section className="mt-8 space-y-6">
         <div>
-          <h2 className="font-display text-3xl">The year is over</h2>
-          <p className="mt-3 text-[15px] leading-relaxed">{state.yearClosing ?? `${state.companyName} is still in the field.`}</p>
+          <h2 className="font-gothic text-4xl">The year is over</h2>
+          <p className="mt-3 text-[17px] leading-relaxed">{state.yearClosing ?? `${state.companyName} is still in the field.`}</p>
         </div>
         <ul className="space-y-4">
           {state.units.map((unit) => (
             <li key={unit.id}>
-              <p className="font-display text-xl">
-                {unit.name} <span className="font-sans text-[14px] text-muted-foreground">{unit.count}</span>
+              <p className="font-gothic text-2xl">
+                {unit.name} <span className="font-normal text-[15px] text-[#1a1a1a]/55">{unit.count}</span>
               </p>
               {unit.lines.map((line, index) => (
-                <p key={`${unit.id}-${index}`} className="mt-1 text-[14px] leading-relaxed text-muted-foreground">
+                <p key={`${unit.id}-${index}`} className="mt-1 text-[16px] leading-relaxed text-[#1a1a1a]/70">
                   {line}
                 </p>
               ))}
@@ -56,7 +56,7 @@ function YearEnd({ state, onReset }: { state: GameState; onReset: () => void }) 
           ))}
         </ul>
         {state.decisions.length > 0 && (
-          <ul className="space-y-1 text-[14px] text-muted-foreground">
+          <ul className="space-y-1 text-[15px] text-[#1a1a1a]/70">
             {state.decisions.map((decision) => (
               <li key={`${decision.week}-${decision.text}`}>
                 Week {decision.week}. {decision.text}
@@ -74,9 +74,9 @@ function YearEnd({ state, onReset }: { state: GameState; onReset: () => void }) 
 
 function End({ title, body, onReset }: { title: string; body: string; onReset: () => void }) {
   return (
-    <main className="mx-auto min-h-dvh max-w-3xl px-4 py-10">
-      <h1 className="font-display text-3xl">{title}</h1>
-      <p className="mt-2 text-[14px] text-muted-foreground">{body}</p>
+    <main className="mx-auto min-h-dvh max-w-3xl bg-[#f3f0e8] px-4 py-10 text-[#1a1a1a]">
+      <h1 className="font-gothic text-4xl">{title}</h1>
+      <p className="mt-2 text-[16px] text-[#1a1a1a]/70">{body}</p>
       <Button type="button" variant="outline" onClick={onReset} className="mt-4">
         Raise another company
       </Button>

@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from "react";
 import {
   acceptWork,
+  agreeFoodPrice,
+  armMilitia,
   applyAftermath,
   applyForage,
   applyOpeningReputation,
@@ -23,6 +25,7 @@ import {
   finishWeek,
   freshGame,
   headcount,
+  hearWork,
   nameStartingUnits,
   nextContractTemplate,
   openBattle,
@@ -32,6 +35,7 @@ import {
   retreatStartsFight,
   offerContract,
   purchaseFood,
+  raiseMilitia,
   setCompanyName,
   setDeed,
   setMovement,
@@ -73,6 +77,13 @@ function revive(parsed: GameState): GameState {
     weekPlan: revivePlan(parsed),
     weeksSinceRest: parsed.weeksSinceRest ?? 0,
     weeksDoubleRest: parsed.weeksDoubleRest ?? 0,
+    weeksHere: parsed.weeksHere ?? 0,
+    workHeard: parsed.workHeard ?? false,
+    foodPrice: parsed.foodPrice === 1 ? 1 : 2,
+    placePortrait: typeof parsed.placePortrait === "string" ? parsed.placePortrait : null,
+    portraitAt: parsed.portraitAt ?? parsed.location ?? "millcross",
+    merchantTalk: Array.isArray(parsed.merchantTalk) ? parsed.merchantTalk : [],
+    squareTalk: Array.isArray(parsed.squareTalk) ? parsed.squareTalk : [],
     bandAt: parsed.bandAt ?? "blackwood",
     payAt: parsed.payAt ?? "millcross",
     contract: parsed.contract ?? null,
@@ -85,6 +96,7 @@ function revive(parsed: GameState): GameState {
     units: (parsed.units ?? []).map((unit) => ({
       ...unit,
       lines: Array.isArray(unit.lines) ? unit.lines.filter((line) => typeof line === "string" && line.trim()) : [],
+      raw: unit.raw ?? false,
     })),
     bandits: parsed.bandits
       ? {
@@ -274,6 +286,33 @@ export function useMercenary() {
       }
     } else if (closed.lastBrief) {
       closed = { ...closed, weekScene: closed.lastBrief };
+    }
+    const stayed = closed.weeksHere > 0;
+    try {
+      const portraitRes = await fetch("/api/mercenary/place/portrait", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          place: NODES[closed.location].name,
+          ground: NODES[closed.location].ground,
+          kind: NODES[closed.location].kind,
+          stayed,
+          weeks: closed.weeksHere,
+          previous: stayed && state.portraitAt === closed.location ? state.placePortrait : null,
+          movement,
+          deed,
+          men: headcount(closed.units),
+          notice: [closed.decisions.at(-1)?.text, closed.notices.at(-1)].filter(Boolean).join(" "),
+        }),
+      });
+      if (portraitRes.ok) {
+        const data = (await portraitRes.json()) as { portrait?: string };
+        if (data.portrait?.trim()) closed = { ...closed, placePortrait: data.portrait.trim(), portraitAt: closed.location };
+      } else if (!stayed) {
+        closed = { ...closed, placePortrait: null, portraitAt: closed.location };
+      }
+    } catch {
+      if (!stayed) closed = { ...closed, placePortrait: null, portraitAt: closed.location };
     }
     if (closed.phase === "year-end" && !closed.yearClosing) {
       setBusy("The year is being closed.");
@@ -563,8 +602,10 @@ export function useMercenary() {
           rewardReady: canClaimReward(current),
           purse: current.rewardPurse,
           workOpen: !current.villageWork && !!current.bandits && current.location === current.payAt,
+          workHeard: current.workHeard,
           leader: current.leader.name,
           bandPlace: NODES[current.bandAt].name,
+          speaker: NODES[current.location].kind === "capital" ? "steward" : "elder",
         }),
       });
       if (!res.ok) {
@@ -572,7 +613,7 @@ export function useMercenary() {
         setBusy(null);
         return;
       }
-      const data = (await res.json()) as { line?: string; paid?: boolean };
+      const data = (await res.json()) as { line?: string; paid?: boolean; workTold?: boolean };
       if (!data.line?.trim()) {
         setError("The elder said nothing.");
         setBusy(null);
@@ -586,6 +627,10 @@ export function useMercenary() {
           { role: "elder", text: data.line.trim() },
         ],
       };
+      if (data.workTold) {
+        const heard = hearWork(next);
+        if (heard.ok) next = heard.state;
+      }
       if (data.paid && canClaimReward(next)) {
         const paid = claimReward(next);
         if (paid.ok) {
@@ -595,6 +640,105 @@ export function useMercenary() {
       }
       commit(next);
       setBusy(null);
+    },
+    async sendMerchant(message: string) {
+      const current = ref.current;
+      if (!current || busy) return;
+      setBusy("The merchant is listening.");
+      setError(null);
+      const res = await fetch("/api/mercenary/merchant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          history: current.merchantTalk,
+          place: NODES[current.location].name,
+          price: current.foodPrice,
+        }),
+      });
+      if (!res.ok) {
+        setError(await errorText(res));
+        setBusy(null);
+        return;
+      }
+      const data = (await res.json()) as { line?: string; price?: number | null };
+      if (!data.line?.trim()) {
+        setError("The merchant said nothing.");
+        setBusy(null);
+        return;
+      }
+      let next: GameState = {
+        ...current,
+        merchantTalk: [
+          ...current.merchantTalk,
+          { role: "player", text: message.trim() },
+          { role: "merchant", text: data.line.trim() },
+        ],
+      };
+      if (data.price === 1 || data.price === 2) {
+        const agreed = agreeFoodPrice(next, data.price);
+        if (agreed.ok) next = agreed.state;
+      }
+      commit(next);
+      setBusy(null);
+    },
+    async sendSquare(message: string): Promise<number | null> {
+      const current = ref.current;
+      if (!current || busy) return null;
+      setBusy("The square is listening.");
+      setError(null);
+      const city = NODES[current.location].kind === "capital";
+      const res = await fetch("/api/mercenary/square", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message,
+          history: current.squareTalk,
+          place: NODES[current.location].name,
+          city,
+        }),
+      });
+      if (!res.ok) {
+        setError(await errorText(res));
+        setBusy(null);
+        return null;
+      }
+      const data = (await res.json()) as { line?: string; levies?: number | null };
+      if (!data.line?.trim()) {
+        setError("The square said nothing.");
+        setBusy(null);
+        return null;
+      }
+      commit({
+        ...current,
+        squareTalk: [
+          ...current.squareTalk,
+          { role: "player", text: message.trim() },
+          { role: "square", text: data.line.trim() },
+        ],
+      });
+      setBusy(null);
+      return typeof data.levies === "number" ? data.levies : null;
+    },
+    takeMilitia(count: number, name: string) {
+      const current = ref.current;
+      if (!current) return;
+      const result = raiseMilitia(current, count, name);
+      if (!result.ok) setError(result.error);
+      else {
+        setError(null);
+        commit(result.state);
+      }
+    },
+    armMen(unitId: string, weapon: "swordsmen" | "spearmen" | "archers") {
+      const current = ref.current;
+      if (!current) return;
+      const result = armMilitia(current, unitId, weapon);
+      if (!result.ok) setError(result.error);
+      else {
+        setError(null);
+        commit(result.state);
+      }
     },
     async takeWork() {
       const current = ref.current;

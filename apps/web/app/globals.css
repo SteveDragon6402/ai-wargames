@@ -93,12 +93,15 @@
     font-style: italic;
   }
 
-  .font-poster {
-    font-family: var(--font-poster), Impact, "Arial Narrow", sans-serif;
+  .merc-page {
+    background: #f3f0e8;
+    color: #1a1a1a;
+    font-family: var(--font-book), Georgia, serif;
+    min-height: 100dvh;
   }
 
-  .font-funky {
-    font-family: var(--font-funky), Impact, sans-serif;
+  .font-gothic {
+    font-family: var(--font-gothic), Georgia, serif;
   }
 }
 

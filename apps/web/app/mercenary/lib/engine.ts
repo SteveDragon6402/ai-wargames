@@ -119,6 +119,13 @@ export function freshGame(): GameState {
     },
     elderTalk: [],
     villageDeeds: [],
+    workHeard: false,
+    foodPrice: 2,
+    placePortrait: null,
+    portraitAt: "millcross",
+    weeksHere: 0,
+    merchantTalk: [],
+    squareTalk: [],
     pendingBattle: null,
     lastBrief: null,
     lastChronicle: null,
@@ -157,6 +164,7 @@ function makeUnit(state: GameState, type: UnitTypeId, count: number, name: strin
     count,
     origin: entry.origin,
     lines: startingDescription(type),
+    raw: false,
     battles: [],
   };
   return { state: { ...state, nextUnitId: state.nextUnitId + 1 }, unit };
@@ -270,6 +278,7 @@ const DEFAULT_UNIT_NAME: Record<UnitTypeId, string> = {
   heavy_cavalry: "The Hammer",
   berserkers: "The Mad",
   bandit: "The Taken",
+  militia: "The Levies",
 };
 
 export function defaultUnitName(type: UnitTypeId, taken: string[]): string {
@@ -466,13 +475,14 @@ export function setRation(state: GameState, ration: "hearty" | "plain"): GameSta
   return { ...state, ration };
 }
 
-/** Buy food where you stand. It does not spend the week's action. */
-export function purchaseFood(state: GameState, amount: number): Result {
+/** Buy food where you stand. It does not spend the week's action. Price is 1 or 2 coins a ration. */
+export function purchaseFood(state: GameState, amount: number, price = state.foodPrice): Result {
   const closed = weekOpen(state);
   if (closed) return fail(closed);
   if (!isSettlement(state.location)) return fail("Nobody is selling there.");
   if (!Number.isInteger(amount) || amount < 1 || amount > 100) return fail("Buy a sensible amount.");
-  const cost = PRICE.basic * amount;
+  const each = price === 1 ? 1 : 2;
+  const cost = each * amount;
   if (state.money < cost) return fail("Not enough coin.");
   return {
     ok: true,
@@ -577,7 +587,7 @@ export function applyTraining(state: GameState, linesByUnit: Record<string, stri
     const next = clampDescription(lines);
     if (next.length < 1) return unit;
     drillDiffs.push({ unitId: unit.id, name: unit.name, before: [...unit.lines], after: next });
-    return { ...unit, lines: next };
+    return { ...unit, lines: next, raw: false };
   });
   return {
     ok: true,
@@ -653,6 +663,14 @@ export function finishWeek(state: GameState): GameState {
         ? "They are starving."
         : "They ate.";
   const hungry = hunger === "hungry" || hunger === "starving";
+  const due = headcount(units);
+  const paid = Math.min(next.money, due);
+  const unpaid = due - paid;
+  if (paid > 0) next = { ...next, money: next.money - paid };
+  if (unpaid > 0) {
+    units = killFromLargest(units, unpaid);
+    next = notice(next, `${unpaid} went unpaid, and they left.`);
+  }
   const doubleRest = state.weekPlan.movement.kind === "rest" && state.weekPlan.deed.kind === "rest" && !state.movedThisWeek;
   const marched = state.weekPlan.movement.kind === "march" || state.movedThisWeek;
 
@@ -669,6 +687,12 @@ export function finishWeek(state: GameState): GameState {
     moraleFromBattle: false,
     weeksSinceRest: marched ? state.weeksSinceRest + 1 : 0,
     weeksDoubleRest: doubleRest ? state.weeksDoubleRest + 1 : 0,
+    weeksHere: marched ? 0 : state.weeksHere + 1,
+    portraitAt: next.location,
+    foodPrice: marched ? 2 : state.foodPrice,
+    elderTalk: marched ? [] : state.elderTalk,
+    merchantTalk: marched ? [] : state.merchantTalk,
+    squareTalk: marched ? [] : state.squareTalk,
     weekPlan: defaultWeekPlan(),
     queue: [],
     resolveIndex: 0,
@@ -1043,6 +1067,7 @@ export function acceptWork(state: GameState): Result {
   if (state.phase !== "play") return fail("The company is not in the field.");
   if (state.location !== "millcross") return fail("The elder is in Millcross.");
   if (state.villageWork) return fail("The work is already accepted.");
+  if (!state.workHeard) return fail("The elder has not told you the work.");
   if (!state.bandits) return fail("The bandits are already gone.");
   return {
     ok: true,
@@ -1053,6 +1078,69 @@ export function acceptWork(state: GameState): Result {
         villageDeeds: [...state.villageDeeds, "Accepted Millcross's request to deal with the Blackwood bandits."],
       },
       "Accepted Millcross's request to deal with the Blackwood bandits."
+    ),
+  };
+}
+
+export function hearWork(state: GameState): Result {
+  if (state.phase !== "play") return fail("The company is not in the field.");
+  if (!isSettlement(state.location)) return fail("There is no elder here.");
+  if (state.workHeard) return { ok: true, state };
+  if (!state.bandits && !state.contract) return fail("There is no work to tell.");
+  return { ok: true, state: { ...state, workHeard: true } };
+}
+
+export function agreeFoodPrice(state: GameState, price: number): Result {
+  if (!isSettlement(state.location)) return fail("Nobody is selling there.");
+  if (price !== 1 && price !== 2) return fail("Food is one coin or two.");
+  return { ok: true, state: { ...state, foodPrice: price } };
+}
+
+const ARMED: Record<"swordsmen" | "spearmen" | "archers", string[]> = {
+  swordsmen: ["Farmers, handed swords this week. They do not know a rank.", "They will stand where they are put, and they will bunch if the line bends.", "A drill would make them swordsmen. They are not that yet."],
+  spearmen: ["Farmers, handed spears this week. The points are not dressed.", "They can face a man who comes straight at them, and little else.", "A drill would make them spearmen. They are not that yet."],
+  archers: ["Farmers, handed bows this week. Most of them have hunted, not shot as a body.", "They loose when they are told, and they scatter if foot reaches them.", "A drill would make them archers. They are not that yet."],
+};
+
+export function raiseMilitia(state: GameState, count: number, name: string): Result {
+  const closed = weekOpen(state);
+  if (closed) return fail(closed);
+  if (!isSettlement(state.location)) return fail("Nobody here will take service.");
+  if (!Number.isInteger(count) || count < 1 || count > UNIT_CAP) return fail("Take a sensible number.");
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.length > 40) return fail("Name the new unit, forty characters or fewer.");
+  if (state.units.some((unit) => unit.name.toLowerCase() === trimmed.toLowerCase())) return fail("That name is already in the company.");
+  const made = makeUnit(state, "militia", count, trimmed);
+  const unit = { ...made.unit, raw: true };
+  return {
+    ok: true,
+    state: decide(
+      { ...made.state, units: [...made.state.units, unit] },
+      `Took ${count} militia at ${NODES[state.location].name}. They are not armed.`
+    ),
+  };
+}
+
+export function armMilitia(state: GameState, unitId: string, weapon: "swordsmen" | "spearmen" | "archers"): Result {
+  const closed = weekOpen(state);
+  if (closed) return fail(closed);
+  const unit = state.units.find((item) => item.id === unitId);
+  if (!unit || unit.type !== "militia") return fail("That is not a band of militia.");
+  const cost = unit.count;
+  if (state.money < cost) return fail("Not enough coin to arm them.");
+  return {
+    ok: true,
+    state: decide(
+      {
+        ...state,
+        money: state.money - cost,
+        units: state.units.map((item) =>
+          item.id === unitId
+            ? { ...item, type: weapon, raw: true, origin: ARMED[weapon][0], lines: ARMED[weapon] }
+            : item
+        ),
+      },
+      `Armed ${unit.name} as ${WIKI[weapon].title.toLowerCase()}, ${cost} coins.`
     ),
   };
 }
@@ -1156,7 +1244,7 @@ export function describeAction(action: WeekAction): string {
   if (action.kind === "move") return `March to ${NODES[action.to].name}`;
   if (action.kind === "train") return `Drill two units: ${action.drill}`;
   if (action.kind === "forage") return "Forage in the forest";
-  if (action.kind === "talk") return "Talk to the elder";
+  if (action.kind === "talk") return "Talk";
   if (action.kind === "convert") return "Food";
   if (action.kind === "recruit") {
     const asNew = action.into === "new" ? " as a new unit" : "";

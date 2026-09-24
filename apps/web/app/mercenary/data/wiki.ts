@@ -6,6 +6,7 @@ export const UNIT_TYPE_IDS = [
   "heavy_cavalry",
   "berserkers",
   "bandit",
+  "militia",
 ] as const;
 
 export type UnitTypeId = (typeof UNIT_TYPE_IDS)[number];
@@ -101,6 +102,17 @@ export const WIKI: Record<WikiId, WikiEntry> = {
       "Dangerous to a small company that walks in careless, and unwilling to face a host that clearly outnumbers them.",
     ],
     worth: "Forest fighters, not soldiers. Weak in a stand-up fight. Experienced at noticing, hiding, and declining a battle they dislike.",
+  },
+  militia: {
+    id: "militia",
+    title: "Militia",
+    origin: "Farmers who took service this week. They have not been raised to any trade.",
+    start: [
+      "They will stand if someone tells them where, and they will not keep a rank.",
+      "Unarmed until the company buys them spears, swords, or bows.",
+      "A drill can make soldiers of them. Until then they are a crowd with a name.",
+    ],
+    worth: "Raw men. Free to take, useless as a formed company until they are armed and drilled.",
   },
   ogres: {
     id: "ogres",

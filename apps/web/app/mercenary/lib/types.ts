@@ -30,6 +30,8 @@ export interface Unit {
   origin: string;
   /** Living description. Starts as how they were raised, and grows as they drill. */
   lines: string[];
+  /** Farmers handed weapons, until a drill rewrites them. */
+  raw?: boolean;
   battles: BattleRecord[];
 }
 
@@ -39,7 +41,7 @@ export interface Decision {
 }
 
 export interface ChatTurn {
-  role: "player" | "elder";
+  role: "player" | "elder" | "merchant" | "square";
   text: string;
 }
 
@@ -170,6 +172,17 @@ export interface GameState {
   yearClosing: string | null;
   notices: string[];
   villageWork: boolean;
+  /** The elder has told them the work. Until then it is not on the page. */
+  workHeard: boolean;
+  /** Agreed price for one ration. The merchant may bring it from 2 down to 1. */
+  foodPrice: number;
+  /** How the company is living in the place they occupy. Five lines at most. */
+  placePortrait: string | null;
+  portraitAt: NodeId | null;
+  /** Weeks spent in the current place without a march. */
+  weeksHere: number;
+  merchantTalk: ChatTurn[];
+  squareTalk: ChatTurn[];
   rewardClaimed: boolean;
   rewardPurse: number | null;
   bandits: BanditForce | null;

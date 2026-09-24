@@ -1,17 +1,17 @@
 import type { Metadata } from "next";
-import { Bebas_Neue, Bungee } from "next/font/google";
+import { Almendra, EB_Garamond } from "next/font/google";
 
-const poster = Bebas_Neue({
-  weight: "400",
+const gothic = Almendra({
+  weight: ["400", "700"],
   subsets: ["latin"],
-  variable: "--font-poster",
+  variable: "--font-gothic",
   display: "swap",
 });
 
-const funky = Bungee({
-  weight: "400",
+const book = EB_Garamond({
+  weight: ["400", "500", "600"],
   subsets: ["latin"],
-  variable: "--font-funky",
+  variable: "--font-book",
   display: "swap",
 });
 
@@ -21,5 +21,5 @@ export const metadata: Metadata = {
 };
 
 export default function MercenaryLayout({ children }: { children: React.ReactNode }) {
-  return <div className={`${poster.variable} ${funky.variable}`}>{children}</div>;
+  return <div className={`${gothic.variable} ${book.variable} merc-page`}>{children}</div>;
 }
