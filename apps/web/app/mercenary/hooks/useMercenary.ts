@@ -18,6 +18,7 @@ import {
   commitApproach,
   companyDescription,
   defaultWeekPlan,
+  enlist,
   describeAction,
   dequeue,
   enqueue,
@@ -35,6 +36,7 @@ import {
   retreatStartsFight,
   offerContract,
   purchaseFood,
+  weekLedger,
   raiseMilitia,
   renameUnit,
   setCompanyName,
@@ -105,6 +107,8 @@ function revive(parsed: GameState): GameState {
           lines: Array.isArray(parsed.bandits.lines) ? parsed.bandits.lines.filter((line) => typeof line === "string" && line.trim()) : [],
         }
       : null,
+    ledger: parsed.screen === "resolving" && parsed.ledger ? parsed.ledger : null,
+    screen: parsed.screen === "resolving" && parsed.ledger ? "resolving" : parsed.screen === "resolving" ? "dashboard" : (parsed.screen ?? blank.screen),
   };
 }
 
@@ -228,7 +232,14 @@ export function useMercenary() {
     const fought = state.moraleFromBattle;
     const doubleRest = plan.movement.kind === "rest" && plan.deed.kind === "rest" && !state.movedThisWeek;
     let closed = finishWeek(state);
-    if (closed.phase === "wiped") return closed;
+    const ledger = weekLedger(state, closed, plan);
+    closed = { ...closed, screen: "resolving", ledger };
+    commit(closed);
+    if (closed.phase === "wiped") {
+      const ready = { ...closed, ledger: { ...ledger, ready: true } };
+      commit(ready);
+      return ready;
+    }
     const movement = plan.movement.kind === "march" ? `Marched to ${NODES[plan.movement.to].name}` : "Rested where they were";
     const deed = describeAction(plan.deed.kind === "rest" ? { kind: "rest" } : plan.deed);
     const hungry = /hungry|starving/i.test(closed.hungerNote ?? "");
@@ -320,7 +331,9 @@ export function useMercenary() {
       const closing = await closeYear(closed);
       if (closing) closed = { ...closed, yearClosing: closing };
     }
-    return closed;
+    const ready = { ...closed, screen: "resolving" as const, ledger: { ...ledger, ready: true } };
+    commit(ready);
+    return ready;
   }
 
   function stampScene(line: string) {
@@ -373,12 +386,10 @@ export function useMercenary() {
           setBusy(null);
           return;
         }
-        if (spotted && applied.state.bandits && applied.state.location === applied.state.bandAt) {
-          commit({ ...applied.state, screen: "forest" });
-          setBusy(null);
-          return;
-        }
-        current = applied.state;
+        current =
+          spotted && applied.state.bandits && applied.state.location === applied.state.bandAt
+            ? { ...applied.state, notices: [...applied.state.notices, "The band noticed them."] }
+            : applied.state;
         continue;
       }
       if (step.kind === "train") {
@@ -426,6 +437,71 @@ export function useMercenary() {
       }
       current = step.state;
     }
+  }
+
+  async function askElder(message: string): Promise<boolean> {
+    const current = ref.current;
+    if (!current || busy) return false;
+    const speaker = NODES[current.location].kind === "capital" ? "steward" : "elder";
+    const line = message.trim();
+    commit({ ...current, elderTalk: [...current.elderTalk, { role: "player", text: line }] });
+    setBusy(speaker === "steward" ? "The steward is thinking…" : "The village elder is thinking…");
+    setError(null);
+    const battles = current.units
+      .flatMap((unit) => unit.battles.map((battle) => `${unit.name}, week ${battle.week}: ${battle.result} (${battle.deaths} lost)`))
+      .join("\n");
+    const res = await fetch("/api/mercenary/elder", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message,
+        history: current.elderTalk,
+        reputation: current.reputation,
+        decisions: current.decisions,
+        battles,
+        deeds: current.villageDeeds,
+        company: companyDescription(current),
+        place: NODES[current.location].name,
+        ground: NODES[current.location].ground,
+        rewardReady: canClaimReward(current),
+        purse: current.rewardPurse,
+        workOpen: !current.villageWork && !!current.bandits && current.location === current.payAt,
+        workHeard: current.workHeard,
+        leader: current.leader.name,
+        bandPlace: NODES[current.bandAt].name,
+        speaker,
+      }),
+    });
+    if (!res.ok) {
+      setError(await errorText(res));
+      setBusy(null);
+      return false;
+    }
+    const data = (await res.json()) as { line?: string; paid?: boolean; workTold?: boolean };
+    if (!data.line?.trim()) {
+      setError("The elder said nothing.");
+      setBusy(null);
+      return false;
+    }
+    const spoken = ref.current ?? current;
+    let next: GameState = {
+      ...spoken,
+      elderTalk: [...spoken.elderTalk, { role: "elder", text: data.line.trim() }],
+    };
+    if (data.workTold) {
+      const heard = hearWork(next);
+      if (heard.ok) next = heard.state;
+    }
+    if (data.paid && canClaimReward(next)) {
+      const paid = claimReward(next);
+      if (paid.ok) {
+        next = paid.state;
+        void refreshReputation(next, next.decisions.at(-1)?.text ?? "Claimed the pay.");
+      }
+    }
+    commit(next);
+    setBusy(null);
+    return true;
   }
 
   return {
@@ -526,6 +602,20 @@ export function useMercenary() {
         commit(result.state);
       }
     },
+    enlist(type: Parameters<typeof enlist>[1], count: number, names: string[], into: string) {
+      if (!ref.current) return;
+      const result = enlist(ref.current, type, count, names, into);
+      if (!result.ok) setError(result.error);
+      else {
+        setError(null);
+        commit(result.state);
+      }
+    },
+    enterWeek() {
+      const current = ref.current;
+      if (!current?.ledger?.ready) return;
+      commit({ ...current, screen: "dashboard", ledger: null });
+    },
     act(deed: DeedOrder) {
       if (!ref.current) return;
       const result = setDeed(ref.current, deed);
@@ -579,73 +669,15 @@ export function useMercenary() {
       const data = (await res.json()) as { drills: string[] };
       return data.drills;
     },
-    async sendElder(message: string) {
-      const current = ref.current;
-      if (!current || busy) return;
-      setBusy("The elder is listening.");
-      setError(null);
-      const battles = current.units
-        .flatMap((unit) => unit.battles.map((battle) => `${unit.name}, week ${battle.week}: ${battle.result} (${battle.deaths} lost)`))
-        .join("\n");
-      const res = await fetch("/api/mercenary/elder", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          message,
-          history: current.elderTalk,
-          reputation: current.reputation,
-          decisions: current.decisions,
-          battles,
-          deeds: current.villageDeeds,
-          company: companyDescription(current),
-          place: NODES[current.location].name,
-          ground: NODES[current.location].ground,
-          rewardReady: canClaimReward(current),
-          purse: current.rewardPurse,
-          workOpen: !current.villageWork && !!current.bandits && current.location === current.payAt,
-          workHeard: current.workHeard,
-          leader: current.leader.name,
-          bandPlace: NODES[current.bandAt].name,
-          speaker: NODES[current.location].kind === "capital" ? "steward" : "elder",
-        }),
-      });
-      if (!res.ok) {
-        setError(await errorText(res));
-        setBusy(null);
-        return;
-      }
-      const data = (await res.json()) as { line?: string; paid?: boolean; workTold?: boolean };
-      if (!data.line?.trim()) {
-        setError("The elder said nothing.");
-        setBusy(null);
-        return;
-      }
-      let next: GameState = {
-        ...current,
-        elderTalk: [
-          ...current.elderTalk,
-          { role: "player", text: message.trim() },
-          { role: "elder", text: data.line.trim() },
-        ],
-      };
-      if (data.workTold) {
-        const heard = hearWork(next);
-        if (heard.ok) next = heard.state;
-      }
-      if (data.paid && canClaimReward(next)) {
-        const paid = claimReward(next);
-        if (paid.ok) {
-          next = paid.state;
-          void refreshReputation(next, next.decisions.at(-1)?.text ?? "Claimed the pay.");
-        }
-      }
-      commit(next);
-      setBusy(null);
+    sendElder(message: string) {
+      return askElder(message);
     },
     async sendMerchant(message: string) {
       const current = ref.current;
       if (!current || busy) return;
-      setBusy("The merchant is listening.");
+      const line = message.trim();
+      commit({ ...current, merchantTalk: [...current.merchantTalk, { role: "player", text: line }] });
+      setBusy("The merchant is thinking…");
       setError(null);
       const res = await fetch("/api/mercenary/merchant", {
         method: "POST",
@@ -668,13 +700,10 @@ export function useMercenary() {
         setBusy(null);
         return;
       }
+      const spoken = ref.current ?? current;
       let next: GameState = {
-        ...current,
-        merchantTalk: [
-          ...current.merchantTalk,
-          { role: "player", text: message.trim() },
-          { role: "merchant", text: data.line.trim() },
-        ],
+        ...spoken,
+        merchantTalk: [...spoken.merchantTalk, { role: "merchant", text: data.line.trim() }],
       };
       if (data.price === 1 || data.price === 2) {
         const agreed = agreeFoodPrice(next, data.price);
@@ -686,7 +715,9 @@ export function useMercenary() {
     async sendSquare(message: string): Promise<number | null> {
       const current = ref.current;
       if (!current || busy) return null;
-      setBusy("The square is listening.");
+      const line = message.trim();
+      commit({ ...current, squareTalk: [...current.squareTalk, { role: "player", text: line }] });
+      setBusy("The square is thinking…");
       setError(null);
       const city = NODES[current.location].kind === "capital";
       const res = await fetch("/api/mercenary/square", {
@@ -710,13 +741,10 @@ export function useMercenary() {
         setBusy(null);
         return null;
       }
+      const spoken = ref.current ?? current;
       commit({
-        ...current,
-        squareTalk: [
-          ...current.squareTalk,
-          { role: "player", text: message.trim() },
-          { role: "square", text: data.line.trim() },
-        ],
+        ...spoken,
+        squareTalk: [...spoken.squareTalk, { role: "square", text: data.line.trim() }],
       });
       setBusy(null);
       return typeof data.levies === "number" ? data.levies : null;
@@ -785,8 +813,11 @@ export function useMercenary() {
     },
     async takeWork() {
       const current = ref.current;
-      if (!current) return;
-      const result = acceptWork(current);
+      if (!current || busy) return;
+      const answered = await askElder("We will take the work.");
+      const latest = ref.current;
+      if (!answered || !latest) return;
+      const result = acceptWork(latest);
       if (!result.ok) {
         setError(result.error);
         return;
@@ -846,7 +877,10 @@ export function useMercenary() {
     fight() {
       const current = ref.current;
       if (!current) return;
-      const ready = current.resolveIndex > 0 ? current : { ...current, weekPlan: defaultWeekPlan() };
+      const ready =
+        current.resolveIndex > 0
+          ? current
+          : { ...current, weekPlan: { ...current.weekPlan, deed: { kind: "rest" as const }, order: "action-first" as const } };
       commit(openBattle(rememberLeader(ready, "The company chose to fight."), "fight", null));
     },
     async runAway() {

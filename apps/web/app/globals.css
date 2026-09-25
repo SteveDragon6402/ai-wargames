@@ -103,6 +103,19 @@
     --merc-red: oklch(0.68 0.16 27);
     --merc-red-deep: oklch(0.42 0.14 27);
     --merc-map: oklch(0.16 0.006 70);
+    --merc-ground: var(--merc-bg);
+  }
+
+  .merc-page [data-ground="village"] {
+    --merc-ground: oklch(0.29 0.018 75);
+  }
+
+  .merc-page [data-ground="city"] {
+    --merc-ground: oklch(0.27 0.012 250);
+  }
+
+  .merc-page [data-ground="woods"] {
+    --merc-ground: oklch(0.24 0.02 150);
   }
 
   .merc-page {

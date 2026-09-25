@@ -39,11 +39,9 @@ import {
   setCompanyName,
   setDeed,
   setMovement,
-  setWeekOrder,
   settleLeaderAttack,
   stepQueue,
   takeContract,
-  takeForestForage,
   unitsNeeded,
   validateOutcome,
 } from "./engine";
@@ -255,10 +253,13 @@ describe("stores", () => {
 });
 
 describe("blackwood", () => {
-  it("opens the forest on arrival and rolls retreat at five percent", () => {
-    let state = must(setWeekOrder(must(enqueue(playing(), { kind: "move", to: "blackwood" })), "movement-first"));
-    const step = stepQueue(beginResolution(state));
-    assert.equal(step.kind, "forest");
+  it("closes the week on arrival and rolls retreat at five percent", () => {
+    let step = stepQueue(beginResolution(must(enqueue(playing(), { kind: "move", to: "blackwood" }))));
+    while (step.kind === "continue") step = stepQueue(step.state);
+    assert.equal(step.kind, "done");
+    if (step.kind !== "done") return;
+    assert.equal(step.state.location, "blackwood");
+    assert.equal(finishWeek(step.state).week, playing().week + 1);
     assert.equal(retreatStartsFight(0.049), true);
     assert.equal(retreatStartsFight(0.05), false);
   });
@@ -386,21 +387,20 @@ describe("week gates", () => {
     assert.equal(foodWarning(stocked), null);
   });
 
-  it("does not let food bought after a march feed that week", () => {
+  it("eats food taken before the march", () => {
     const hungry = { ...playing(), basicFood: 0, goodFood: 0 };
-    let state = must(setMovement(hungry, { kind: "march", to: "harrow" }));
-    state = must(setDeed(state, { kind: "buy", store: "basic", amount: 10 }));
-    state = must(setWeekOrder(state, "movement-first"));
-    const marched = stepQueue(beginResolution(state));
-    assert.equal(marched.kind, "continue");
-    if (marched.kind !== "continue") return;
-    const bought = stepQueue(marched.state);
+    let state = must(setDeed(hungry, { kind: "buy", store: "basic", amount: 10 }));
+    state = must(setMovement(state, { kind: "march", to: "harrow" }));
+    const bought = stepQueue(beginResolution(state));
     assert.equal(bought.kind, "continue");
     if (bought.kind !== "continue") return;
-    const done = finishWeek(bought.state);
-    assert.equal(done.basicFood, 10);
-    assert.equal(done.lateBasic, 0);
-    assert.ok(headcount(done.units) < headcount(hungry.units));
+    const marched = stepQueue(bought.state);
+    assert.equal(marched.kind, "continue");
+    if (marched.kind !== "continue") return;
+    const done = finishWeek(marched.state);
+    assert.equal(done.basicFood, 0);
+    assert.equal(done.location, "harrow");
+    assert.equal(headcount(done.units), headcount(hungry.units));
   });
 
   it("forages only in a forest and keeps the food", () => {
@@ -414,13 +414,15 @@ describe("week gates", () => {
     const found = must(applyForage(step.state, 4, "They came back with mushrooms and a snared hare."));
     assert.equal(found.basicFood, home.basicFood + 4);
     assert.match(found.notices.at(-1) ?? "", /mushrooms/);
-    const arrived = stepQueue(beginResolution(must(setWeekOrder(must(enqueue(home, { kind: "move", to: "blackwood" })), "movement-first"))));
-    assert.equal(arrived.kind, "forest");
-    if (arrived.kind !== "forest") return;
-    const left = takeForestForage(arrived.state, 3, "They filled a sack with nuts.");
-    assert.equal(left.screen, "dashboard");
-    assert.equal(left.location, "blackwood");
-    assert.equal(left.basicFood, home.basicFood + 3);
+    const march = must(enqueue(home, { kind: "move", to: "blackwood" }));
+    let arrival = stepQueue(beginResolution(march));
+    while (arrival.kind === "continue") arrival = stepQueue(arrival.state);
+    assert.equal(arrival.kind, "done");
+    if (arrival.kind !== "done") return;
+    assert.equal(arrival.state.location, "blackwood");
+    const closed = finishWeek(arrival.state);
+    assert.equal(closed.week, home.week + 1);
+    assert.ok(closed.basicFood < home.basicFood);
   });
 
   it("hires a group as its own unit", () => {
@@ -448,11 +450,11 @@ describe("week gates", () => {
 
 describe("opening loop", () => {
   it("can fight, choose, march home, and be paid", () => {
-    let state = must(setWeekOrder(must(enqueue(playing(), { kind: "move", to: "blackwood" })), "movement-first"));
-    const arrived = stepQueue(beginResolution(state));
-    assert.equal(arrived.kind, "forest");
-    if (arrived.kind !== "forest") return;
-    state = must(commitApproach(openBattle(arrived.state, "fight", null), "The file holds the track.", 1));
+    let step = stepQueue(beginResolution(must(enqueue(playing(), { kind: "move", to: "blackwood" }))));
+    while (step.kind === "continue") step = stepQueue(step.state);
+    assert.equal(step.kind, "done");
+    if (step.kind !== "done") return;
+    let state = must(commitApproach(openBattle(step.state, "fight", null), "The file holds the track.", 1));
     assert.equal(state.supply, playing().supply - 1);
     const lines = state.units.map((unit) => ({
       unitId: unit.id,
@@ -476,8 +478,8 @@ describe("opening loop", () => {
     assert.equal(fought.state.banditSurvivors, 0);
     state = must(applyAftermath(fought.state, "kill", []));
     state = finishWeek(state);
-    state = must(setWeekOrder(must(enqueue(state, { kind: "move", to: "millcross" })), "movement-first"));
-    let step = stepQueue(beginResolution(state));
+    state = must(enqueue(state, { kind: "move", to: "millcross" }));
+    step = stepQueue(beginResolution(state));
     while (step.kind === "continue") step = stepQueue(step.state);
     assert.equal(step.kind, "done");
     if (step.kind !== "done") return;
@@ -490,15 +492,18 @@ describe("opening loop", () => {
 });
 
 describe("week shape", () => {
-  it("keeps a drill queued behind a march into the wood", () => {
+  it("drills before the march into the wood", () => {
     const start = playing();
     let state = must(setDeed(start, { kind: "train", unitIds: [start.units[0].id, start.units[1].id], drill: "Hold the hedge" }));
     state = must(setMovement(state, { kind: "march", to: "blackwood" }));
-    state = must(setWeekOrder(state, "movement-first"));
     const step = stepQueue(beginResolution(state));
-    assert.equal(step.kind, "forest");
-    if (step.kind !== "forest") return;
-    assert.equal(step.state.queue[step.state.resolveIndex]?.kind, "train");
+    assert.equal(step.kind, "train");
+    if (step.kind !== "train") return;
+    const marched = stepQueue({ ...step.state, resolveIndex: step.state.resolveIndex + 1 });
+    assert.equal(marched.kind, "continue");
+    if (marched.kind !== "continue") return;
+    assert.equal(marched.state.location, "blackwood");
+    assert.equal(stepQueue(marched.state).kind, "done");
   });
 
   it("changes a line only when the account says it", () => {

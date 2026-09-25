@@ -135,7 +135,7 @@ ${brief}
 Call record_outcome once. Use only these unit ids:
 ${roster}
 Bandits alive at the start: ${bandits}. banditDeaths is an integer from 0 to ${bandits}.
-Each deaths count is an integer from 0 to that unit's men. Omit a unit, or use 0, if nobody in it died.
+Each deaths count is an integer from 0 to that unit's men. A real clash often costs someone, on the company, the band, or both, in proportion to how the fight went. A careful or one-sided brush can kill no one. Record 0 when the chronicle kills no one. Do not invent a death the chronicle does not describe.
 playerHoldsField is true or false.
 morale, stance, and condition are one sentence each.
 lines: for every unit that still has men, what they seem like now, from 1 to 10 lines. Their current lines are what they can do. If the approach asks for a trick that is not in those lines, the chronicle says they fail at it. Rewrite, drop, or add a line only when the chronicle shows that change, and put the new sentence in the chronicle so it can be kept.
@@ -174,7 +174,7 @@ export async function POST(req: NextRequest) {
   for (let round = 0; round < 6; round++) {
     const response = await createMessage(client, {
       max_tokens: 4000,
-      system: `You adjudicate one fight. Men die or they do not. Do not take prisoners. Do not invent troop types. Do not say where anyone marches after the fight.
+      system: `You adjudicate one fight. A real clash often costs someone: the company, the band, or both, in proportion to how it went. A careful or one-sided brush can still kill no one. Do not take prisoners. Do not invent troop types. Do not say where anyone marches after the fight.
 
 Answer in this order:
 1. Optional. Call read_entry if you need a bible entry. Valid ids: ${WIKI_IDS.join(", ")}.

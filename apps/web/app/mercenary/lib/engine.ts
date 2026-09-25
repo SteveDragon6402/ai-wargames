@@ -36,6 +36,7 @@ import {
   type Unit,
   type ValidatedBattle,
   type WeekAction,
+  type WeekLedger,
   type WeekOrder,
   type WeekPlan,
 } from "./types";
@@ -52,6 +53,40 @@ export function foodWeeks(state: GameState): number {
   const men = headcount(state.units);
   if (men < 1) return 0;
   return Math.floor((state.basicFood + state.goodFood) / men);
+}
+
+export function weekLedger(before: GameState, after: GameState, plan: WeekPlan): WeekLedger {
+  const foodBefore = before.basicFood + before.goodFood;
+  const foodAfter = after.basicFood + after.goodFood;
+  const eaten = Math.max(0, foodBefore - foodAfter);
+  const foraged = before.notices.map((line) => /brought back (\d+)/i.exec(line)?.[1]).find((value) => value !== undefined);
+  const foodNotes = [foraged ? `+${foraged} foraged` : null, eaten > 0 ? `−${eaten} eaten` : null].filter((line): line is string => !!line);
+  const paid = Math.max(0, before.money - after.money);
+  const menBefore = headcount(before.units);
+  const menAfter = headcount(after.units);
+  const menNote =
+    menBefore === menAfter
+      ? null
+      : after.notices.filter((line) => /died|unpaid|unfed|left/i.test(line)).join(" ") || `${menBefore - menAfter} are gone.`;
+  const move =
+    plan.movement.kind === "march" ? `Moving to ${NODES[plan.movement.to].name}` : `Staying in ${NODES[before.location].name}`;
+  return {
+    move,
+    fromWeek: before.week,
+    toWeek: after.week,
+    foodWeeksBefore: foodWeeks(before),
+    foodWeeksAfter: foodWeeks(after),
+    foodBefore,
+    foodAfter,
+    foodNotes,
+    moneyBefore: before.money,
+    moneyAfter: after.money,
+    moneyNote: paid > 0 ? `−${paid} paying the company` : null,
+    menBefore,
+    menAfter,
+    menNote,
+    ready: false,
+  };
 }
 
 export function defaultWeekPlan(): WeekPlan {
@@ -130,6 +165,7 @@ export function freshGame(): GameState {
     lastBrief: null,
     lastChronicle: null,
     banditSurvivors: null,
+    ledger: null,
   };
 }
 
@@ -334,9 +370,7 @@ function deedAction(deed: DeedOrder): WeekAction {
 }
 
 export function composeQueue(plan: WeekPlan): WeekAction[] {
-  const deed = deedAction(plan.deed);
-  const movement = movementAction(plan.movement);
-  return plan.order === "movement-first" ? [movement, deed] : [deed, movement];
+  return [deedAction(plan.deed), movementAction(plan.movement)];
 }
 
 function project(state: GameState): Projected | { error: string } {
@@ -465,7 +499,7 @@ export function enqueue(state: GameState, action: WeekAction): Result {
 
 export function dequeue(state: GameState, index: number): Result {
   if (state.resolveIndex > 0) return fail("The week has already started.");
-  const slot = state.weekPlan.order === "movement-first" ? (index === 0 ? "movement" : index === 1 ? "deed" : null) : index === 0 ? "deed" : index === 1 ? "movement" : null;
+  const slot = index === 0 ? "deed" : index === 1 ? "movement" : null;
   if (!slot) return fail("That action is gone.");
   if (slot === "movement") return { ok: true, state: { ...state, weekPlan: { ...state.weekPlan, movement: { kind: "rest" } } } };
   return { ok: true, state: { ...state, weekPlan: { ...state.weekPlan, deed: { kind: "rest" } } } };
@@ -473,6 +507,17 @@ export function dequeue(state: GameState, index: number): Result {
 
 export function setRation(state: GameState, ration: "hearty" | "plain"): GameState {
   return { ...state, ration };
+}
+
+/** Hire trained men where you stand. It does not spend the week's action. */
+export function enlist(state: GameState, type: UnitTypeId, count: number, names: string[], into: string): Result {
+  const closed = weekOpen(state);
+  if (closed) return fail(closed);
+  const action: WeekAction = { kind: "recruit", type, count, names, into };
+  const probe = project({ ...state, weekPlan: { ...state.weekPlan, deed: action } });
+  if ("error" in probe) return fail(probe.error);
+  const hired = applyListed(state, action);
+  return { ok: true, state: decide(hired, `Hired ${count} ${WIKI[type].title.toLowerCase()} at ${NODES[state.location].name}.`) };
 }
 
 /** Buy food where you stand. It does not spend the week's action. Price is 1 or 2 coins a ration. */
@@ -513,12 +558,14 @@ function applyListed(state: GameState, action: WeekAction): GameState {
     if (state.movedThisWeek || !neighbors(state.location).includes(action.to)) {
       return notice(state, "The march could not be made.");
     }
-    return {
+    const arrived = {
       ...state,
       cameFrom: state.location,
       location: action.to,
       movedThisWeek: true,
     };
+    if (state.bandits && action.to === state.bandAt) return notice(arrived, `${NODES[action.to].name} is watched.`);
+    return arrived;
   }
   if (action.kind === "buy") {
     if (!isSettlement(state.location)) return notice(state, "Nobody was selling, and the purchase was lost.");
@@ -566,11 +613,7 @@ export function stepQueue(state: GameState): Step {
   }
   if (action.kind === "forage") return { kind: "forage", state };
   const applied = applyListed(state, action);
-  const advanced = { ...applied, resolveIndex: state.resolveIndex + 1 };
-  if (action.kind === "move" && state.bandits && action.to === state.bandAt && advanced.location === state.bandAt) {
-    return { kind: "forest", state: { ...advanced, screen: "forest" } };
-  }
-  return { kind: "continue", state: advanced };
+  return { kind: "continue", state: { ...applied, resolveIndex: state.resolveIndex + 1 } };
 }
 
 export function applyTraining(state: GameState, linesByUnit: Record<string, string[]>): Result {

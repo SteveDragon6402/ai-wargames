@@ -1,12 +1,14 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useMercenary } from "../hooks/useMercenary";
 import Founding from "./Founding";
 import Board from "./Place";
-import type { GameState } from "../lib/types";
+import type { GameState, WeekLedger } from "../lib/types";
 
 export default function Play({ state, api }: { state: GameState; api: ReturnType<typeof useMercenary> }) {
+  if (state.screen === "resolving" && state.ledger) return <Resolving ledger={state.ledger} onContinue={api.enterWeek} />;
   if (state.phase === "wiped") return <End title="The company is gone" body="There is no one left to lead." onReset={api.reset} />;
   if (state.phase === "year-end") return <YearEnd state={state} onReset={api.reset} />;
   return <Board game={{ ...api, state }} />;
@@ -30,6 +32,72 @@ export function MercenaryPlay({ game }: { game: ReturnType<typeof useMercenary> 
     );
   }
   return <Play state={game.state} api={game} />;
+}
+
+function Resolving({ ledger, onContinue }: { ledger: WeekLedger; onContinue: () => void }) {
+  const showMen = ledger.menBefore !== ledger.menAfter;
+  const cards = 3 + (showMen ? 1 : 0);
+  const [shown, setShown] = useState(() =>
+    typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches ? cards : -1,
+  );
+  useEffect(() => {
+    const media = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (media.matches) {
+      setShown(cards);
+      return;
+    }
+    if (shown >= cards) return;
+    const id = window.setTimeout(() => setShown((value) => value + 1), 700);
+    return () => window.clearTimeout(id);
+  }, [shown, cards]);
+
+  function face(index: number, before: string, after: string) {
+    if (shown < index) return null;
+    return shown === index ? before : after;
+  }
+
+  const week = face(0, String(ledger.fromWeek), String(ledger.toWeek));
+  const food = face(1, `${ledger.foodWeeksBefore} ${ledger.foodWeeksBefore === 1 ? "week" : "weeks"}`, `${ledger.foodWeeksAfter} ${ledger.foodWeeksAfter === 1 ? "week" : "weeks"}`);
+  const coin = face(2, String(ledger.moneyBefore), String(ledger.moneyAfter));
+  const men = showMen ? face(3, String(ledger.menBefore), String(ledger.menAfter)) : null;
+
+  return (
+    <main className="flex min-h-dvh flex-col items-center justify-center bg-[var(--merc-bg)] px-6 text-center text-[var(--merc-text)]">
+      <p className="text-[14px] text-[var(--merc-muted)]">The week is resolving.</p>
+      <p className="mt-2 font-gothic text-4xl">{ledger.move}</p>
+      <div className="mt-10 flex flex-wrap items-start justify-center gap-10">
+        {week !== null && <Count word="Week" figure={week} />}
+        {food !== null && (
+          <Count word="Food" figure={food} note={`${shown === 1 ? ledger.foodBefore : ledger.foodAfter} rations`} lines={shown > 1 ? ledger.foodNotes : []} />
+        )}
+        {coin !== null && <Count word="Coin" figure={coin} lines={shown > 2 && ledger.moneyNote ? [ledger.moneyNote] : []} />}
+        {men !== null && <Count word="Men" figure={men} lines={shown > 3 && ledger.menNote ? [ledger.menNote] : []} />}
+      </div>
+      <Button
+        type="button"
+        disabled={!ledger.ready}
+        onClick={onContinue}
+        className="mt-12 bg-[var(--merc-red-deep)] px-6 py-2 font-gothic text-2xl text-[var(--merc-text)] hover:bg-[var(--merc-red-deep)] disabled:opacity-40"
+      >
+        Continue
+      </Button>
+    </main>
+  );
+}
+
+function Count({ word, figure, note, lines = [] }: { word: string; figure: string; note?: string; lines?: string[] }) {
+  return (
+    <div className="min-w-[7rem]">
+      <p className="font-gothic text-5xl leading-none">{figure}</p>
+      <p className="mt-2 text-[14px] text-[var(--merc-muted)]">{word}</p>
+      {note && <p className="mt-1 text-[14px]">{note}</p>}
+      {lines.map((line) => (
+        <p key={line} className="mt-1 text-[14px] text-[var(--merc-muted)]">
+          {line}
+        </p>
+      ))}
+    </div>
+  );
 }
 
 function YearEnd({ state, onReset }: { state: GameState; onReset: () => void }) {

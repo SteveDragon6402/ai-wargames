@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { anthropicClient, createMessage, textOf } from "../../model";
 
-function fiveLines(text: string): string {
+function twoLines(text: string): string {
   const lines = text
     .split(/\n+/)
     .map((line) => line.replace(/^[-*\d.)\s]+/, "").trim())
     .filter(Boolean);
-  return lines.slice(0, 5).join("\n");
+  return lines.slice(0, 2).join("\n");
 }
 
 export async function POST(req: NextRequest) {
@@ -34,7 +34,7 @@ export async function POST(req: NextRequest) {
   const response = await createMessage(client, {
     max_tokens: 400,
     system:
-      "You rewrite how a mercenary company is living in one place. Five lines, no more. Each line is one sentence. Nothing is neutral: say whether this place is glad of them, wary of them, or wants them gone, and why. Do not invent a battle, a death, or a deed that is not in the week.",
+      "You rewrite how a mercenary company is living in one place. Two lines, no more, the best of how they are living there. Each line is one sentence. Nothing is neutral: say whether this place is glad of them, wary of them, or wants them gone, and why. Do not invent a battle, a death, or a deed that is not in the week.",
     messages: [
       {
         role: "user",
@@ -49,7 +49,7 @@ ${body.previous?.trim() ? `What was written last week, which you may rewrite, dr
     ],
   });
   if ("error" in response) return NextResponse.json({ error: response.error }, { status: 500 });
-  const portrait = fiveLines(textOf(response));
+  const portrait = twoLines(textOf(response));
   if (!portrait) return NextResponse.json({ error: "The place was not written." }, { status: 500 });
   return NextResponse.json({ portrait });
 }

@@ -117,7 +117,25 @@ export interface LeaderMemory {
 
 export type Phase = "name" | "types" | "unit-names" | "reputation" | "play" | "year-end" | "wiped";
 
-export type Screen = "dashboard" | "map" | "elder" | "forest" | "approach" | "result" | "choice" | "chronicle";
+export type Screen = "dashboard" | "map" | "elder" | "forest" | "approach" | "result" | "choice" | "chronicle" | "resolving";
+
+export interface WeekLedger {
+  move: string;
+  fromWeek: number;
+  toWeek: number;
+  foodWeeksBefore: number;
+  foodWeeksAfter: number;
+  foodBefore: number;
+  foodAfter: number;
+  foodNotes: string[];
+  moneyBefore: number;
+  moneyAfter: number;
+  moneyNote: string | null;
+  menBefore: number;
+  menAfter: number;
+  menNote: string | null;
+  ready: boolean;
+}
 
 export interface PendingBattle {
   reason: "fight" | "retreat" | "leader";
@@ -160,7 +178,7 @@ export interface GameState {
   weeksSinceRest: number;
   /** Double rests in a row. */
   weeksDoubleRest: number;
-  /** Where the current band is waiting. Arrival there opens the encounter. */
+  /** Where the current band is waiting. The week closes before that ground can be searched. */
   bandAt: NodeId;
   payAt: NodeId;
   contract: ContractOffer | null;
@@ -193,6 +211,7 @@ export interface GameState {
   lastBrief: string | null;
   lastChronicle: string | null;
   banditSurvivors: number | null;
+  ledger: WeekLedger | null;
 }
 
 export type Ok<T> = { ok: true; state: T };
