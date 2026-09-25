@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ButtonHTMLAttributes } from "react";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -27,9 +27,10 @@ import type { useMercenary } from "../hooks/useMercenary";
 
 type Game = Omit<ReturnType<typeof useMercenary>, "state"> & { state: GameState };
 
-const paper = "border-[#1a1a1a]/20 bg-[#f3f0e8] text-[#1a1a1a] shadow-none";
-const field = "border-[#1a1a1a]/30 bg-transparent text-[#1a1a1a] placeholder:text-[#1a1a1a]/40";
-const inkButton = "border border-[#1a1a1a]/30 bg-transparent px-3 py-2 text-left text-[15px] text-[#1a1a1a] hover:border-[#1a1a1a] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9b1c1c] disabled:opacity-40";
+const paper = "border-[var(--merc-line)] bg-[var(--merc-bg)] text-[var(--merc-text)] shadow-none";
+const field = "border-[var(--merc-line)] bg-[var(--merc-field)] text-[var(--merc-text)] placeholder:text-[var(--merc-muted)]";
+const inkButton = "border border-[var(--merc-line)] bg-transparent px-3 py-2 text-left text-[15px] text-[var(--merc-text)] hover:border-[var(--merc-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--merc-red)] disabled:opacity-40";
+const solid = "border border-[var(--merc-line)] bg-[var(--merc-raise)] text-[var(--merc-text)] shadow-none hover:bg-[var(--merc-raise)] hover:text-[var(--merc-text)]";
 
 function placeLine(id: NodeId): string {
   const place = NODES[id];
@@ -70,7 +71,7 @@ export default function Board({ game }: { game: Game }) {
   const [recruitOpen, setRecruitOpen] = useState(false);
   const [trainOpen, setTrainOpen] = useState(false);
   const [menOpen, setMenOpen] = useState(false);
-  const [reading, setReading] = useState<GameState["units"][number] | null>(null);
+  const [readingId, setReadingId] = useState<string | null>(null);
   const [wood, setWood] = useState<"list" | "found" | "refused">("list");
 
   useEffect(() => {
@@ -99,13 +100,14 @@ export default function Board({ game }: { game: Game }) {
       ? state.placePortrait.split("\n").map((line) => line.trim()).filter(Boolean).slice(0, 5)
       : [place.ground];
   const speaker = city ? "steward" : "elder";
+  const reading = readingId ? state.units.find((unit) => unit.id === readingId) ?? null : null;
 
   return (
-    <div className="fixed inset-0 z-10 flex flex-col overflow-hidden bg-[#f3f0e8] text-[#1a1a1a]">
-      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-[#1a1a1a]/15 px-4 py-2">
+    <div className="fixed inset-0 z-10 flex flex-col overflow-hidden bg-[var(--merc-bg)] text-[var(--merc-text)]">
+      <header className="flex shrink-0 items-center justify-between gap-3 border-b border-[var(--merc-line)] px-4 py-2">
         <p className="font-gothic text-lg leading-none">Week {Math.min(state.week, 52)}</p>
-        <div className="flex gap-4 text-[14px] text-[#1a1a1a]/60">
-          <a href="/" className="underline decoration-[#1a1a1a]/30 underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9b1c1c]">
+        <div className="flex gap-4 text-[14px] text-[var(--merc-muted)]">
+          <a href="/" className="underline decoration-[var(--merc-muted)] underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--merc-red)]">
             All games
           </a>
           <button
@@ -113,29 +115,29 @@ export default function Board({ game }: { game: Game }) {
             onClick={() => {
               if (window.confirm("Reset this company and start again?")) game.reset();
             }}
-            className="underline decoration-[#1a1a1a]/30 underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9b1c1c]"
+            className="underline decoration-[var(--merc-muted)] underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--merc-red)]"
           >
             Reset
           </button>
         </div>
       </header>
       {(shortage || game.error || game.busy) && (
-        <p role="alert" className="shrink-0 border-b border-[#9b1c1c]/30 bg-[#9b1c1c]/10 px-4 py-1 text-[14px] text-[#9b1c1c]">
+        <p role="alert" className="shrink-0 border-b border-[var(--merc-line)] bg-[var(--merc-raise)] px-4 py-1 text-[14px] text-[var(--merc-text)]">
           {game.error ?? game.busy ?? shortage}
         </p>
       )}
 
-      <div className="flex shrink-0 flex-wrap items-start justify-between gap-4 border-b border-[#1a1a1a]/15 px-4 py-3">
+      <div className="flex shrink-0 flex-wrap items-start justify-between gap-4 border-b border-[var(--merc-line)] px-4 py-3">
         <div className="min-w-0">
-          <p className="text-[13px] text-[#1a1a1a]/55">Actions this turn</p>
+          <p className="text-[13px] text-[var(--merc-muted)]">Actions this turn</p>
           <p className="font-gothic text-xl leading-tight">{turnLine(state)}</p>
           <div className="mt-2 flex gap-2">
             <button type="button" onClick={() => setSlot("move")} disabled={locked} className={`${inkButton} min-w-[7.5rem] disabled:opacity-40`}>
-              <span className="block text-[12px] text-[#1a1a1a]/55">Move</span>
+              <span className="block text-[12px] text-[var(--merc-muted)]">Move</span>
               <span className="font-gothic text-lg leading-none">{movement.kind === "march" ? NODES[movement.to].name : "Stay"}</span>
             </button>
             <button type="button" onClick={() => setSlot("action")} disabled={locked} className={`${inkButton} min-w-[7.5rem] disabled:opacity-40`}>
-              <span className="block text-[12px] text-[#1a1a1a]/55">Action</span>
+              <span className="block text-[12px] text-[var(--merc-muted)]">Action</span>
               <span className="line-clamp-2 font-gothic text-lg leading-tight">{deed.kind === "rest" ? "Rest" : describeAction(deed)}</span>
             </button>
           </div>
@@ -143,7 +145,7 @@ export default function Board({ game }: { game: Game }) {
             type="button"
             onClick={game.liveWeek}
             disabled={!!game.busy}
-            className="mt-3 bg-[#9b1c1c] px-4 py-2 font-gothic text-xl text-[#f3f0e8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9b1c1c] disabled:opacity-40"
+            className="mt-3 bg-[var(--merc-red-deep)] px-4 py-2 font-gothic text-xl text-[var(--merc-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--merc-red)] disabled:opacity-40"
           >
             {locked ? "Continue" : "Live the week"}
           </button>
@@ -151,15 +153,15 @@ export default function Board({ game }: { game: Game }) {
         <div className="flex gap-5">
           <Figure word="Food" figure={String(weeks)} note={weeks === 1 ? "week" : "weeks"} />
           <div className="relative" onMouseEnter={() => setMenOpen(true)} onMouseLeave={() => setMenOpen(false)}>
-            <button type="button" aria-expanded={menOpen} onClick={() => setMenOpen((open) => !open)} className="text-right focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9b1c1c]">
+            <button type="button" aria-expanded={menOpen} onClick={() => setMenOpen((open) => !open)} className="text-right focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--merc-red)]">
               <Figure word="Men" figure={String(men)} />
             </button>
             {menOpen && (
-              <ul className="absolute right-0 z-20 mt-1 w-52 border border-[#1a1a1a]/20 bg-[#f3f0e8] p-2 text-left shadow-none">
+              <ul className="absolute right-0 z-20 mt-1 w-52 border border-[var(--merc-line)] bg-[var(--merc-bg)] p-2 text-left shadow-none">
                 {state.units.map((unit) => (
                   <li key={unit.id} className="flex justify-between gap-3 py-0.5 text-[14px]">
                     <span>{unit.name}</span>
-                    <span className="text-[#1a1a1a]/55">{unit.count}</span>
+                    <span className="text-[var(--merc-muted)]">{unit.count}</span>
                   </li>
                 ))}
               </ul>
@@ -171,12 +173,12 @@ export default function Board({ game }: { game: Game }) {
       </div>
 
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[11rem_minmax(0,1fr)]">
-        <aside className="hidden border-r border-[#1a1a1a]/15 p-3 lg:block">
+        <aside className="hidden border-r border-[var(--merc-line)] p-3 lg:block">
           <button
             type="button"
             onClick={() => setMapOpen(true)}
             aria-label={`Map. You are in ${place.name}. Open the kingdom.`}
-            className="block h-44 w-full bg-[#1a1a1a] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9b1c1c]"
+            className="block h-44 w-full bg-[var(--merc-map)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--merc-red)]"
           >
             <MapCanvas location={state.location} bandAt={state.bandAt} bandits={!!state.bandits} />
           </button>
@@ -191,11 +193,11 @@ export default function Board({ game }: { game: Game }) {
             </>
           ) : (
             <>
-              <button type="button" onClick={() => setMapOpen(true)} className="mb-3 h-28 w-full max-w-xs bg-[#1a1a1a] lg:hidden" aria-label={`Map. You are in ${place.name}.`}>
+              <button type="button" onClick={() => setMapOpen(true)} className="mb-3 h-28 w-full max-w-xs bg-[var(--merc-map)] lg:hidden" aria-label={`Map. You are in ${place.name}.`}>
                 <MapCanvas location={state.location} bandAt={state.bandAt} bandits={!!state.bandits} />
               </button>
               <h1 className="font-gothic text-6xl leading-none sm:text-7xl">{place.name}</h1>
-              <p className="mt-2 text-[15px] text-[#1a1a1a]/60">{placeLine(state.location)}</p>
+              <p className="mt-2 text-[15px] text-[var(--merc-muted)]">{placeLine(state.location)}</p>
               <div className="mt-3 max-w-xl space-y-1">
                 {portrait.map((line) => (
                   <p key={line} className="text-[17px] leading-snug">
@@ -203,7 +205,7 @@ export default function Board({ game }: { game: Game }) {
                   </p>
                 ))}
               </div>
-              {state.weekScene && <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-[#1a1a1a]/60">{state.weekScene}</p>}
+              {state.weekScene && <p className="mt-3 max-w-xl text-[15px] leading-relaxed text-[var(--merc-muted)]">{state.weekScene}</p>}
               <div className="mt-6 grid gap-8 sm:grid-cols-2">
                 <div>
                   <h2 className="font-gothic text-2xl">The place</h2>
@@ -232,27 +234,31 @@ export default function Board({ game }: { game: Game }) {
                 </div>
                 <div>
                   <h2 className="font-gothic text-2xl">The company</h2>
-                  <div className="mt-2 flex flex-col items-start gap-2">
-                    <button type="button" disabled={locked} onClick={() => game.act({ kind: "rest" })} className={inkButton}>
+                  <div className="mt-2 max-w-sm space-y-1 text-[15px] leading-snug text-[var(--merc-muted)]">
+                    <p>{state.morale}</p>
+                    <p>{state.condition}</p>
+                    <p>{state.stance}</p>
+                  </div>
+                  <div className="mt-3 flex flex-col items-start gap-2">
+                    <Act disabled={locked} onClick={() => game.act({ kind: "rest" })} hint={woodHere || !settlement ? "Stay, and rest where you are." : "Spend the week here."}>
                       {woodHere || !settlement ? "Make camp" : "Rest"}
-                    </button>
-                    <button type="button" disabled={locked} onClick={() => setTrainOpen(true)} className={inkButton}>
+                    </Act>
+                    <Act disabled={locked} onClick={() => setTrainOpen(true)} hint="Two units drill.">
                       Train
-                    </button>
+                    </Act>
                     {woodHere && (
-                      <button
-                        type="button"
+                      <Act
                         disabled={locked || !!game.busy}
                         onClick={() => (state.screen === "forest" ? void game.forageHere() : game.act({ kind: "forage" }))}
-                        className={inkButton}
+                        hint="Look for food in the trees."
                       >
                         Forage
-                      </button>
+                      </Act>
                     )}
                     {woodHere && bandHere && (
-                      <button type="button" disabled={!!game.busy} onClick={() => void game.sneak()} className={inkButton}>
+                      <Act disabled={!!game.busy} onClick={() => void game.sneak()} hint="Pass them without a fight.">
                         Sneak past
-                      </button>
+                      </Act>
                     )}
                   </div>
                 </div>
@@ -262,18 +268,18 @@ export default function Board({ game }: { game: Game }) {
         </section>
       </div>
 
-      <footer className="shrink-0 border-t border-[#1a1a1a]/15 px-4 py-3">
-        <p className="text-[13px] text-[#1a1a1a]/55">Your units</p>
+      <footer className="shrink-0 border-t border-[var(--merc-line)] px-4 py-3">
+        <p className="text-[13px] text-[var(--merc-muted)]">Your units</p>
         <ul className="mt-1 flex gap-2 overflow-x-auto">
           {state.units.map((unit) => (
             <li key={unit.id}>
               <button
                 type="button"
-                onClick={() => setReading(unit)}
-                className="border border-[#1a1a1a]/20 px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9b1c1c]"
+                onClick={() => setReadingId(unit.id)}
+                className="border border-[var(--merc-line)] px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--merc-red)]"
               >
                 <span className="block font-gothic text-lg leading-none">{unit.name}</span>
-                <span className="mt-1 block text-[13px] text-[#1a1a1a]/55">
+                <span className="mt-1 block text-[13px] text-[var(--merc-muted)]">
                   {unit.count} {WIKI[unit.type].title.toLowerCase()}
                   {unit.raw ? ", raw" : ""}
                 </span>
@@ -286,7 +292,7 @@ export default function Board({ game }: { game: Game }) {
       <Dialog open={slot === "move"} onOpenChange={(open) => !open && setSlot(null)}>
         <DialogContent className={paper}>
           <DialogTitle className="font-gothic text-3xl">Move</DialogTitle>
-          <DialogDescription className="text-[#1a1a1a]/70">
+          <DialogDescription className="text-[var(--merc-muted)]">
             {movement.kind === "march" ? `Set to march to ${NODES[movement.to].name}.` : "Set to stay."}
           </DialogDescription>
           <div className="flex flex-col items-start gap-2">
@@ -317,7 +323,7 @@ export default function Board({ game }: { game: Game }) {
       <Dialog open={slot === "action"} onOpenChange={(open) => !open && setSlot(null)}>
         <DialogContent className={paper}>
           <DialogTitle className="font-gothic text-3xl">Action</DialogTitle>
-          <DialogDescription className="text-[#1a1a1a]/70">
+          <DialogDescription className="text-[var(--merc-muted)]">
             {deed.kind === "rest" ? "Set to rest." : describeAction(deed)}
           </DialogDescription>
           <div className="flex flex-col items-start gap-2">
@@ -372,7 +378,7 @@ export default function Board({ game }: { game: Game }) {
       <Dialog open={mapOpen} onOpenChange={(open) => (open ? setMapOpen(true) : closeMap())}>
         <DialogContent className={`max-w-3xl ${paper}`}>
           <DialogTitle className="font-gothic text-3xl">The kingdom</DialogTitle>
-          <DialogDescription className="text-[#1a1a1a]/70">Tap a neighbouring place. Move replaces the march.</DialogDescription>
+          <DialogDescription className="text-[var(--merc-muted)]">Tap a neighbouring place. Move replaces the march.</DialogDescription>
           <KingdomMap
             location={state.location}
             bandAt={state.bandAt}
@@ -389,7 +395,7 @@ export default function Board({ game }: { game: Game }) {
       <Dialog open={talkOpen} onOpenChange={(open) => (open ? setTalkOpen(true) : closeTalk())}>
         <DialogContent className={`max-w-lg ${paper}`}>
           <DialogTitle className="font-gothic text-3xl">The {speaker} of {place.name}</DialogTitle>
-          <DialogDescription className="text-[#1a1a1a]/70">{place.ground}</DialogDescription>
+          <DialogDescription className="text-[var(--merc-muted)]">{place.ground}</DialogDescription>
           <ElderTalk state={state} game={game} />
         </DialogContent>
       </Dialog>
@@ -397,7 +403,7 @@ export default function Board({ game }: { game: Game }) {
       <Dialog open={merchantOpen} onOpenChange={setMerchantOpen}>
         <DialogContent className={`max-w-lg ${paper}`}>
           <DialogTitle className="font-gothic text-3xl">The merchant</DialogTitle>
-          <DialogDescription className="text-[#1a1a1a]/70">Food is {state.foodPrice} coin a ration. Buying does not spend the week.</DialogDescription>
+          <DialogDescription className="text-[var(--merc-muted)]">Food is {state.foodPrice} coin a ration. Buying does not spend the week.</DialogDescription>
           <MerchantTalk state={state} game={game} locked={locked} onBought={() => setMerchantOpen(false)} />
         </DialogContent>
       </Dialog>
@@ -405,7 +411,7 @@ export default function Board({ game }: { game: Game }) {
       <Dialog open={squareOpen} onOpenChange={setSquareOpen}>
         <DialogContent className={`max-w-lg ${paper}`}>
           <DialogTitle className="font-gothic text-3xl">The square</DialogTitle>
-          <DialogDescription className="text-[#1a1a1a]/70">
+          <DialogDescription className="text-[var(--merc-muted)]">
             {city ? "A short speech. Men here are not soldiers." : "Farmers, if they will come."}
           </DialogDescription>
           <SquareTalk state={state} game={game} city={city} />
@@ -415,7 +421,7 @@ export default function Board({ game }: { game: Game }) {
       <Dialog open={recruitOpen} onOpenChange={setRecruitOpen}>
         <DialogContent className={`max-w-lg ${paper}`}>
           <DialogTitle className="font-gothic text-3xl">The recruiter</DialogTitle>
-          <DialogDescription className="text-[#1a1a1a]/70">Trained men. This spends the week&apos;s action.</DialogDescription>
+          <DialogDescription className="text-[var(--merc-muted)]">Trained men. This spends the week&apos;s action.</DialogDescription>
           <Recruit state={state} game={game} onDone={() => setRecruitOpen(false)} />
         </DialogContent>
       </Dialog>
@@ -423,26 +429,101 @@ export default function Board({ game }: { game: Game }) {
       <Dialog open={trainOpen} onOpenChange={setTrainOpen}>
         <DialogContent className={`max-w-lg ${paper}`}>
           <DialogTitle className="font-gothic text-3xl">Train</DialogTitle>
-          <DialogDescription className="text-[#1a1a1a]/70">Two units. This spends the week&apos;s action.</DialogDescription>
+          <DialogDescription className="text-[var(--merc-muted)]">Two units. This spends the week&apos;s action.</DialogDescription>
           <Train state={state} game={game} onDone={() => setTrainOpen(false)} />
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!reading} onOpenChange={(open) => !open && setReading(null)}>
+      <Dialog open={!!reading} onOpenChange={(open) => !open && setReadingId(null)}>
         <DialogContent className={`max-w-lg ${paper}`}>
-          <DialogTitle className="font-gothic text-3xl">{reading?.name}</DialogTitle>
-          <DialogDescription className="text-[#1a1a1a]/70">
-            {reading ? `${reading.count} ${WIKI[reading.type].title.toLowerCase()}${reading.raw ? ", raw" : ""}` : ""}
-          </DialogDescription>
-          <div className="space-y-2 text-[16px] leading-relaxed">
-            {reading?.lines.map((line, index) => (
-              <p key={`${reading.id}-${index}`} className={index === 0 ? "" : "text-[#1a1a1a]/70"}>
-                {line}
-              </p>
-            ))}
-          </div>
+          {reading && <UnitSheet unit={reading} game={game} locked={locked} />}
         </DialogContent>
       </Dialog>
+    </div>
+  );
+}
+
+function Act({
+  hint,
+  mark,
+  children,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement> & { hint: string; mark?: boolean }) {
+  const name = typeof children === "string" ? children : "";
+  return (
+    <button
+      type="button"
+      title={hint}
+      aria-label={mark && name ? `${name}. Has something to say. ${hint}` : undefined}
+      {...props}
+      className={inkButton}
+    >
+      <span className="flex items-center gap-2 font-gothic text-lg leading-none">
+        {mark ? (
+          <span className="text-[var(--merc-red)]" aria-hidden="true">
+            !
+          </span>
+        ) : null}
+        <span>{children}</span>
+      </span>
+      <span className="mt-1 block max-w-[16rem] text-[13px] leading-snug text-[var(--merc-muted)]">{hint}</span>
+    </button>
+  );
+}
+
+function UnitSheet({ unit, game, locked }: { unit: GameState["units"][number]; game: Game; locked: boolean }) {
+  const [name, setName] = useState(unit.name);
+  useEffect(() => setName(unit.name), [unit.id, unit.name]);
+  const levy = unit.type === "militia";
+
+  return (
+    <div>
+      <DialogTitle className="font-gothic text-3xl">{unit.name}</DialogTitle>
+      <DialogDescription className="text-[var(--merc-muted)]">
+        {unit.count} {WIKI[unit.type].title.toLowerCase()}
+        {unit.raw ? ", raw" : ""}
+      </DialogDescription>
+      <div className="space-y-2 text-[16px] leading-relaxed">
+        {unit.lines.map((line, index) => (
+          <p key={`${unit.id}-${index}`} className={index === 0 ? "text-[var(--merc-text)]" : "text-[var(--merc-muted)]"}>
+            {line}
+          </p>
+        ))}
+      </div>
+      <form
+        className="mt-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void game.renameMen(unit.id, name);
+        }}
+      >
+        <label htmlFor="unit-name" className="block text-[15px]">
+          Name
+          <Input id="unit-name" value={name} maxLength={40} onChange={(event) => setName(event.target.value)} className={`mt-1 h-9 ${field}`} />
+        </label>
+        <Button type="submit" className={`mt-2 ${solid}`} disabled={locked || !!game.busy || !name.trim() || name.trim() === unit.name}>
+          Rename
+        </Button>
+      </form>
+      {levy && (
+        <div className="mt-4">
+          <p className="text-[15px]">Arm them for {unit.count} coins. They stay raw until a drill.</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {(["spears", "swords", "bows"] as const).map((weapon) => (
+              <Button
+                key={weapon}
+                type="button"
+                variant="outline"
+                className={solid}
+                disabled={locked || game.state.money < unit.count}
+                onClick={() => game.armMen(unit.id, weapon === "spears" ? "spearmen" : weapon === "swords" ? "swordsmen" : "archers")}
+              >
+                {weapon}
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -450,9 +531,9 @@ export default function Board({ game }: { game: Game }) {
 function Figure({ word, figure, note }: { word: string; figure: string; note?: string }) {
   return (
     <span className="block min-w-[4.5rem] text-right">
-      {note ? <span className="block text-[12px] text-[#1a1a1a]/50">{note}</span> : <span className="block text-[12px] text-transparent">.</span>}
+      {note ? <span className="block text-[12px] text-[var(--merc-muted)]">{note}</span> : <span className="block text-[12px] text-transparent">.</span>}
       <span className="block font-gothic text-3xl leading-none">{figure}</span>
-      <span className="block text-[13px] text-[#1a1a1a]/55">{word}</span>
+      <span className="block text-[13px] text-[var(--merc-muted)]">{word}</span>
     </span>
   );
 }
@@ -496,12 +577,12 @@ function Ground({
         <p className="max-w-sm text-[15px] leading-relaxed">
           They will not parley. Word goes to {state.leader.name}. He will not treat with you.
         </p>
-        <button type="button" disabled={!!game.busy} onClick={game.fight} className={inkButton}>
+        <Act disabled={!!game.busy} onClick={game.fight} hint="Go in against them.">
           Attack
-        </button>
-        <button type="button" disabled={!!game.busy} onClick={() => void game.runAway()} className={inkButton}>
+        </Act>
+        <Act disabled={!!game.busy} onClick={() => void game.runAway()} hint="The week is spent.">
           Run
-        </button>
+        </Act>
       </>
     );
   }
@@ -512,60 +593,65 @@ function Ground({
         <p className="max-w-sm text-[15px] leading-relaxed">
           {state.leader.name} is in the trees, with {state.bandits.count}.
         </p>
-        <button type="button" disabled={!!game.busy} onClick={game.fight} className={inkButton}>
+        <Act disabled={!!game.busy} onClick={game.fight} hint="Go in against them.">
           Attack
-        </button>
-        <button type="button" disabled={!!game.busy} onClick={onRefuse} className={inkButton}>
+        </Act>
+        <Act disabled={!!game.busy} onClick={onRefuse} hint="Ask them to talk.">
           Seek parley
-        </button>
+        </Act>
       </>
     );
   }
 
+  const wantsTalk =
+    (state.location === "millcross" && !!state.bandits && !state.villageWork && !state.workHeard) ||
+    (game.rewardReady && state.location === state.payAt) ||
+    (city && (coming || state.contract?.status === "offered"));
+
   return (
     <>
       {settlement && (
-        <button type="button" onClick={onTalk} className={inkButton}>
+        <Act onClick={onTalk} mark={wantsTalk} hint={city ? "Talk. Contracts are heard here." : "Talk. He may have work, or the purse."}>
           {city ? "The steward" : "The village elder"}
-        </button>
+        </Act>
       )}
       {settlement && (
-        <button type="button" disabled={locked} onClick={onMerchant} className={inkButton}>
+        <Act disabled={locked} onClick={onMerchant} hint="Food. Two coins a ration, unless he agrees one.">
           The merchant
-        </button>
+        </Act>
       )}
       {city && (
-        <button type="button" disabled={locked} onClick={onRecruit} className={inkButton}>
+        <Act disabled={locked} onClick={onRecruit} hint="Trained men. Foot is five coins. The country's own is twelve.">
           The recruiter
-        </button>
+        </Act>
       )}
       {settlement && (
-        <button type="button" onClick={onSquare} className={inkButton}>
+        <Act onClick={onSquare} hint="You can find men here.">
           The square
-        </button>
+        </Act>
       )}
       {bandHere && (
-        <button type="button" disabled={!!game.busy} onClick={onSearch} className={inkButton}>
+        <Act disabled={!!game.busy} onClick={onSearch} hint="Look for the band in this ground.">
           Search for the bandits
-        </button>
+        </Act>
       )}
       {game.rewardReady && (
         <p className="text-[15px]">
           {NODES[state.payAt].name} owes {state.rewardPurse} coins.{" "}
-          <button type="button" disabled={!!game.busy} onClick={() => void game.takeReward()} className="underline decoration-[#9b1c1c] underline-offset-2">
+          <button type="button" disabled={!!game.busy} onClick={() => void game.takeReward()} className="underline decoration-[var(--merc-red)] underline-offset-2">
             Collect the pay
           </button>
         </p>
       )}
       {city && coming && (
-        <button type="button" disabled={!!game.busy} onClick={() => void game.hearContract()} className={inkButton}>
+        <Act disabled={!!game.busy} onClick={() => void game.hearContract()} hint="Another court has a job.">
           Hear of work
-        </button>
+        </Act>
       )}
       {state.contract?.status === "offered" && (
-        <div className="max-w-sm border border-[#1a1a1a]/20 p-3">
+        <div className="max-w-sm border border-[var(--merc-line)] p-3">
           <p className="text-[15px] leading-relaxed">{state.contract.offer}</p>
-          <p className="mt-1 text-[14px] text-[#1a1a1a]/60">
+          <p className="mt-1 text-[14px] text-[var(--merc-muted)]">
             {state.contract.purse} coins at {NODES[state.contract.payAt].name}, when {state.contract.bandName} are gone from {NODES[state.contract.place].name}.
           </p>
           <Button type="button" variant="outline" className="mt-2 h-9" disabled={!!game.busy} onClick={game.takeOffer}>
@@ -574,11 +660,11 @@ function Ground({
         </div>
       )}
       {state.contract?.status === "taken" && (
-        <p className="text-[15px] text-[#1a1a1a]/70">
+        <p className="text-[15px] text-[var(--merc-muted)]">
           {state.contract.leaderName} is at {NODES[state.contract.place].name}.
         </p>
       )}
-      {woodHere && !bandHere && <p className="text-[15px] text-[#1a1a1a]/60">The trees are quiet.</p>}
+      {woodHere && !bandHere && <p className="text-[15px] text-[var(--merc-muted)]">The trees are quiet.</p>}
     </>
   );
 }
@@ -586,7 +672,7 @@ function Ground({
 function MapCanvas({ location, bandAt, bandits }: { location: NodeId; bandAt: NodeId; bandits: boolean }) {
   return (
     <div className="relative h-full w-full">
-      <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full text-[#9b1c1c]" preserveAspectRatio="none" aria-hidden="true">
+      <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full text-[var(--merc-red)]" preserveAspectRatio="none" aria-hidden="true">
         {EDGES.map(([a, b]) => (
           <line key={`${a}-${b}`} x1={NODES[a].x} y1={NODES[a].y} x2={NODES[b].x} y2={NODES[b].y} stroke="currentColor" strokeWidth="0.7" />
         ))}
@@ -596,11 +682,11 @@ function MapCanvas({ location, bandAt, bandits }: { location: NodeId; bandAt: No
         return (
           <span key={node.id} style={{ left: `${node.x}%`, top: `${node.y}%` }} className="absolute -translate-x-1/2 -translate-y-1/2">
             {here && (
-              <svg aria-hidden="true" viewBox="0 0 10 8" className="absolute bottom-full left-1/2 mb-0.5 h-2 w-2.5 -translate-x-1/2 fill-[#9b1c1c]">
+              <svg aria-hidden="true" viewBox="0 0 10 8" className="absolute bottom-full left-1/2 mb-0.5 h-2 w-2.5 -translate-x-1/2 fill-[var(--merc-red)]">
                 <polygon points="5,8 0,0 10,0" />
               </svg>
             )}
-            <span className={here ? "block h-2.5 w-2.5 rounded-full bg-[#9b1c1c]" : "block h-1.5 w-1.5 rounded-full bg-white"} />
+            <span className={here ? "block h-2.5 w-2.5 rounded-full bg-[var(--merc-red)]" : "block h-1.5 w-1.5 rounded-full bg-white"} />
             <span className="sr-only">
               {node.name}
               {here ? ", here" : ""}
@@ -631,8 +717,8 @@ function KingdomMap({
   const asked = ask ? NODES[ask] : null;
 
   return (
-    <div className="relative h-[28rem] bg-[#1a1a1a]">
-      <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full text-[#9b1c1c]" preserveAspectRatio="none" aria-hidden="true">
+    <div className="relative h-[28rem] bg-[var(--merc-map)]">
+      <svg viewBox="0 0 100 100" className="absolute inset-0 h-full w-full text-[var(--merc-red)]" preserveAspectRatio="none" aria-hidden="true">
         {EDGES.map(([a, b]) => (
           <line key={`${a}-${b}`} x1={NODES[a].x} y1={NODES[a].y} x2={NODES[b].x} y2={NODES[b].y} stroke="currentColor" strokeWidth="0.5" />
         ))}
@@ -650,7 +736,7 @@ function KingdomMap({
             style={{ left: `${node.x}%`, top: `${node.y}%` }}
             className={
               here
-                ? "absolute z-10 -translate-x-1/2 -translate-y-1/2 px-1.5 py-0.5 text-left text-[#9b1c1c]"
+                ? "absolute z-10 -translate-x-1/2 -translate-y-1/2 px-1.5 py-0.5 text-left text-[var(--merc-red)]"
                 : canMarch
                   ? "absolute z-10 -translate-x-1/2 -translate-y-1/2 px-1.5 py-0.5 text-left text-white"
                   : "absolute z-10 -translate-x-1/2 -translate-y-1/2 px-1.5 py-0.5 text-left text-white/45"
@@ -668,14 +754,14 @@ function KingdomMap({
         <div
           role="dialog"
           aria-labelledby="move-ask"
-          className="absolute z-20 w-40 -translate-x-1/2 border border-[#1a1a1a]/20 bg-[#f3f0e8] p-3 text-[#1a1a1a]"
+          className="absolute z-20 w-40 -translate-x-1/2 border border-[var(--merc-line)] bg-[var(--merc-bg)] p-3 text-[var(--merc-text)]"
           style={{ left: `${asked.x}%`, top: asked.y > 68 ? `calc(${asked.y}% - 5.5rem)` : `calc(${asked.y}% + 2.2rem)` }}
         >
           <p id="move-ask" className="font-gothic text-xl leading-none">
             Move to {asked.name}?
           </p>
           <div className="mt-2 flex gap-2">
-            <Button type="button" autoFocus className="h-8 bg-[#9b1c1c] text-[#f3f0e8] hover:bg-[#9b1c1c]/90" onClick={() => onMove(ask)}>
+            <Button type="button" autoFocus className="h-8 bg-[var(--merc-red-deep)] text-[var(--merc-text)] hover:bg-[var(--merc-red-deep)]/90" onClick={() => onMove(ask)}>
               Move
             </Button>
             <Button type="button" variant="outline" className="h-8" onClick={() => setAsk(null)}>
@@ -694,9 +780,9 @@ function ElderTalk({ state, game }: { state: GameState; game: Game }) {
   return (
     <div>
       <div className="max-h-64 space-y-3 overflow-y-auto">
-        {state.elderTalk.length === 0 && <p className="text-[14px] text-[#1a1a1a]/60">He is here.</p>}
+        {state.elderTalk.length === 0 && <p className="text-[14px] text-[var(--merc-muted)]">He is here.</p>}
         {state.elderTalk.map((turn, index) => (
-          <p key={index} className={turn.role === "player" ? "text-[15px] text-[#1a1a1a]/70" : "text-[16px] leading-relaxed"}>
+          <p key={index} className={turn.role === "player" ? "text-[15px] text-[var(--merc-muted)]" : "text-[16px] leading-relaxed"}>
             {turn.role === "player" ? `You. ${turn.text}` : turn.text}
           </p>
         ))}
@@ -714,7 +800,7 @@ function ElderTalk({ state, game }: { state: GameState; game: Game }) {
           Say it
         </label>
         <Input id="elder-say" value={text} onChange={(event) => setText(event.target.value)} placeholder="Ask him what he needs" className={`h-10 ${field}`} />
-        <Button type="submit" disabled={!!game.busy} className="h-10 bg-[#1a1a1a] text-[#f3f0e8] hover:bg-[#1a1a1a]/90">
+        <Button type="submit" disabled={!!game.busy} className="h-10 border border-[var(--merc-line)] bg-[var(--merc-raise)] text-[var(--merc-text)] hover:bg-[var(--merc-raise)]">
           Say it
         </Button>
       </form>
@@ -727,7 +813,7 @@ function ElderTalk({ state, game }: { state: GameState; game: Game }) {
         {game.rewardReady && (
           <p className="text-[15px]">
             The purse is owed.{" "}
-            <button type="button" disabled={!!game.busy} onClick={() => void game.takeReward()} className="underline decoration-[#9b1c1c] underline-offset-2">
+            <button type="button" disabled={!!game.busy} onClick={() => void game.takeReward()} className="underline decoration-[var(--merc-red)] underline-offset-2">
               Collect the pay
             </button>
           </p>
@@ -743,9 +829,9 @@ function MerchantTalk({ state, game, locked, onBought }: { state: GameState; gam
   return (
     <div>
       <div className="max-h-48 space-y-3 overflow-y-auto">
-        {state.merchantTalk.length === 0 && <p className="text-[14px] text-[#1a1a1a]/60">Posted price, {price} coins a ration.</p>}
+        {state.merchantTalk.length === 0 && <p className="text-[14px] text-[var(--merc-muted)]">Posted price, {price} coins a ration.</p>}
         {state.merchantTalk.map((turn, index) => (
-          <p key={index} className={turn.role === "player" ? "text-[15px] text-[#1a1a1a]/70" : "text-[16px] leading-relaxed"}>
+          <p key={index} className={turn.role === "player" ? "text-[15px] text-[var(--merc-muted)]" : "text-[16px] leading-relaxed"}>
             {turn.role === "player" ? `You. ${turn.text}` : turn.text}
           </p>
         ))}
@@ -763,7 +849,7 @@ function MerchantTalk({ state, game, locked, onBought }: { state: GameState; gam
           Say to the merchant
         </label>
         <Input id="merchant-say" value={text} onChange={(event) => setText(event.target.value)} placeholder="Ask the price down" className={`h-10 ${field}`} />
-        <Button type="submit" disabled={!!game.busy} className="h-10 bg-[#1a1a1a] text-[#f3f0e8] hover:bg-[#1a1a1a]/90">
+        <Button type="submit" disabled={!!game.busy} className="h-10 border border-[var(--merc-line)] bg-[var(--merc-raise)] text-[var(--merc-text)] hover:bg-[var(--merc-raise)]">
           Say it
         </Button>
       </form>
@@ -796,9 +882,9 @@ function SquareTalk({ state, game, city }: { state: GameState; game: Game; city:
   return (
     <div>
       <div className="max-h-48 space-y-3 overflow-y-auto">
-        {state.squareTalk.length === 0 && <p className="text-[14px] text-[#1a1a1a]/60">{city ? "They will not give you a speech until you speak." : "The square is open."}</p>}
+        {state.squareTalk.length === 0 && <p className="text-[14px] text-[var(--merc-muted)]">{city ? "They will not give you a speech until you speak." : "The square is open."}</p>}
         {state.squareTalk.map((turn, index) => (
-          <p key={index} className={turn.role === "player" ? "text-[15px] text-[#1a1a1a]/70" : "text-[16px] leading-relaxed"}>
+          <p key={index} className={turn.role === "player" ? "text-[15px] text-[var(--merc-muted)]" : "text-[16px] leading-relaxed"}>
             {turn.role === "player" ? `You. ${turn.text}` : turn.text}
           </p>
         ))}
@@ -814,7 +900,7 @@ function SquareTalk({ state, game, city }: { state: GameState; game: Game; city:
           Say to the square
         </label>
         <Input id="square-say" value={text} onChange={(event) => setText(event.target.value)} placeholder="Speak to them" className={`h-10 ${field}`} />
-        <Button type="submit" disabled={!!game.busy} className="h-10 bg-[#1a1a1a] text-[#f3f0e8] hover:bg-[#1a1a1a]/90">
+        <Button type="submit" disabled={!!game.busy} className="h-10 border border-[var(--merc-line)] bg-[var(--merc-raise)] text-[var(--merc-text)] hover:bg-[var(--merc-raise)]">
           Say it
         </Button>
       </form>
@@ -823,14 +909,14 @@ function SquareTalk({ state, game, city }: { state: GameState; game: Game; city:
       </Button>
       {levies !== null && (
         <div className="mt-3">
-          <p className="text-[15px]">{levies} will come, free and unarmed.</p>
+          <p className="text-[15px]">{levies} will come, free and unarmed. You can leave them and equip them from the company.</p>
           <label htmlFor="levy-name" className="mt-2 block text-[14px]">
             Name them
             <Input id="levy-name" value={name} maxLength={40} onChange={(event) => setName(event.target.value)} className={`mt-1 h-9 ${field}`} />
           </label>
           <Button
             type="button"
-            className="mt-2 bg-[#1a1a1a] text-[#f3f0e8] hover:bg-[#1a1a1a]/90"
+            className="mt-2 border border-[var(--merc-line)] bg-[var(--merc-raise)] text-[var(--merc-text)] hover:bg-[var(--merc-raise)]"
             onClick={() => {
               game.takeMilitia(levies, name);
               setLevies(null);
@@ -895,7 +981,7 @@ function Recruit({ state, game, onDone }: { state: GameState; game: Game; onDone
                 setInto(null);
                 setNames([]);
               }}
-              className={item === type ? "text-[16px] underline decoration-[#9b1c1c] underline-offset-4" : "text-[16px] text-[#1a1a1a]/70"}
+              className={item === type ? "text-[16px] underline decoration-[var(--merc-red)] underline-offset-4" : "text-[16px] text-[var(--merc-muted)]"}
             >
               {WIKI[item].title}, {manPrice(item)} coin a man
             </button>
@@ -922,11 +1008,11 @@ function Recruit({ state, game, onDone }: { state: GameState; game: Game; onDone
       {count && (
         <div className="mt-3 flex flex-col items-start gap-2">
           {targets.map((unit) => (
-            <button key={unit.id} type="button" aria-pressed={into === unit.id} onClick={() => choose(unit.id)} className={into === unit.id ? "text-[16px] underline decoration-[#9b1c1c]" : "text-[16px] text-[#1a1a1a]/70"}>
+            <button key={unit.id} type="button" aria-pressed={into === unit.id} onClick={() => choose(unit.id)} className={into === unit.id ? "text-[16px] underline decoration-[var(--merc-red)]" : "text-[16px] text-[var(--merc-muted)]"}>
               {unit.name}, {unit.count} of 10
             </button>
           ))}
-          <button type="button" aria-pressed={into === "new"} onClick={() => choose("new")} className={into === "new" ? "text-[16px] underline decoration-[#9b1c1c]" : "text-[16px] text-[#1a1a1a]/70"}>
+          <button type="button" aria-pressed={into === "new"} onClick={() => choose("new")} className={into === "new" ? "text-[16px] underline decoration-[var(--merc-red)]" : "text-[16px] text-[var(--merc-muted)]"}>
             A new unit
           </button>
         </div>
@@ -951,7 +1037,7 @@ function Recruit({ state, game, onDone }: { state: GameState; game: Game; onDone
       {plan && count && into && (
         <Button
           type="button"
-          className="mt-3 bg-[#1a1a1a] text-[#f3f0e8] hover:bg-[#1a1a1a]/90"
+          className="mt-3 border border-[var(--merc-line)] bg-[var(--merc-raise)] text-[var(--merc-text)] hover:bg-[var(--merc-raise)]"
           disabled={price * count > state.money}
           onClick={() => {
             game.act({
@@ -1000,7 +1086,7 @@ function Train({ state, game, onDone }: { state: GameState; game: Game; onDone: 
           const unit = id ? state.units.find((item) => item.id === id) : null;
           return (
             <button key={index} type="button" onClick={() => setPicking(picking === index ? null : index)} className={`${inkButton} min-h-[4.5rem] min-w-[8rem]`}>
-              <span className="block text-[12px] text-[#1a1a1a]/55">Unit {index + 1}</span>
+              <span className="block text-[12px] text-[var(--merc-muted)]">Unit {index + 1}</span>
               <span className="font-gothic text-lg leading-none">{unit ? unit.name : "Empty"}</span>
             </button>
           );
@@ -1020,7 +1106,7 @@ function Train({ state, game, onDone }: { state: GameState; game: Game; onDone: 
                   });
                   setPicking(null);
                 }}
-                className="text-[16px] underline decoration-[#1a1a1a]/30 underline-offset-2"
+                className="text-[16px] underline decoration-[var(--merc-muted)] underline-offset-2"
               >
                 {unit.name}, {unit.count}
               </button>
@@ -1045,14 +1131,14 @@ function Train({ state, game, onDone }: { state: GameState; game: Game; onDone: 
         >
           Suggest
         </Button>
-        <Button type="submit" disabled={!pair} className="bg-[#1a1a1a] text-[#f3f0e8] hover:bg-[#1a1a1a]/90">
+        <Button type="submit" disabled={!pair} className="border border-[var(--merc-line)] bg-[var(--merc-raise)] text-[var(--merc-text)] hover:bg-[var(--merc-raise)]">
           Drill them
         </Button>
       </div>
       {ideas.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">
           {ideas.map((idea) => (
-            <button key={idea} type="button" onClick={() => setDrill(idea)} className="border border-[#1a1a1a]/25 px-2 py-1 text-[14px]">
+            <button key={idea} type="button" onClick={() => setDrill(idea)} className="border border-[var(--merc-line)] px-2 py-1 text-[14px]">
               {idea}
             </button>
           ))}
@@ -1073,14 +1159,14 @@ function Approach({ state, game }: { state: GameState; game: Game }) {
         How you mean to fight, in {APPROACH_WORDS} words or fewer
       </label>
       <textarea id="approach" value={approach} onChange={(event) => setApproach(event.target.value)} rows={4} className={`mt-2 w-full border p-3 text-[16px] ${field}`} />
-      <p className="mt-1 text-[13px] text-[#1a1a1a]/55">
+      <p className="mt-1 text-[13px] text-[var(--merc-muted)]">
         {words} / {APPROACH_WORDS}
       </p>
       <label htmlFor="supply-spent" className="mt-3 block text-[16px]">
         Supply to spend, up to {state.supply}
         <Input id="supply-spent" type="number" min={0} max={state.supply} value={supply} onChange={(event) => setSupply(Number(event.target.value))} className={`mt-2 h-9 w-24 ${field}`} />
       </label>
-      <Button type="button" className="mt-4 bg-[#9b1c1c] text-[#f3f0e8] hover:bg-[#9b1c1c]/90" disabled={!!game.busy || words < 1 || words > APPROACH_WORDS} onClick={() => void game.sendBattle(approach, supply)}>
+      <Button type="button" className="mt-4 bg-[var(--merc-red-deep)] text-[var(--merc-text)] hover:bg-[var(--merc-red-deep)]/90" disabled={!!game.busy || words < 1 || words > APPROACH_WORDS} onClick={() => void game.sendBattle(approach, supply)}>
         {game.busy ?? "Send them in"}
       </Button>
     </div>
@@ -1091,7 +1177,7 @@ function Result({ state, game }: { state: GameState; game: Game }) {
   const full = state.screen === "chronicle";
   return (
     <div>
-      <button type="button" onClick={() => game.show("dashboard")} className="text-[15px] underline decoration-[#1a1a1a]/30 underline-offset-2">
+      <button type="button" onClick={() => game.show("dashboard")} className="text-[15px] underline decoration-[var(--merc-muted)] underline-offset-2">
         Back to {NODES[state.location].name}
       </button>
       <h2 className="mt-2 font-gothic text-4xl">The fight</h2>
@@ -1100,16 +1186,16 @@ function Result({ state, game }: { state: GameState; game: Game }) {
         <ul className="mt-3 space-y-2">
           {state.reputationShift.map((shift) => (
             <li key={shift.key} className="text-[15px] leading-relaxed">
-              <span className="text-[#1a1a1a]/55">{REPUTATION_LABEL[shift.key]}. </span>
+              <span className="text-[var(--merc-muted)]">{REPUTATION_LABEL[shift.key]}. </span>
               {shift.text}
             </li>
           ))}
         </ul>
       )}
-      <button type="button" onClick={() => game.show(full ? "dashboard" : "chronicle")} className="mt-3 text-[14px] text-[#1a1a1a]/60">
+      <button type="button" onClick={() => game.show(full ? "dashboard" : "chronicle")} className="mt-3 text-[14px] text-[var(--merc-muted)]">
         {full ? "Hide the account" : "Read the account"}
       </button>
-      {full && <p className="mt-3 whitespace-pre-wrap text-[15px] leading-relaxed text-[#1a1a1a]/70">{state.lastChronicle}</p>}
+      {full && <p className="mt-3 whitespace-pre-wrap text-[15px] leading-relaxed text-[var(--merc-muted)]">{state.lastChronicle}</p>}
     </div>
   );
 }
@@ -1123,12 +1209,12 @@ function Choice({ state, game }: { state: GameState; game: Game }) {
       <h2 className="font-gothic text-4xl">After the fight</h2>
       <p className="mt-3 text-[16px] leading-relaxed">{state.lastBrief}</p>
       {survivors <= 0 ? (
-        <Button type="button" className="mt-4 bg-[#1a1a1a] text-[#f3f0e8] hover:bg-[#1a1a1a]/90" disabled={!!game.busy} onClick={() => void game.choose("kill", [])}>
+        <Button type="button" className="mt-4 border border-[var(--merc-line)] bg-[var(--merc-raise)] text-[var(--merc-text)] hover:bg-[var(--merc-raise)]" disabled={!!game.busy} onClick={() => void game.choose("kill", [])}>
           Leave the dead
         </Button>
       ) : (
         <div className="mt-4 flex flex-col items-start gap-2">
-          <p className="text-[15px] text-[#1a1a1a]/60">{survivors} of them are still alive.</p>
+          <p className="text-[15px] text-[var(--merc-muted)]">{survivors} of them are still alive.</p>
           <Button type="button" variant="outline" disabled={!!game.busy} onClick={() => void game.choose("kill", [])}>
             Kill them
           </Button>

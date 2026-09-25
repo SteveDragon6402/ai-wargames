@@ -1145,6 +1145,29 @@ export function armMilitia(state: GameState, unitId: string, weapon: "swordsmen"
   };
 }
 
+export function renameUnit(state: GameState, unitId: string, name: string): Result {
+  const closed = weekOpen(state);
+  if (closed) return fail(closed);
+  const unit = state.units.find((item) => item.id === unitId);
+  if (!unit) return fail("That unit is not in the company.");
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.length > 40) return fail("Name the unit, forty characters or fewer.");
+  if (unit.name === trimmed) return { ok: true, state };
+  if (state.units.some((item) => item.id !== unitId && item.name.toLowerCase() === trimmed.toLowerCase())) {
+    return fail("That name is already in the company.");
+  }
+  return {
+    ok: true,
+    state: decide(
+      {
+        ...state,
+        units: state.units.map((item) => (item.id === unitId ? { ...item, name: trimmed } : item)),
+      },
+      `Renamed ${unit.name} to ${trimmed}.`
+    ),
+  };
+}
+
 export function canClaimReward(state: GameState): boolean {
   return (
     state.phase === "play" &&

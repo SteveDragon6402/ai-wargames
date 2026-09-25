@@ -93,9 +93,21 @@
     font-style: italic;
   }
 
+  body:has(.merc-page) {
+    --merc-bg: oklch(0.27 0.008 70);
+    --merc-raise: oklch(0.34 0.008 70);
+    --merc-field: oklch(0.22 0.008 70);
+    --merc-text: oklch(0.94 0.012 85);
+    --merc-muted: oklch(0.78 0.014 80);
+    --merc-line: oklch(0.94 0.012 85 / 0.28);
+    --merc-red: oklch(0.68 0.16 27);
+    --merc-red-deep: oklch(0.42 0.14 27);
+    --merc-map: oklch(0.16 0.006 70);
+  }
+
   .merc-page {
-    background: #f3f0e8;
-    color: #1a1a1a;
+    background: var(--merc-bg);
+    color: var(--merc-text);
     font-family: var(--font-book), Georgia, serif;
     min-height: 100dvh;
   }

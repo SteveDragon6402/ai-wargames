@@ -21,6 +21,7 @@ import {
   foodWarning,
   hearWork,
   raiseMilitia,
+  renameUnit,
   headcount,
   clampDescription,
   startingDescription,
@@ -236,6 +237,10 @@ describe("stores", () => {
     assert.equal(unit?.raw, true);
     const agreed = must(agreeFoodPrice(armed, 1));
     assert.equal(agreed.foodPrice, 1);
+    const named = must(renameUnit(armed, levy!.id, "The Best"));
+    assert.equal(named.units.find((item) => item.id === levy!.id)?.name, "The Best");
+    assert.match(named.decisions.at(-1)?.text ?? "", /The Best/);
+    assert.equal(renameUnit(named, levy!.id, "The File").ok, false);
   });
 
   it("refuses supply the company does not have", () => {

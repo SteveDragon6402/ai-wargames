@@ -46,9 +46,9 @@ export default function Founding({
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-lg flex-col justify-center bg-[#f3f0e8] px-6 py-16 text-[#1a1a1a]">
+    <main className="mx-auto flex min-h-dvh max-w-lg flex-col justify-center px-6 py-16 text-[var(--merc-text)]">
       <div className="flex items-center justify-between">
-        <a href="/" className="text-[14px] text-[#1a1a1a]/60 underline decoration-[#1a1a1a]/30 underline-offset-2">
+        <a href="/" className="text-[14px] text-[var(--merc-muted)] underline decoration-[var(--merc-muted)] underline-offset-2">
           All games
         </a>
         <button
@@ -56,20 +56,20 @@ export default function Founding({
           onClick={() => {
             if (window.confirm("Reset this company and start again?")) onReset();
           }}
-          className="text-[14px] text-[#1a1a1a]/60 underline decoration-[#1a1a1a]/30 underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9b1c1c]"
+          className="text-[14px] text-[var(--merc-muted)] underline decoration-[var(--merc-muted)] underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--merc-red)]"
         >
           Reset
         </button>
       </div>
-      <p className="mt-8 text-[14px] text-[#1a1a1a]/55">The Mercenary Band</p>
-      <h1 className="mt-2 font-gothic text-5xl text-[#1a1a1a]">
+      <p className="mt-8 text-[14px] text-[var(--merc-muted)]">The Mercenary Band</p>
+      <h1 className="mt-2 font-gothic text-5xl text-[var(--merc-text)]">
         {state.phase === "name" && "Name the company"}
         {state.phase === "types" && "Choose two trades"}
         {state.phase === "unit-names" && "Name the units"}
         {state.phase === "reputation" && state.companyName}
       </h1>
 
-      <div className="mt-8 border border-[#1a1a1a]/20 p-5">
+      <div className="mt-8 border border-[var(--merc-line)] p-5">
         {state.phase === "name" && (
           <form
             onSubmit={(event) => {
@@ -78,11 +78,11 @@ export default function Founding({
             }}
             className="space-y-4"
           >
-            <label htmlFor="company" className="block text-[15px] text-[#1a1a1a]/70">
+            <label htmlFor="company" className="block text-[15px] text-[var(--merc-muted)]">
               What are they called?
             </label>
-            <Input id="company" value={name} maxLength={40} onChange={(event) => setName(event.target.value)} className="h-10 border-[#1a1a1a]/30 bg-transparent text-[#1a1a1a]" />
-            <Button type="submit" className="h-10 w-full bg-[#9b1c1c] text-[#f3f0e8] hover:bg-[#9b1c1c]/90">
+            <Input id="company" value={name} maxLength={40} onChange={(event) => setName(event.target.value)} className="h-10 border-[var(--merc-line)] bg-[var(--merc-field)] text-[var(--merc-text)] placeholder:text-[var(--merc-muted)]" />
+            <Button type="submit" className="h-10 w-full bg-[var(--merc-red-deep)] text-[var(--merc-text)] hover:bg-[var(--merc-red-deep)]/90">
               This is the company
             </Button>
           </form>
@@ -90,7 +90,7 @@ export default function Founding({
 
         {state.phase === "types" && (
           <div className="space-y-3">
-            <p className="text-[15px] text-[#1a1a1a]/70">You take five men of each. Pick two.</p>
+            <p className="text-[15px] text-[var(--merc-muted)]">You take five men of each. Pick two.</p>
             {BASE_TYPES.map((type) => {
               const on = picked.includes(type);
               return (
@@ -98,14 +98,14 @@ export default function Founding({
                   key={type}
                   type="button"
                   onClick={() => toggle(type)}
-                  className={on ? "block w-full border border-[#9b1c1c] px-3 py-3 text-left" : "block w-full border border-[#1a1a1a]/20 px-3 py-3 text-left"}
+                  className={on ? "block w-full border border-[var(--merc-red)] px-3 py-3 text-left text-[var(--merc-text)]" : "block w-full border border-[var(--merc-line)] px-3 py-3 text-left text-[var(--merc-text)]"}
                 >
                   <div className="font-gothic text-xl">{WIKI[type].title}</div>
-                  <p className="mt-1 text-[15px] leading-relaxed text-[#1a1a1a]/70">{WIKI[type].origin}</p>
+                  <p className="mt-1 text-[15px] leading-relaxed text-[var(--merc-muted)]">{WIKI[type].origin}</p>
                 </button>
               );
             })}
-            <Button type="button" disabled={picked.length !== 2} onClick={() => onTypes(picked)} className="h-10 w-full bg-[#9b1c1c] text-[#f3f0e8] hover:bg-[#9b1c1c]/90">
+            <Button type="button" disabled={picked.length !== 2} onClick={() => onTypes(picked)} className="h-10 w-full bg-[var(--merc-red-deep)] text-[var(--merc-text)] hover:bg-[var(--merc-red-deep)]/90">
               Take these men
             </Button>
           </div>
@@ -121,7 +121,7 @@ export default function Founding({
           >
             {state.units.map((unit, index) => (
               <div key={unit.id}>
-                <label className="mb-1.5 block text-[15px] text-[#1a1a1a]/70">
+                <label className="mb-1.5 block text-[15px] text-[var(--merc-muted)]">
                   Five {WIKI[unit.type].title.toLowerCase()}
                 </label>
                 <Input
@@ -134,11 +134,11 @@ export default function Founding({
                       return next;
                     })
                   }
-                  className="h-10 border-[#1a1a1a]/30 bg-transparent text-[#1a1a1a]"
+                  className="h-10 border-[var(--merc-line)] bg-[var(--merc-field)] text-[var(--merc-text)] placeholder:text-[var(--merc-muted)]"
                 />
               </div>
             ))}
-            <Button type="submit" className="h-10 w-full bg-[#9b1c1c] text-[#f3f0e8] hover:bg-[#9b1c1c]/90">
+            <Button type="submit" className="h-10 w-full bg-[var(--merc-red-deep)] text-[var(--merc-text)] hover:bg-[var(--merc-red-deep)]/90">
               These are their names
             </Button>
           </form>
@@ -146,10 +146,10 @@ export default function Founding({
 
         {state.phase === "reputation" && (
           <div className="space-y-4">
-            <p className="text-[16px] leading-relaxed text-[#1a1a1a]/75">
+            <p className="text-[16px] leading-relaxed text-[var(--merc-muted)]">
               {state.units.map((unit) => `${unit.name}, five ${WIKI[unit.type].title.toLowerCase()}`).join(". ")}. They are unknown. The first word of them goes out now.
             </p>
-            <Button type="button" disabled={!!busy} onClick={onReputation} className="h-10 w-full bg-[#9b1c1c] text-[#f3f0e8] hover:bg-[#9b1c1c]/90">
+            <Button type="button" disabled={!!busy} onClick={onReputation} className="h-10 w-full bg-[var(--merc-red-deep)] text-[var(--merc-text)] hover:bg-[var(--merc-red-deep)]/90">
               {busy ?? "Let them be known"}
             </Button>
           </div>

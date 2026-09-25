@@ -36,6 +36,7 @@ import {
   offerContract,
   purchaseFood,
   raiseMilitia,
+  renameUnit,
   setCompanyName,
   setDeed,
   setMovement,
@@ -739,6 +740,48 @@ export function useMercenary() {
         setError(null);
         commit(result.state);
       }
+    },
+    async renameMen(unitId: string, name: string) {
+      const current = ref.current;
+      if (!current || busy) return;
+      const before = current.units.find((unit) => unit.id === unitId);
+      const result = renameUnit(current, unitId, name);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setError(null);
+      commit(result.state);
+      if (!before || before.name === name.trim()) return;
+      setBusy("The company is hearing the new name.");
+      try {
+        const res = await fetch("/api/mercenary/unit/name", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            oldName: before.name,
+            newName: name.trim(),
+            trade: before.type,
+            count: before.count,
+            morale: current.morale,
+            condition: current.condition,
+            stance: current.stance,
+          }),
+        });
+        if (!res.ok) {
+          setError(await errorText(res));
+          setBusy(null);
+          return;
+        }
+        const data = (await res.json()) as { morale?: string; condition?: string; stance?: string };
+        const latest = ref.current;
+        if (latest && data.morale && data.condition && data.stance) {
+          commit({ ...latest, morale: data.morale, condition: data.condition, stance: data.stance });
+        }
+      } catch {
+        setError("The name changed. The company has not settled it.");
+      }
+      setBusy(null);
     },
     async takeWork() {
       const current = ref.current;
