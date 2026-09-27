@@ -31,6 +31,9 @@ interface ElderBody {
     able?: number;
     notes?: string;
     debts?: string;
+    labor?: string;
+    self?: string;
+    people?: { id: string; name: string; description: string; alive: boolean; grain: number; coins: number; possessions: string[]; relations: string }[];
   } | null;
 }
 
@@ -70,12 +73,12 @@ export async function POST(req: NextRequest) {
     },
     {
       name: "tell_of_the_work",
-      description: "Tell them the work that is actually open here. Call this when you explain the job. Until you call it, they cannot take the work. Then call speak.",
+      description: "Tell them of work that is open here, if you choose to. Until you call it, they cannot take the work.",
       input_schema: { type: "object", properties: {} },
     },
     {
       name: "pay_the_company",
-      description: "Pay the purse the company is already owed for finished work. Call this when they say the work is done and a purse is waiting. Then call speak.",
+      description: "The company collects a finished purse themselves, when they come back. This does not pay them.",
       input_schema: { type: "object", properties: {} },
     },
     {
@@ -98,12 +101,22 @@ export async function POST(req: NextRequest) {
       },
       {
         name: "read_books",
-        description: "Read the chest, the granary, the weeks of food left, the men at home, and the open debts.",
+        description: "Read the common chest, the granary, what the village is doing, the men at home, and the open debts.",
         input_schema: { type: "object", properties: {} },
       },
       {
+        name: "read_self",
+        description: "Read your own grain, coins, possessions, and relations.",
+        input_schema: { type: "object", properties: {} },
+      },
+      {
+        name: "read_person",
+        description: "Read one neighbour by name or id.",
+        input_schema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+      },
+      {
         name: "agree_purse",
-        description: "Promise a purse, paid when the bandits are beaten. Say how many coins and why. The why must be that the bandits are beaten.",
+        description: "Offer a purse. It is not a debt until they accept. coins is how many. why is the reason. The only reason that can be kept is that the bandits are beaten.",
         input_schema: {
           type: "object",
           properties: { coins: { type: "integer" }, why: { type: "string" } },
@@ -112,12 +125,12 @@ export async function POST(req: NextRequest) {
       },
       {
         name: "grant_grain",
-        description: "Give grain from the village granary. It is gone. It does not come back.",
+        description: "Offer grain from the village granary. It is not given until they accept. What they accept is gone.",
         input_schema: { type: "object", properties: { amount: { type: "integer" } }, required: ["amount"] },
       },
       {
         name: "offer_muster",
-        description: "Offer village men. term is permanent or temporary. salary is coins per man per week, and may be 0.",
+        description: "Offer village men. They do not join until the company accepts. term is permanent or temporary. salary is coins per man per week, and may be 0.",
         input_schema: {
           type: "object",
           properties: {
@@ -144,7 +157,6 @@ export async function POST(req: NextRequest) {
 
   const placeName = body.place?.trim() || "this place";
   const speaker = body.speaker?.trim() || "elder";
-  const owed = body.rewardReady && typeof body.purse === "number" ? body.purse : null;
   const canTell = !!body.workOpen && !body.workHeard;
   let paid = false;
   let workTold = false;
@@ -153,17 +165,13 @@ export async function POST(req: NextRequest) {
   let purseWhy = "";
   let grain: number | null = null;
   let muster: { count: number; term: "permanent" | "temporary"; salary: number } | null = null;
-  const bookLine = books
-    ? `${books.persona ?? ""} Chest ${books.coins} coins. Granary ${books.granary} grain, about ${books.weeksLeft} weeks until the harvest in week 36. ${books.able} men still at home. Notes: ${books.notes || "None."} Debts: ${books.debts || "None."} Read your notes before you grant grain, agree a purse, or offer men. Write a note when you learn something about the company.`
-    : "";
+  const who = books?.persona?.trim() || `You are the ${speaker} of ${placeName}. ${body.ground?.trim() ?? ""}`;
   for (let round = 0; round < 6; round++) {
+    let offeredThisRound = false;
     const response = await createMessage(client, {
       max_tokens: 800,
-      system: `You are the ${speaker} of ${placeName}. ${body.ground?.trim() ?? ""} You speak plainly, in a few sentences.
-${bookLine}
-${canTell ? `${body.leader ?? "A band"} is at ${body.bandPlace ?? "the wild"}. If they ask whether you need help, or you explain the job, call tell_of_the_work, then speak. The purse waits when the band is gone. Do not invent a different threat.` : "Do not invent a threat that is not in what you can read. Do not call tell_of_the_work."}
-${owed !== null ? `They are owed ${owed} coins. If they tell you the work is done, call pay_the_company, then speak.` : "No purse is waiting. Do not call pay_the_company."}
-You may call tools to read reputation, the bible, battle history, the decision log, and what they have done here. Past talks are in the conversation. When you are ready, call speak.`,
+      system: `${who}
+Your tools read your own things, your neighbours, and the common stores, and they let you write a note or make an offer. An offer is not done until they accept it. You do not pay them in this talk. Call speak to talk.`,
       tools,
       messages,
     });
@@ -207,7 +215,9 @@ You may call tools to read reputation, the bible, battle history, the decision l
         results.push({
           type: "tool_result",
           tool_use_id: call.id,
-          content: books ? `Chest ${books.coins}. Granary ${books.granary}, about ${books.weeksLeft} weeks. Men at home ${books.able}. Debts: ${books.debts || "None."}` : "No books.",
+          content: books
+            ? `Chest ${books.coins}. Granary ${books.granary}, about ${books.weeksLeft} weeks. Men at home ${books.able}. ${books.labor || ""} Debts: ${books.debts || "None."}`
+            : "No books.",
         });
         continue;
       }
@@ -222,7 +232,8 @@ You may call tools to read reputation, the bible, battle history, the decision l
         } else {
           purse = coins;
           purseWhy = why.trim();
-          results.push({ type: "tool_result", tool_use_id: call.id, content: `Recorded: ${coins} coins when the bandits are beaten.` });
+          offeredThisRound = true;
+          results.push({ type: "tool_result", tool_use_id: call.id, content: `Offered ${coins} coins. They have not accepted. It is not a debt.` });
         }
         continue;
       }
@@ -232,7 +243,8 @@ You may call tools to read reputation, the bible, battle history, the decision l
           results.push({ type: "tool_result", tool_use_id: call.id, content: "The granary does not have that much, and what you give is gone." });
         } else {
           grain = amount;
-          results.push({ type: "tool_result", tool_use_id: call.id, content: `You give ${amount} grain. It will not come back.` });
+          offeredThisRound = true;
+          results.push({ type: "tool_result", tool_use_id: call.id, content: `Offered ${amount} grain. They have not accepted.` });
         }
         continue;
       }
@@ -244,17 +256,29 @@ You may call tools to read reputation, the bible, battle history, the decision l
           results.push({ type: "tool_result", tool_use_id: call.id, content: "That muster does not fit the men still at home." });
         } else {
           muster = { count, term, salary };
-          results.push({ type: "tool_result", tool_use_id: call.id, content: `Offered ${count} men, ${term}, ${salary} coin a week.` });
+          offeredThisRound = true;
+          results.push({ type: "tool_result", tool_use_id: call.id, content: `Offered ${count} men, ${term}, ${salary} coin a week. They have not accepted.` });
         }
         continue;
       }
+      if (call.name === "read_self") {
+        results.push({ type: "tool_result", tool_use_id: call.id, content: books?.self || "Nothing of your own is written down." });
+        continue;
+      }
+      if (call.name === "read_person") {
+        const token = String(input.name ?? "").trim().toLowerCase();
+        const person = books?.people?.find((item) => item.id === token || item.name.toLowerCase() === token);
+        results.push({
+          type: "tool_result",
+          tool_use_id: call.id,
+          content: person
+            ? `${person.name}${person.alive ? "" : ", dead"}. ${person.description} Grain ${person.grain}. Coins ${person.coins}. ${person.possessions.join(", ")}. ${person.relations}`
+            : "No one by that name.",
+        });
+        continue;
+      }
       if (call.name === "pay_the_company") {
-        if (owed === null) {
-          results.push({ type: "tool_result", tool_use_id: call.id, content: "There is no purse waiting. Do not pay." });
-        } else {
-          paid = true;
-          results.push({ type: "tool_result", tool_use_id: call.id, content: `You pay them ${owed} coins.` });
-        }
+        results.push({ type: "tool_result", tool_use_id: call.id, content: "You do not pay them here. They collect when they come back." });
         continue;
       }
       let content = "Nothing there.";
@@ -274,7 +298,12 @@ You may call tools to read reputation, the bible, battle history, the decision l
       }
       results.push({ type: "tool_result", tool_use_id: call.id, content });
     }
-    if (spoken) return NextResponse.json({ line: spoken, paid, workTold, note, purse, purseWhy, grain, muster });
+    if (spoken && !offeredThisRound) return NextResponse.json({ line: spoken, paid, workTold, note, purse, purseWhy, grain, muster });
+    if (spoken && offeredThisRound) {
+      results.forEach((result) => {
+        if (result.content === "Said.") result.content = "They have not accepted. Say that it is an offer. Do not say it is agreed.";
+      });
+    }
     messages.push({ role: "assistant", content: response.content });
     messages.push({ role: "user", content: results });
   }

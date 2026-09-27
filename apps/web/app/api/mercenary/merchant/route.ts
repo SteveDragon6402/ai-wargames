@@ -16,6 +16,11 @@ interface MerchantBody {
   cost?: number;
   notes?: string;
   debts?: string;
+  self?: string;
+  labor?: string;
+  granary?: number;
+  household?: { name: string; grain: number; coins: number; possessions: string[]; relations: { id: string; bond: string }[] };
+  people?: { id: string; name: string; description: string; alive: boolean; grain: number; coins: number; possessions: string[]; relations: { id: string; bond: string }[] }[];
 }
 
 export async function POST(req: NextRequest) {
@@ -40,8 +45,23 @@ export async function POST(req: NextRequest) {
     },
     {
       name: "read_stock",
-      description: "Read your grain, your coins, your cost, and your posted price.",
+      description: "Read the sacks you sell, the coins in the store, what the grain cost you, and the price you have posted.",
       input_schema: { type: "object", properties: {} },
+    },
+    {
+      name: "read_self",
+      description: "Read the grain and coins in your house, apart from the sacks you sell.",
+      input_schema: { type: "object", properties: {} },
+    },
+    {
+      name: "read_commons",
+      description: "Read the village granary and what the village is doing. Those sacks are not yours.",
+      input_schema: { type: "object", properties: {} },
+    },
+    {
+      name: "read_person",
+      description: "Read one neighbour by name or id.",
+      input_schema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
     },
     {
       name: "set_price",
@@ -50,7 +70,7 @@ export async function POST(req: NextRequest) {
     },
     {
       name: "sell",
-      description: "Sell some of your own grain at the posted price. payNow is how much coin moves today. The rest is a debt. If that rest waits on the bandits being beaten, say so in why. Any other later date is refused.",
+      description: "Offer some of your own grain at the posted price. They have not bought it until they accept. payNow is how much would be paid now. The rest would be a debt. If that rest waits on the bandits being beaten, say so in why.",
       input_schema: {
         type: "object",
         properties: { amount: { type: "integer" }, payNow: { type: "integer" }, why: { type: "string" } },
@@ -74,12 +94,11 @@ export async function POST(req: NextRequest) {
   let sale: { amount: number; payNow: number; due: Due } | null = null;
 
   for (let round = 0; round < 6; round++) {
+    let offeredThisRound = false;
     const response = await createMessage(client, {
       max_tokens: 700,
-      system: `${body.persona ?? "You sell grain."} You are in ${body.place?.trim() || "this place"}.
-Grain on hand ${body.grain ?? 0}. Coins ${body.coins ?? 0}. Cost ${body.cost ?? 1} a grain. Posted price ${posted === null ? "none yet" : posted}.
-Notes: ${body.notes || "None."} Debts: ${body.debts || "None."}
-Read your notes before you change a price or extend credit, and write a note when you learn something about the company. Your sacks are not the village granary. You cannot sell grain you do not have. Until a price is posted, you cannot sell. Call set_price for any whole number. Then speak.`,
+      system: `${body.persona ?? "You sell grain."}
+Your tools read your house, your sacks, your neighbours, and the common granary, and they let you write a note or offer a sale. A sale is not done until they accept it. Call speak to talk.`,
       tools,
       messages,
     });
@@ -101,6 +120,37 @@ Read your notes before you change a price or extend credit, and write a note whe
       if (call.name === "write_note") {
         note = String(input.text ?? "").trim();
         results.push({ type: "tool_result", tool_use_id: call.id, content: note ? "Noted." : "Write the note." });
+        continue;
+      }
+      if (call.name === "read_self") {
+        const house = body.household;
+        results.push({
+          type: "tool_result",
+          tool_use_id: call.id,
+          content: house
+            ? `${house.name}. House grain ${house.grain}. House coins ${house.coins}. ${house.possessions.join(", ")}. ${house.relations.map((bond) => `${bond.bond} ${bond.id}`).join(", ")}.`
+            : body.self || "Nothing of your own is written down.",
+        });
+        continue;
+      }
+      if (call.name === "read_commons") {
+        results.push({
+          type: "tool_result",
+          tool_use_id: call.id,
+          content: `Village granary ${body.granary ?? 0}. ${body.labor || ""}`,
+        });
+        continue;
+      }
+      if (call.name === "read_person") {
+        const token = String((input as { name?: unknown }).name ?? "").trim().toLowerCase();
+        const person = body.people?.find((item) => item.id === token || item.name.toLowerCase() === token);
+        results.push({
+          type: "tool_result",
+          tool_use_id: call.id,
+          content: person
+            ? `${person.name}${person.alive ? "" : ", dead"}. ${person.description} Grain ${person.grain}. Coins ${person.coins}. ${person.possessions.join(", ")}.`
+            : "No one by that name.",
+        });
         continue;
       }
       if (call.name === "read_stock") {
@@ -148,7 +198,8 @@ Read your notes before you change a price or extend credit, and write a note whe
           due = { kind: "trigger", trigger: "bandits-defeated" };
         }
         sale = { amount, payNow, due };
-        results.push({ type: "tool_result", tool_use_id: call.id, content: `Sold ${amount}. ${payNow} now.` });
+        offeredThisRound = true;
+        results.push({ type: "tool_result", tool_use_id: call.id, content: `Offered ${amount}. ${payNow} now. They have not accepted.` });
         continue;
       }
       if (call.name === "speak") {
@@ -156,7 +207,12 @@ Read your notes before you change a price or extend credit, and write a note whe
         results.push({ type: "tool_result", tool_use_id: call.id, content: "Said." });
       }
     }
-    if (spoken) return NextResponse.json({ line: spoken, price: priceSet, note, sale });
+    if (spoken && !offeredThisRound) return NextResponse.json({ line: spoken, price: priceSet, note, sale });
+    if (spoken && offeredThisRound) {
+      results.forEach((result) => {
+        if (result.content === "Said.") result.content = "They have not accepted. Say that it is an offer. Do not say the grain is sold.";
+      });
+    }
     messages.push({ role: "assistant", content: response.content });
     messages.push({ role: "user", content: results });
   }
@@ -165,7 +221,6 @@ Read your notes before you change a price or extend credit, and write a note whe
 }
 
 async function unfilled(client: Anthropic, body: MerchantBody) {
-  const posted = body.price === 1 ? 1 : 2;
   const tools: Anthropic.Tool[] = [
     {
       name: "agree_price",
@@ -190,7 +245,7 @@ async function unfilled(client: Anthropic, body: MerchantBody) {
   for (let round = 0; round < 4; round++) {
     const response = await createMessage(client, {
       max_tokens: 500,
-      system: `You sell food in ${body.place?.trim() || "this place"}. The posted price is 2 coins a ration. You may agree 1 coin for this purchase if they haggle, and never less. You do not sell soldiers and you do not bargain over wages. The price they are being shown now is ${posted}. If you change it, call agree_price, then speak.`,
+      system: `You sell food in ${body.place?.trim() || "this place"}. You keep a price, a coin or two. Call agree_price if you change it, then speak.`,
       tools,
       messages,
     });

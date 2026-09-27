@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type Anthropic from "@anthropic-ai/sdk";
-import { comparisonSentence, forceComparison, settleLeaderAttack } from "@/app/mercenary/lib/engine";
+import { forceComparison } from "@/app/mercenary/lib/engine";
 import { anthropicClient, createMessage, toolUses } from "../../model";
 
 const TOOLS: Anthropic.Tool[] = [
@@ -39,6 +39,8 @@ export async function POST(req: NextRequest) {
     bandits?: string;
     generalHistory?: string;
     withCompany?: string[];
+    persona?: string;
+    stores?: string;
   } | null;
 
   if (!body || typeof body.playerMen !== "number" || typeof body.banditMen !== "number" || !body.company || !body.bandits) {
@@ -51,18 +53,19 @@ export async function POST(req: NextRequest) {
   const messages: Anthropic.Messages.MessageParam[] = [
     {
       role: "user",
-      content: `You found a company sneaking through your forest.
-${comparisonSentence(comparison)}
-Company men: ${body.playerMen}
+      content: `You found armed men moving through your ground.
+Their men: ${body.playerMen}
 Your men: ${body.banditMen}
 
-Company:
+Them:
 ${body.company}
 
 Your band:
 ${body.bandits}
 
-If you have beaten this company more than once, you are more willing to fight them when the numbers are close.
+Your stores:
+${body.stores || "You have been taking from the road."}
+
 Call your history tools if you need them, then decide_attack.`,
     },
   ];
@@ -70,8 +73,7 @@ Call your history tools if you need them, then decide_attack.`,
   for (let round = 0; round < 5; round++) {
     const response = await createMessage(client, {
       max_tokens: 600,
-      system:
-        "You are Harl the Reed, leader of the Blackwood bandits. You are somewhat experienced in this forest. You will not attack a force that clearly outnumbers you. You will attack a force you clearly outnumber. Between those, your history matters. A company you have already beaten more than once is one you are more willing to fight.",
+      system: body.persona?.trim() || "You lead this band. You have men, coin, grain, and what you have taken. Decide for yourself.",
       tools: TOOLS,
       messages,
     });
@@ -104,12 +106,7 @@ Call your history tools if you need them, then decide_attack.`,
       }
     }
     if (decision) {
-      const attack = settleLeaderAttack(comparison, decision.attack);
-      const reason =
-        attack === decision.attack
-          ? decision.reason
-          : `${decision.reason} The numbers settle it: he ${attack ? "attacks" : "lets them pass"}.`;
-      return NextResponse.json({ attack, reason, comparison });
+      return NextResponse.json({ attack: decision.attack, reason: decision.reason, comparison });
     }
     messages.push({ role: "assistant", content: response.content });
     messages.push({ role: "user", content: results });

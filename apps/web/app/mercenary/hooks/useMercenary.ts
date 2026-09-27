@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
-  acceptMuster,
+  acceptElderOffer,
+  acceptMerchantOffer,
+  acceptSquareOffer,
   acceptWork,
   agreeFoodPrice,
-  agreePurse,
   armMilitia,
   applyAftermath,
   applyForage,
@@ -27,7 +28,11 @@ import {
   fallbackForageMeals,
   finishWeek,
   freshGame,
-  grantGrain,
+  offerGrain,
+  offerMenFromElder,
+  offerPurse,
+  offerSale,
+  offerSquare,
   headcount,
   hearWork,
   nameStartingUnits,
@@ -40,7 +45,6 @@ import {
   offerContract,
   offerMuster,
   purchaseFood,
-  sellGrain,
   setMerchantPrice,
   weekLedger,
   raiseMilitia,
@@ -60,8 +64,9 @@ import {
 } from "../lib/engine";
 import { NODES } from "../data/map";
 import { ELDER_PERSONA, MERCHANT_PERSONA, SETTLEMENT_IDS } from "../data/millcross";
+import { applyVillageRaid, fallbackRaid, type FightResult } from "../lib/world";
 import type { BaseTypeId } from "../data/wiki";
-import { REPUTATION_KEYS, type Aftermath, type DeedOrder, type Due, type GameState, type MovementOrder, type ReputationShift, type Result, type SettlementId, type WeekAction, type WeekOrder } from "../lib/types";
+import { REPUTATION_KEYS, type Aftermath, type DeedOrder, type Due, type GameState, type MovementOrder, type ReputationShift, type Result, type Settlement, type SettlementId, type Villager, type WeekAction, type WeekOrder } from "../lib/types";
 
 const KEY = "mercenary-band-v1";
 
@@ -75,6 +80,29 @@ function revivePlan(parsed: GameState) {
   }
   if (plan.deed.kind === "convert") plan.deed = { kind: "rest" };
   return plan;
+}
+
+function reviveSettlements(saved: Partial<Record<SettlementId, Settlement>> | undefined, blank: Record<SettlementId, Settlement>) {
+  if (!saved) return blank;
+  const next = { ...blank };
+  for (const id of SETTLEMENT_IDS) {
+    const place = saved[id];
+    if (!place) continue;
+    next[id] = {
+      ...blank[id],
+      ...place,
+      elder: { ...blank[id].elder, ...place.elder, notes: place.elder?.notes ?? [] },
+      merchant: { ...blank[id].merchant, ...place.merchant, notes: place.merchant?.notes ?? [] },
+      debts: place.debts ?? [],
+      people: place.people?.length ? place.people : blank[id].people,
+      labor: place.labor || blank[id].labor,
+    };
+  }
+  return next;
+}
+
+function voiceOf(people: Villager[] | undefined, id: string, fallback: string): string {
+  return people?.find((person) => person.id === id)?.description ?? fallback;
 }
 
 function revive(parsed: GameState): GameState {
@@ -105,7 +133,14 @@ function revive(parsed: GameState): GameState {
     drillDiffs: Array.isArray(parsed.drillDiffs) ? parsed.drillDiffs : [],
     reputationShift: Array.isArray(parsed.reputationShift) ? parsed.reputationShift : [],
     yearClosing: parsed.yearClosing ?? null,
-    settlements: parsed.settlements ?? blank.settlements,
+    settlements: reviveSettlements(parsed.settlements, blank.settlements),
+    pendingRaid: parsed.pendingRaid ?? false,
+    raidDone: parsed.raidDone ?? false,
+    offers: {
+      elder: parsed.offers?.elder ?? null,
+      merchant: parsed.offers?.merchant ?? null,
+      square: parsed.offers?.square ?? 0,
+    },
     units: (parsed.units ?? []).map((unit) => ({
       ...unit,
       lines: Array.isArray(unit.lines) ? unit.lines.filter((line) => typeof line === "string" && line.trim()) : [],
@@ -118,6 +153,10 @@ function revive(parsed: GameState): GameState {
       ? {
           ...parsed.bandits,
           lines: Array.isArray(parsed.bandits.lines) ? parsed.bandits.lines.filter((line) => typeof line === "string" && line.trim()) : [],
+          coins: parsed.bandits.coins ?? 40,
+          grain: parsed.bandits.grain ?? 30,
+          equipment: parsed.bandits.equipment ?? ["spears", "a few bows"],
+          loot: parsed.bandits.loot ?? [],
         }
       : null,
     ledger: parsed.screen === "resolving" && parsed.ledger ? parsed.ledger : null,
@@ -257,6 +296,26 @@ export function useMercenary() {
     const fought = state.moraleFromBattle;
     const doubleRest = plan.movement.kind === "rest" && plan.deed.kind === "rest" && !state.movedThisWeek;
     let closed = finishWeek(state);
+    let raided = false;
+    if (closed.pendingRaid && closed.bandits && closed.phase !== "wiped") {
+      raided = true;
+      setBusy("A fight is being judged.");
+      try {
+        const res = await fetch("/api/mercenary/battle", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ state: closed, raid: true }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { brief?: string; chronicle?: string; outcome?: FightResult };
+          closed = data.outcome ? applyVillageRaid(closed, data.outcome, data.brief ?? "", data.chronicle ?? "") : fallbackRaid(closed);
+        } else {
+          closed = fallbackRaid(closed);
+        }
+      } catch {
+        closed = fallbackRaid(closed);
+      }
+    }
     const ledger = weekLedger(state, closed, plan);
     closed = { ...closed, screen: "resolving", ledger };
     commit(closed);
@@ -268,7 +327,7 @@ export function useMercenary() {
     const movement = plan.movement.kind === "march" ? `Marched to ${NODES[plan.movement.to].name}` : "Rested where they were";
     const deed = describeAction(plan.deed.kind === "rest" ? { kind: "rest" } : plan.deed);
     const hungry = /hungry|starving/i.test(closed.hungerNote ?? "");
-    if (!fought) {
+    if (!fought && !raided) {
       setBusy(doubleRest ? "They are settling in." : "The week is being written.");
       try {
         const [sceneRes, conditionRes] = await Promise.all([
@@ -477,13 +536,28 @@ export function useMercenary() {
       .join("\n");
     const id = townId(current.location);
     const place = id ? current.settlements[id] : null;
+    const alden = place?.people?.find((person) => person.id === "alden");
     const books = place?.populated
       ? {
-          persona: ELDER_PERSONA,
+          persona: voiceOf(place.people, "alden", ELDER_PERSONA),
           coins: place.elder.coins,
           granary: place.granary,
           weeksLeft: weeksOfFood(current, place),
           able: place.able,
+          labor: place.labor,
+          self: alden
+            ? `${alden.name}. Grain ${alden.grain}. Coins ${alden.coins}. ${alden.possessions.join(", ")}. ${alden.relations.map((bond) => `${bond.bond} ${bond.id}`).join(", ")}.`
+            : "",
+          people: (place.people ?? []).map((person) => ({
+            id: person.id,
+            name: person.name,
+            description: person.description,
+            alive: person.alive,
+            grain: person.grain,
+            coins: person.coins,
+            possessions: person.possessions,
+            relations: person.relations.map((bond) => `${bond.bond} ${bond.id}`).join(", "),
+          })),
           notes: place.elder.notes.map((note) => `Week ${note.week}: ${note.text}`).join("\n"),
           debts: place.debts
             .filter((debt) => debt.status === "open")
@@ -543,18 +617,11 @@ export function useMercenary() {
       const heard = hearWork(next);
       if (heard.ok) next = heard.state;
     }
-    if (data.paid && canClaimReward(next)) {
-      const paid = claimReward(next);
-      if (paid.ok) {
-        next = paid.state;
-        void refreshReputation(next, next.decisions.at(-1)?.text ?? "Claimed the pay.");
-      }
-    }
     const here = townId(next.location);
     if (here && data.note?.trim()) next = applyTown(next, writeNote(next, here, "elder", data.note), setError);
-    if (here && data.purse && data.purseWhy) next = applyTown(next, agreePurse(next, here, data.purse, data.purseWhy), setError);
-    if (here && data.grain) next = applyTown(next, grantGrain(next, here, data.grain), setError);
-    if (here && data.muster) next = applyTown(next, offerMuster(next, here, data.muster), setError);
+    if (data.purse && data.purseWhy) next = applyTown(next, offerPurse(next, data.purse, data.purseWhy), setError);
+    if (data.grain) next = applyTown(next, offerGrain(next, data.grain), setError);
+    if (data.muster) next = applyTown(next, offerMenFromElder(next, data.muster), setError);
     commit(next);
     setBusy(null);
     return true;
@@ -658,11 +725,27 @@ export function useMercenary() {
         commit(result.state);
       }
     },
-    acceptMuster(name: string) {
+    acceptElder(name = "") {
       if (!ref.current) return;
-      const id = townId(ref.current.location);
-      if (!id) return;
-      const result = acceptMuster(ref.current, id, name);
+      const result = acceptElderOffer(ref.current, name);
+      if (!result.ok) setError(result.error);
+      else {
+        setError(null);
+        commit(result.state);
+      }
+    },
+    acceptMerchant() {
+      if (!ref.current) return;
+      const result = acceptMerchantOffer(ref.current);
+      if (!result.ok) setError(result.error);
+      else {
+        setError(null);
+        commit(result.state);
+      }
+    },
+    acceptSquare(name: string) {
+      if (!ref.current) return;
+      const result = acceptSquareOffer(ref.current, name);
       if (!result.ok) setError(result.error);
       else {
         setError(null);
@@ -758,7 +841,12 @@ export function useMercenary() {
           place: NODES[current.location].name,
           price: filled ? place.merchant.price : current.foodPrice,
           filled,
-          persona: filled ? MERCHANT_PERSONA : undefined,
+          persona: filled ? voiceOf(place?.people, "tobin", MERCHANT_PERSONA) : undefined,
+          self: filled ? voiceOf(place?.people, "tobin", "") : undefined,
+          household: filled ? place?.people?.find((person) => person.id === "tobin") : undefined,
+          people: filled ? place?.people : undefined,
+          labor: filled ? place?.labor : undefined,
+          granary: filled ? place?.granary : undefined,
           grain: place?.merchant.grain,
           coins: place?.merchant.coins,
           cost: place?.merchant.cost,
@@ -795,7 +883,10 @@ export function useMercenary() {
       if (book?.populated && here) {
         if (data.note?.trim()) next = applyTown(next, writeNote(next, here, "merchant", data.note), setError);
         if (Number.isInteger(data.price)) next = applyTown(next, setMerchantPrice(next, here, data.price as number), setError);
-        if (data.sale) next = applyTown(next, sellGrain(next, here, data.sale.amount, data.sale.payNow, data.sale.due), setError);
+        if (data.sale) {
+          const price = Number.isInteger(data.price) ? (data.price as number) : next.settlements[here].merchant.price;
+          if (price !== null) next = applyTown(next, offerSale(next, data.sale.amount, data.sale.payNow, data.sale.due, price), setError);
+        }
       } else if (data.price === 1 || data.price === 2) {
         const agreed = agreeFoodPrice(next, data.price);
         if (agreed.ok) next = agreed.state;
@@ -811,6 +902,7 @@ export function useMercenary() {
       setBusy("The square is thinking…");
       setError(null);
       const city = NODES[current.location].kind === "capital";
+      const id = townId(current.location);
       const res = await fetch("/api/mercenary/square", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -819,6 +911,8 @@ export function useMercenary() {
           history: current.squareTalk,
           place: NODES[current.location].name,
           city,
+          standing: current.offers?.square ?? 0,
+          atHome: id && current.settlements[id]?.populated ? current.settlements[id].able : null,
         }),
       });
       if (!res.ok) {
@@ -833,10 +927,12 @@ export function useMercenary() {
         return null;
       }
       const spoken = ref.current ?? current;
-      commit({
+      let next: GameState = {
         ...spoken,
         squareTalk: [...spoken.squareTalk, { role: "square", text: data.line.trim() }],
-      });
+      };
+      if (typeof data.levies === "number") next = applyTown(next, offerSquare(next, data.levies), setError);
+      commit(next);
       setBusy(null);
       return typeof data.levies === "number" ? data.levies : null;
     },
@@ -1044,6 +1140,8 @@ export function useMercenary() {
           banditMen: current.bandits.count,
           company: companyDescription(current),
           bandits: banditDescription(current),
+          persona: current.leader.blurb,
+          stores: `${current.bandits.coins} coins, ${current.bandits.grain} grain. Equipment: ${current.bandits.equipment.join(", ") || "what they carry"}. ${(current.bandits.loot ?? []).join(" ")}`,
           generalHistory: current.leader.generalHistory,
           withCompany: current.leader.withCompany,
         }),

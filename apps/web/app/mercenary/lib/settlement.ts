@@ -1,7 +1,7 @@
 import { freshSettlements } from "../data/millcross";
 import { HARVEST_WEEK, REWARD_FULL, REWARD_RECRUIT, UNIT_CAP } from "../data/constants";
 import { WIKI } from "../data/wiki";
-import type { Debt, GameState, MusterOffer, Note, Party, Result, Settlement, SettlementId, TownTrigger, Unit } from "./types";
+import type { Debt, Due, ElderOffer, GameState, MerchantOffer, MusterOffer, Note, Party, Result, Settlement, SettlementId, StandingOffers, TownTrigger, Unit } from "./types";
 
 const TRIGGERS: TownTrigger[] = ["bandits-defeated"];
 
@@ -32,7 +32,7 @@ export function eatGranaries(state: GameState): GameState {
   if (state.week > HARVEST_WEEK) return state;
   let next = state;
   for (const place of Object.values(state.settlements)) {
-    if (!place.populated) continue;
+    if (!place.populated || place.people.length > 0) continue;
     const eat = Math.min(place.granary, mouthsAtHome(state, place));
     next = put(next, { ...placeOf(next, place.id), granary: place.granary - eat });
   }
@@ -264,4 +264,79 @@ export function dropUnpaid(units: Unit[], unpaidCoins: number): { units: Unit[];
 
 export function openingSettlements(): Record<SettlementId, Settlement> {
   return freshSettlements();
+}
+
+export function emptyOffers(): StandingOffers {
+  return { elder: null, merchant: null, square: 0 };
+}
+
+function withElder(state: GameState, elder: ElderOffer | null): GameState {
+  return { ...state, offers: { ...state.offers, elder } };
+}
+
+function withMerchant(state: GameState, merchant: MerchantOffer | null): GameState {
+  return { ...state, offers: { ...state.offers, merchant } };
+}
+
+export function offerPurse(state: GameState, coins: number, why: string): Result {
+  if (!Number.isInteger(coins) || coins < 1) return { ok: false, error: "The purse is a whole number of coins." };
+  const reason = why.trim();
+  if (!reason) return { ok: false, error: "Say why the purse is owed." };
+  return { ok: true, state: withElder(state, { kind: "purse", coins, why: reason }) };
+}
+
+export function offerGrain(state: GameState, amount: number): Result {
+  const place = state.settlements[state.location as SettlementId];
+  if (!place?.populated) return { ok: false, error: "There is no granary here." };
+  if (!Number.isInteger(amount) || amount < 1 || amount > place.granary) return { ok: false, error: "The granary does not have that much." };
+  return { ok: true, state: withElder(state, { kind: "grain", amount }) };
+}
+
+export function offerMenFromElder(state: GameState, offer: MusterOffer): Result {
+  const place = state.settlements[state.location as SettlementId];
+  if (!place?.populated) return { ok: false, error: "There are no men to muster here." };
+  if (!Number.isInteger(offer.count) || offer.count < 1 || offer.count > place.able) return { ok: false, error: "That many men are not at home." };
+  if (offer.term !== "permanent" && offer.term !== "temporary") return { ok: false, error: "They join for good, or only until the bandits are gone." };
+  if (!Number.isInteger(offer.salary) || offer.salary < 0) return { ok: false, error: "The wage is a whole number of coins, or nothing." };
+  return { ok: true, state: withElder(state, { kind: "muster", ...offer }) };
+}
+
+export function offerSale(state: GameState, amount: number, payNow: number, due: Due, price: number): Result {
+  const place = state.settlements[state.location as SettlementId];
+  if (!place?.populated) return { ok: false, error: "Nobody is selling there." };
+  if (!Number.isInteger(price)) return { ok: false, error: "He has not posted a price." };
+  if (!Number.isInteger(amount) || amount < 1 || amount > place.merchant.grain) return { ok: false, error: "He does not have that much grain." };
+  if (!Number.isInteger(payNow) || payNow < 0) return { ok: false, error: "Say how much is paid now." };
+  const merchant: MerchantOffer = { kind: "sale", amount, payNow, due, price };
+  return { ok: true, state: withMerchant(state, merchant) };
+}
+
+export function offerSquare(state: GameState, count: number): Result {
+  if (!Number.isInteger(count) || count < 0) return { ok: false, error: "Say how the offer changes." };
+  return { ok: true, state: { ...state, offers: { ...state.offers, square: count } } };
+}
+
+export function villagePurseDue(state: GameState): number {
+  if (state.location !== "millcross") return 0;
+  if (state.bandits && state.bandits.count > 0) return 0;
+  return state.settlements.millcross.debts
+    .filter((debt) => debt.status === "open" && debt.from === "elder" && debt.to === "company" && debt.due.kind === "trigger" && debt.due.trigger === "bandits-defeated")
+    .reduce((sum, debt) => sum + debt.coins, 0);
+}
+
+export function collectVillagePurse(state: GameState): GameState {
+  const place = placeOf(state, "millcross");
+  let next = state;
+  let book = place;
+  for (const debt of place.debts) {
+    if (debt.status !== "open" || debt.from !== "elder" || debt.to !== "company" || debt.due.kind !== "trigger") continue;
+    let moved = takeCoins(next, book, "elder", debt.coins);
+    moved = giveCoins(moved.state, moved.place, "company", debt.coins);
+    book = {
+      ...moved.place,
+      debts: moved.place.debts.map((item) => (item.id === debt.id ? { ...item, status: "settled" } : item)),
+    };
+    next = put({ ...moved.state, notices: [...moved.state.notices, `${debt.coins} coins settled: ${debt.why}`] }, book);
+  }
+  return next;
 }

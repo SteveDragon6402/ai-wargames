@@ -59,6 +59,20 @@ export type Party = "company" | "elder" | "merchant";
 export type TownTrigger = "bandits-defeated";
 export type Due = { kind: "now" } | { kind: "trigger"; trigger: TownTrigger };
 
+export type ElderOffer =
+  | { kind: "purse"; coins: number; why: string }
+  | { kind: "grain"; amount: number }
+  | { kind: "muster"; count: number; term: "permanent" | "temporary"; salary: number };
+
+export type MerchantOffer = { kind: "sale"; amount: number; payNow: number; due: Due; price: number };
+
+export interface StandingOffers {
+  elder: ElderOffer | null;
+  merchant: MerchantOffer | null;
+  /** Men offered in the square and not yet accepted. Zero means no offer. */
+  square: number;
+}
+
 export interface Debt {
   id: string;
   from: Party;
@@ -100,6 +114,9 @@ export interface Settlement {
   debts: Debt[];
   nextDebtId: number;
   muster: MusterOffer | null;
+  people: Villager[];
+  /** What the village is doing this week. A sentence, not a count. */
+  labor: string;
 }
 
 export type WeekAction =
@@ -157,12 +174,28 @@ export interface ContractOffer {
   status: "offered" | "taken";
 }
 
+export interface Villager {
+  id: string;
+  name: string;
+  description: string;
+  grain: number;
+  coins: number;
+  possessions: string[];
+  relations: { id: string; bond: string }[];
+  planted: boolean;
+  alive: boolean;
+}
+
 export interface BanditForce {
   count: number;
   origin: string;
   lines: string[];
   morale: string;
   stance: string;
+  coins: number;
+  grain: number;
+  equipment: string[];
+  loot: string[];
 }
 
 export interface LeaderMemory {
@@ -270,6 +303,10 @@ export interface GameState {
   banditSurvivors: number | null;
   ledger: WeekLedger | null;
   settlements: Record<SettlementId, Settlement>;
+  offers: StandingOffers;
+  /** The Blackwood band is in Millcross this week. The fight has not been judged yet. */
+  pendingRaid: boolean;
+  raidDone: boolean;
 }
 
 export type Ok<T> = { ok: true; state: T };

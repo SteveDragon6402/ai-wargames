@@ -15,18 +15,22 @@ export async function POST(req: NextRequest) {
     history?: { role: string; text: string }[];
     place?: string;
     city?: boolean;
+    standing?: number;
+    atHome?: number | null;
   } | null;
   if (!body?.message?.trim()) return NextResponse.json({ error: "Say something in the square." }, { status: 400 });
 
   const city = !!body.city;
+  const standing = Number.isInteger(body.standing) ? Math.max(0, body.standing as number) : 0;
+  const atHome = Number.isInteger(body.atHome) ? (body.atHome as number) : null;
   const tools: Anthropic.Tool[] = [
     {
-      name: "offer_levies",
-      description: "Untrained people in the square agree to take service. They join free, still unarmed. Count is how many, from 1 to 10. Call this when they call for men, then speak.",
+      name: "change_men",
+      description: "Change how many unarmed people are offered. change adds to the number already offered. A negative change sends some back. Do not send a new total. They have not joined until they accept.",
       input_schema: {
         type: "object",
-        properties: { count: { type: "number" } },
-        required: ["count"],
+        properties: { change: { type: "integer" } },
+        required: ["change"],
       },
     },
     {
@@ -42,14 +46,15 @@ export async function POST(req: NextRequest) {
   const messages: Anthropic.Messages.MessageParam[] = [
     { role: "user", content: `${history ? `${history}\n` : ""}Company: ${body.message.trim()}` },
   ];
-  let levies: number | null = null;
+  let levies = standing;
 
   for (let round = 0; round < 4; round++) {
+    let changedThisRound = false;
     const response = await createMessage(client, {
       max_tokens: 400,
       system: city
-        ? `You are the people in the square of ${body.place?.trim() || "the city"}. Speak in at most 20 words. They are not soldiers. If the company calls for men, some may join as militia: free, untrained, unarmed. Call offer_levies with how many, then speak. Do not sell trained soldiers.`
-        : `You are the people in the square of ${body.place?.trim() || "the village"}. Farmers, not soldiers. If the company calls for men, some may join free, untrained and unarmed. Call offer_levies with how many, then speak. Do not sell trained soldiers.`,
+        ? `You are the people in the square of ${body.place?.trim() || "the city"}. Speak in at most 20 words. You are not soldiers. change_men adds or takes back men from the number already offered. An offer is not service until they accept. Call speak.`
+        : `You are the people in the square of ${body.place?.trim() || "the village"}. Farmers, not soldiers. change_men adds or takes back men from the number already offered. An offer is not service until they accept. Call speak.`,
       tools,
       messages,
     });
@@ -63,14 +68,22 @@ export async function POST(req: NextRequest) {
     let spoken = "";
     const results: Anthropic.Messages.ToolResultBlockParam[] = [];
     for (const call of calls) {
-      const input = (call.input ?? {}) as { line?: string; count?: number };
-      if (call.name === "offer_levies") {
-        const count = Math.round(Number(input.count));
-        if (!Number.isInteger(count) || count < 1 || count > 10) {
-          results.push({ type: "tool_result", tool_use_id: call.id, content: "Offer between 1 and 10." });
+      const input = (call.input ?? {}) as { line?: string; change?: number };
+      if (call.name === "change_men") {
+        const change = Math.round(Number(input.change));
+        if (!Number.isInteger(change) || change === 0) {
+          results.push({ type: "tool_result", tool_use_id: call.id, content: `Say how many to add, or how many fewer. ${levies} are already offered.` });
         } else {
-          levies = count;
-          results.push({ type: "tool_result", tool_use_id: call.id, content: `${count} will take service, free and unarmed.` });
+          let next = Math.max(0, levies + change);
+          if (atHome !== null) next = Math.min(next, atHome);
+          next = Math.min(next, 40);
+          levies = next;
+          changedThisRound = true;
+          results.push({
+            type: "tool_result",
+            tool_use_id: call.id,
+            content: next > 0 ? `${next} are offered. They have not accepted.` : "No one is offered.",
+          });
         }
         continue;
       }
@@ -79,7 +92,12 @@ export async function POST(req: NextRequest) {
         results.push({ type: "tool_result", tool_use_id: call.id, content: "Said." });
       }
     }
-    if (spoken) return NextResponse.json({ line: city ? words(spoken, 20) : spoken, levies });
+    if (spoken && !changedThisRound) return NextResponse.json({ line: city ? words(spoken, 20) : spoken, levies });
+    if (spoken && changedThisRound) {
+      results.forEach((result) => {
+        if (result.content === "Said.") result.content = "They have not accepted. Say that it is an offer.";
+      });
+    }
     messages.push({ role: "assistant", content: response.content });
     messages.push({ role: "user", content: results });
   }

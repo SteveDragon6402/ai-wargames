@@ -33,6 +33,7 @@ import {
   type LineDiff,
   type MovementOrder,
   type Result,
+  type SettlementId,
   type Step,
   type Unit,
   type ValidatedBattle,
@@ -41,9 +42,10 @@ import {
   type WeekOrder,
   type WeekPlan,
 } from "./types";
-import { cutPurse, dismissTemporary, dropUnpaid, eatGranaries, ensureWorkPurse, sellGrain, settleTrigger, wageDue } from "./settlement";
+import { acceptMuster, agreePurse, collectVillagePurse, cutPurse, dismissTemporary, dropUnpaid, eatGranaries, emptyOffers, grantGrain, offerMuster, sellGrain, setMerchantPrice, villagePurseDue, wageDue } from "./settlement";
+import { tickWorld } from "./world";
 
-export { acceptMuster, agreePurse, dismissTemporary, grantGrain, mouthsAtHome, offerMuster, sellGrain, setMerchantPrice, weeksOfFood, writeNote } from "./settlement";
+export { acceptMuster, agreePurse, dismissTemporary, grantGrain, mouthsAtHome, offerGrain, offerMenFromElder, offerMuster, offerPurse, offerSale, offerSquare, sellGrain, setMerchantPrice, weeksOfFood, writeNote } from "./settlement";
 
 export function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
@@ -147,13 +149,15 @@ export function freshGame(): GameState {
       lines: startingDescription("bandit"),
       morale: "Wary, and sure of these trees.",
       stance: "They watch the paths and decline a fight they dislike.",
+      coins: 40,
+      grain: 30,
+      equipment: ["spears", "a few bows", "a stolen cart"],
+      loot: ["They have been taking from the road since the thaw."],
     },
     leader: {
       name: "Harl the Reed",
-      blurb:
-        "Harl the Reed keeps the Blackwood band. They are somewhat aware, and they know this forest. They will not set on a host that clearly outnumbers them. They will set on a company they clearly outnumber.",
-      generalHistory:
-        "Harl the Reed has led about twenty poorly armed men in Blackwood for years. They are somewhat experienced in this forest. They rob small parties and let large ones pass.",
+      blurb: "Harl the Reed keeps the Blackwood band. They know this forest. They have been taking from the road.",
+      generalHistory: "Harl the Reed has led these men in Blackwood for years. They rob small parties. They have coin, grain, and gear from that.",
       withCompany: [],
     },
     elderTalk: [],
@@ -171,6 +175,9 @@ export function freshGame(): GameState {
     banditSurvivors: null,
     ledger: null,
     settlements: freshSettlements(),
+    offers: emptyOffers(),
+    pendingRaid: false,
+    raidDone: false,
   };
 }
 
@@ -694,7 +701,7 @@ function starveCount(count: number): number {
 }
 
 export function finishWeek(state: GameState): GameState {
-  const fed = eatGranaries(state);
+  const fed = eatGranaries(tickWorld(state));
   const men = headcount(fed.units);
   const late = (fed.lateBasic ?? 0) + (fed.lateGood ?? 0);
   const stock = Math.max(0, fed.basicFood + fed.goodFood - late);
@@ -754,6 +761,7 @@ export function finishWeek(state: GameState): GameState {
     elderTalk: marched ? [] : state.elderTalk,
     merchantTalk: marched ? [] : state.merchantTalk,
     squareTalk: marched ? [] : state.squareTalk,
+    offers: marched ? emptyOffers() : next.offers,
     weekPlan: defaultWeekPlan(),
     queue: [],
     resolveIndex: 0,
@@ -824,9 +832,7 @@ export function forceComparison(playerMen: number, banditMen: number): ForceComp
   return "close";
 }
 
-export function settleLeaderAttack(comparison: ForceComparison, modelWantsAttack: boolean): boolean {
-  if (comparison === "larger") return false;
-  if (comparison === "smaller") return true;
+export function settleLeaderAttack(_comparison: ForceComparison, modelWantsAttack: boolean): boolean {
   return modelWantsAttack;
 }
 
@@ -894,9 +900,13 @@ export function parseReport(text: string): { brief: string; chronicle: string } 
     brief = (stop === -1 ? body : body.slice(0, stop)).replace(/\s+/g, " ").trim();
     const without = cleaned.replace(labelled[0], "").trim();
     chronicle = without.length > 40 ? without : cleaned;
+  } else {
+    const parts = cleaned.split(/\n\s*\n/);
+    brief = parts[0].replace(/\s+/g, " ").trim();
+    const rest = parts.slice(1).join("\n\n").trim();
+    chronicle = rest.length > 40 ? rest : cleaned;
   }
-  if (wordCount(brief) < 8) brief = clipWords(cleaned, 50);
-  else if (wordCount(brief) > 70) brief = clipWords(brief, 60);
+  if (brief.length < 20) return null;
   return { brief, chronicle };
 }
 
@@ -1018,8 +1028,10 @@ export function foodWarning(state: GameState): string | null {
 }
 
 export function applyOutcome(state: GameState, outcome: ValidatedBattle, brief: string, chronicle: string): { state: GameState; result: "victory" | "defeat" } {
+  const settled = outcome;
+  const told = brief;
   const approach = state.pendingBattle?.approach ?? "";
-  const deathOf = new Map(outcome.deaths.map((row) => [row.unitId, row.count]));
+  const deathOf = new Map(settled.deaths.map((row) => [row.unitId, row.count]));
   const lineOf = new Map(outcome.lines.map((row) => [row.unitId, row]));
   const units = state.units
     .map((unit) => {
@@ -1035,19 +1047,19 @@ export function applyOutcome(state: GameState, outcome: ValidatedBattle, brief: 
             place: NODES[state.location].name,
             foe: state.leader.name,
             approach,
-            result: brief,
+            result: told,
             deaths,
           },
         ],
       };
       if (rewritten && next.count > 0 && rewritten.lines.length > 0) {
-        next.lines = linesTouchedByChronicle(unit.lines, rewritten.lines, `${brief}\n${chronicle}`);
+        next.lines = linesTouchedByChronicle(unit.lines, rewritten.lines, `${told}\n${chronicle}`);
       }
       return next;
     })
     .filter((unit) => unit.count > 0);
 
-  const remaining = state.bandits ? state.bandits.count - outcome.banditDeaths : 0;
+  const remaining = state.bandits ? state.bandits.count - settled.banditDeaths : 0;
   const bandits = state.bandits && remaining > 0 ? { ...state.bandits, count: remaining } : null;
   const playerAlive = headcount(units) > 0;
   const victory = playerAlive && (bandits === null || outcome.playerHoldsField);
@@ -1055,24 +1067,24 @@ export function applyOutcome(state: GameState, outcome: ValidatedBattle, brief: 
     ...state,
     units,
     bandits,
-    morale: outcome.morale,
-    stance: outcome.stance,
-    condition: outcome.condition,
+    morale: settled.morale,
+    stance: settled.stance,
+    condition: settled.condition,
     moraleFromBattle: true,
-    lastBrief: brief,
+    lastBrief: told,
     lastChronicle: chronicle,
   };
   if (!victory) {
     const from = state.pendingBattle?.from ?? state.cameFrom ?? "millcross";
     const beaten = rememberLeader(
       { ...base, location: from, screen: "dashboard", pendingBattle: null, banditSurvivors: null },
-      `He fought ${state.companyName} and beat them. ${brief}`
+      `He fought ${state.companyName} and beat them. ${told}`
     );
     return { state: playerAlive ? beaten : { ...beaten, phase: "wiped" }, result: "defeat" };
   }
   const won = rememberLeader(
     { ...base, screen: "choice", pendingBattle: null, banditSurvivors: remaining },
-    `He fought ${state.companyName} and lost the field. ${brief}`
+    `He fought ${state.companyName} and lost the field. ${told}`
   );
   return { state: won, result: "victory" };
 }
@@ -1122,7 +1134,6 @@ export function applyAftermath(state: GameState, choice: Aftermath, names: strin
   }
   if (!contracted && state.payAt === "millcross") {
     if (choice === "recruit") next = cutPurse(next, "millcross");
-    next = settleTrigger(next, "bandits-defeated");
     next = dismissTemporary(next, "millcross");
   }
   next = rememberLeader(next, `The company chose to ${choice} whoever remained.`);
@@ -1135,14 +1146,13 @@ export function acceptWork(state: GameState): Result {
   if (state.villageWork) return fail("The work is already accepted.");
   if (!state.workHeard) return fail("The elder has not told you the work.");
   if (!state.bandits) return fail("The bandits are already gone.");
-  const booked = ensureWorkPurse(state, "millcross");
   return {
     ok: true,
     state: decide(
       {
-        ...booked,
+        ...state,
         villageWork: true,
-        villageDeeds: [...booked.villageDeeds, "Accepted Millcross's request to deal with the Blackwood bandits."],
+        villageDeeds: [...state.villageDeeds, "Accepted Millcross's request to deal with the Blackwood bandits."],
       },
       "Accepted Millcross's request to deal with the Blackwood bandits."
     ),
@@ -1169,6 +1179,44 @@ const ARMED: Record<"swordsmen" | "spearmen" | "archers", string[]> = {
   archers: ["Farmers, handed bows this week. Most of them have hunted, not shot as a body.", "They loose when they are told, and they scatter if foot reaches them.", "A drill would make them archers. They are not that yet."],
 };
 
+function hereId(state: GameState): SettlementId | null {
+  const id = state.location;
+  return id in state.settlements ? (id as SettlementId) : null;
+}
+
+export function acceptElderOffer(state: GameState, name = ""): Result {
+  const offer = state.offers?.elder;
+  const id = hereId(state);
+  if (!offer || !id) return fail("Nothing has been offered.");
+  const clear = (next: GameState): GameState => ({ ...next, offers: { ...next.offers, elder: null } });
+  if (offer.kind === "purse") {
+    const agreed = agreePurse(state, id, offer.coins, offer.why);
+    if (!agreed.ok) return agreed;
+    return { ok: true, state: clear(agreed.state) };
+  }
+  if (offer.kind === "grain") {
+    const given = grantGrain(state, id, offer.amount);
+    if (!given.ok) return given;
+    return { ok: true, state: clear(given.state) };
+  }
+  const raised = offerMuster(state, id, offer);
+  if (!raised.ok) return raised;
+  const joined = acceptMuster(raised.state, id, name);
+  if (!joined.ok) return joined;
+  return { ok: true, state: clear(joined.state) };
+}
+
+export function acceptMerchantOffer(state: GameState): Result {
+  const offer = state.offers?.merchant;
+  const id = hereId(state);
+  if (!offer || !id) return fail("Nothing has been offered.");
+  const priced = setMerchantPrice(state, id, offer.price);
+  if (!priced.ok) return priced;
+  const sold = sellGrain(priced.state, id, offer.amount, offer.payNow, offer.due);
+  if (!sold.ok) return sold;
+  return { ok: true, state: { ...sold.state, offers: { ...sold.state.offers, merchant: null } } };
+}
+
 export function raiseMilitia(state: GameState, count: number, name: string): Result {
   const closed = weekOpen(state);
   if (closed) return fail(closed);
@@ -1186,6 +1234,70 @@ export function raiseMilitia(state: GameState, count: number, name: string): Res
       `Took ${count} militia at ${NODES[state.location].name}. They are not armed.`
     ),
   };
+}
+
+/** Add unarmed men to a unit already raised here, or raise one. A filled town draws on the men at home. */
+export function addMilitia(state: GameState, count: number, name: string): Result {
+  const closed = weekOpen(state);
+  if (closed) return fail(closed);
+  if (!isSettlement(state.location)) return fail("Nobody here will take service.");
+  if (!Number.isInteger(count) || count < 1) return fail("Take a sensible number.");
+  const trimmed = name.trim();
+  if (!trimmed || trimmed.length > 40) return fail("Name the new unit, forty characters or fewer.");
+  const id = hereId(state);
+  const place = id ? state.settlements[id] : null;
+  let taking = count;
+  let next = state;
+  if (place?.populated) {
+    if (place.able < 1) return fail("No one else is at home.");
+    taking = Math.min(count, place.able);
+    next = { ...state, settlements: { ...state.settlements, [place.id]: { ...place, able: place.able - taking } } };
+  }
+  const existing = next.units.find((unit) => unit.type === "militia" && unit.name.toLowerCase() === trimmed.toLowerCase());
+  if (existing) {
+    let left = taking;
+    const units = next.units.map((unit) => {
+      if (unit.id !== existing.id || left <= 0) return unit;
+      const room = UNIT_CAP - unit.count;
+      const add = Math.min(room, left);
+      left -= add;
+      return { ...unit, count: unit.count + add };
+    });
+    let built = { ...next, units };
+    while (left > 0) {
+      const batch = Math.min(UNIT_CAP, left);
+      const made = makeUnit(built, "militia", batch, `${trimmed} ${built.units.filter((unit) => unit.name.toLowerCase().startsWith(trimmed.toLowerCase())).length + 1}`);
+      built = { ...made.state, units: [...built.units, { ...made.unit, raw: true }] };
+      left -= batch;
+    }
+    return { ok: true, state: decide(built, `Another ${taking} joined ${trimmed} at ${NODES[state.location].name}.`) };
+  }
+  if (next.units.some((unit) => unit.name.toLowerCase() === trimmed.toLowerCase())) return fail("That name is already in the company.");
+  let left = taking;
+  let built = next;
+  let index = 0;
+  const units = [...built.units];
+  while (left > 0) {
+    const batch = Math.min(UNIT_CAP, left);
+    const unitName = index === 0 ? trimmed : `${trimmed} ${index + 1}`;
+    const made = makeUnit(built, "militia", batch, unitName);
+    built = made.state;
+    units.push({ ...made.unit, raw: true });
+    left -= batch;
+    index += 1;
+  }
+  return {
+    ok: true,
+    state: decide({ ...built, units }, `Took ${taking} militia at ${NODES[state.location].name}. They are not armed.`),
+  };
+}
+
+export function acceptSquareOffer(state: GameState, name: string): Result {
+  const count = state.offers?.square ?? 0;
+  if (count < 1) return fail("Nobody has offered to come.");
+  const joined = addMilitia(state, count, name);
+  if (!joined.ok) return joined;
+  return { ok: true, state: { ...joined.state, offers: { ...joined.state.offers, square: 0 } } };
 }
 
 export function armMilitia(state: GameState, unitId: string, weapon: "swordsmen" | "spearmen" | "archers"): Result {
@@ -1236,29 +1348,34 @@ export function renameUnit(state: GameState, unitId: string, name: string): Resu
 }
 
 export function canClaimReward(state: GameState): boolean {
-  return (
-    state.phase === "play" &&
-    state.location === state.payAt &&
-    !state.rewardClaimed &&
-    state.rewardPurse !== null &&
-    (!state.bandits || state.bandits.count <= 0)
-  );
+  if (state.phase !== "play" || state.location !== state.payAt) return false;
+  if (state.bandits && state.bandits.count > 0) return false;
+  if (state.rewardPurse !== null && !state.rewardClaimed) return true;
+  return villagePurseDue(state) > 0;
 }
 
 export function claimReward(state: GameState): Result {
-  if (!canClaimReward(state) || state.rewardPurse === null) return fail("There is nothing to pay yet.");
-  const purse = state.rewardPurse;
+  if (!canClaimReward(state)) return fail("There is nothing to pay yet.");
+  if (state.rewardPurse !== null && !state.rewardClaimed) {
+    const purse = state.rewardPurse;
+    return {
+      ok: true,
+      state: decide(
+        {
+          ...state,
+          money: state.money + purse,
+          rewardClaimed: true,
+          villageDeeds: [...state.villageDeeds, `Paid ${purse} coins for clearing the Blackwood road.`],
+        },
+        `Claimed ${purse} coins for the work.`
+      ),
+    };
+  }
+  const due = villagePurseDue(state);
+  if (due <= 0) return fail("There is nothing to pay yet.");
   return {
     ok: true,
-    state: decide(
-      {
-        ...state,
-        money: state.money + purse,
-        rewardClaimed: true,
-        villageDeeds: [...state.villageDeeds, `Paid ${purse} coins for clearing the Blackwood road.`],
-      },
-      `Claimed ${purse} coins for the work.`
-    ),
+    state: decide(collectVillagePurse(state), `Collected ${due} coins for the work.`),
   };
 }
 
@@ -1296,6 +1413,10 @@ export function takeContract(state: GameState): Result {
           lines: startingDescription("bandit"),
           morale: "Wary, and sure of this ground.",
           stance: "They watch and decline a fight they dislike.",
+          coins: 20,
+          grain: 10,
+          equipment: ["spears", "a few bows"],
+          loot: ["They have been taking from this ground."],
         },
         leader: {
           name: contract.leaderName,
@@ -1354,11 +1475,14 @@ export function companyDescription(state: GameState): string {
 
 export function banditDescription(state: GameState): string {
   if (!state.bandits) return "The bandits are gone.";
-  return `${state.leader.name}'s band, ${state.bandits.count} bandits. ${state.bandits.lines.join(" ")} ${WIKI.bandit.worth}`;
+  const band = state.bandits;
+  const kit = band.equipment?.length ? ` Equipment: ${band.equipment.join(", ")}.` : "";
+  const purse = ` They hold ${band.coins ?? 0} coins and ${band.grain ?? 0} grain.`;
+  return `${state.leader.name}'s band, ${band.count} bandits. ${band.lines.join(" ")}${kit}${purse} ${WIKI.bandit.worth}`;
 }
 
 export function comparisonSentence(comparison: ForceComparison): string {
-  if (comparison === "larger") return "This company clearly outnumbers the band. You will not attack.";
-  if (comparison === "smaller") return "The band clearly outnumbers this company. You will attack.";
-  return "The two sides are close in number. Decide from your history with them and from what you know of yourself.";
+  if (comparison === "larger") return "This company clearly outnumbers the band.";
+  if (comparison === "smaller") return "The band clearly outnumbers this company.";
+  return "The two sides are close in number.";
 }

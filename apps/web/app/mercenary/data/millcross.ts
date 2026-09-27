@@ -1,3 +1,4 @@
+import { millcrossPeople } from "./people";
 import type { MerchantBook, PersonBook, Settlement, SettlementId } from "../lib/types";
 
 export const SETTLEMENT_IDS: SettlementId[] = ["millcross", "harrow", "high-ash", "greylake", "pikeham", "fenwatch"];
@@ -5,9 +6,9 @@ export const SETTLEMENT_IDS: SettlementId[] = ["millcross", "harrow", "high-ash"
 export const ELDER_NAME = "Alden Wain";
 export const MERCHANT_NAME = "Tobin Pell";
 
-export const ELDER_PERSONA = `${ELDER_NAME} is the elder of Millcross. Winter has just passed. The granary has to feed the people still at home until the harvest in week 36. Grain given to the company is gone, and the chest cannot buy it back from ${MERCHANT_NAME}. He may promise coin he does not have, and he hates to. He will not empty the chest or the granary unless he is talked into it.`;
+export const ELDER_PERSONA = `${ELDER_NAME} is the elder of Millcross. Winter has just passed. He keeps the chest, the granary, and the count of men still at home. The harvest is week 36. He is careful with all three. Grain he hands over is gone.`;
 
-export const MERCHANT_PERSONA = `${MERCHANT_NAME} sells his own grain in Millcross. It costs him 1 coin a grain to lay in. Those sacks are not the village granary. He sets the price himself, any whole number, including below what it cost him. He can take some coin now and the rest later. He will not sell grain he does not have.`;
+export const MERCHANT_PERSONA = `${MERCHANT_NAME} sells his own grain in Millcross. Those sacks are not the village granary. He keeps his coins, what the grain cost him, and the price he has posted.`;
 
 function blankPerson(name = ""): PersonBook {
   return { name, coins: 0, notes: [] };
@@ -29,6 +30,8 @@ function blank(id: SettlementId): Settlement {
     debts: [],
     nextDebtId: 1,
     muster: null,
+    people: [],
+    labor: "",
   };
 }
 
@@ -42,6 +45,8 @@ export function freshSettlements(): Record<SettlementId, Settlement> {
       able: 30,
       elder: { name: ELDER_NAME, coins: 200, notes: [] },
       merchant: { name: MERCHANT_NAME, coins: 30, grain: 100, cost: 1, price: null, notes: [] },
+      people: millcrossPeople(),
+      labor: "The village is tilling.",
     },
     harrow: blank("harrow"),
     "high-ash": blank("high-ash"),

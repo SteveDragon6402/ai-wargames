@@ -1,61 +1,38 @@
 import { NextRequest, NextResponse } from "next/server";
 import type Anthropic from "@anthropic-ai/sdk";
-import { NODES } from "@/app/mercenary/data/map";
-import { WIKI, resolveWikiId, wikiText, type WikiId } from "@/app/mercenary/data/wiki";
-import { banditDescription, companyDescription, parseReport, validateOutcome } from "@/app/mercenary/lib/engine";
+import { BATTLER_SYSTEM, SUMMARIZER_SYSTEM, TRANSLATOR_SYSTEM, battlerPrompt, fightSides, translatorPrompt } from "@/app/mercenary/lib/battle";
+import { validateOutcome } from "@/app/mercenary/lib/engine";
 import type { GameState } from "@/app/mercenary/lib/types";
+import { parseFight, type FightResult } from "@/app/mercenary/lib/world";
 import { anthropicClient, createMessage, textOf, toolUses } from "../model";
 
-const WIKI_IDS = Object.keys(WIKI) as WikiId[];
-
-const READ_ENTRY: Anthropic.Tool = {
-  name: "read_entry",
-  description: "Read one game-bible entry before you write, if you need it. Ids: swordsmen, spearmen, archers, light_cavalry, heavy_cavalry, berserkers, bandit, ogres.",
+const WRITE_ACCOUNT: Anthropic.Tool = {
+  name: "write_account",
+  description: "Write what would happen in the fight. One finished account. No one is being advised.",
   input_schema: {
     type: "object",
-    properties: { id: { type: "string", description: "A wiki id, or a close name such as bandits or light cavalry." } },
-    required: ["id"],
+    properties: { account: { type: "string" } },
+    required: ["account"],
   },
 };
 
-const SUBMIT_REPORT: Anthropic.Tool = {
-  name: "submit_report",
-  description: "Hand in the finished battle report. Call this once, after any bible lookups.",
+const RECORD_FIGHT: Anthropic.Tool = {
+  name: "record_fight",
+  description: "Record what the account did to each group. Whole numbers only.",
   input_schema: {
     type: "object",
     properties: {
-      brief: {
-        type: "string",
-        description: "One paragraph of about forty words. This is the only result the player reads first. No heading and no BRIEF: label.",
-      },
-      chronicle: {
-        type: "string",
-        description: "The fight in short phases: Opening, Clash, End. A few sentences each. Who acted, what they did, what it cost.",
-      },
-    },
-    required: ["brief", "chronicle"],
-  },
-};
-
-const RECORD: Anthropic.Tool = {
-  name: "record_outcome",
-  description: "Record the mechanical result. Use the unit ids you were given. Whole numbers only.",
-  input_schema: {
-    type: "object",
-    properties: {
-      playerHoldsField: { type: "boolean", description: "True if the company still holds the ground when the noise stops." },
-      banditDeaths: { type: "integer", minimum: 0 },
-      deaths: {
+      holds: { type: "string", enum: ["a", "b"] },
+      dead: {
         type: "array",
         items: {
           type: "object",
-          properties: {
-            unitId: { type: "string" },
-            count: { type: "integer", minimum: 0 },
-          },
-          required: ["unitId", "count"],
+          properties: { id: { type: "string" }, count: { type: "integer" } },
+          required: ["id", "count"],
         },
       },
+      grainToB: { type: "integer" },
+      coinsToB: { type: "integer" },
       morale: { type: "string" },
       stance: { type: "string" },
       condition: { type: "string" },
@@ -63,92 +40,53 @@ const RECORD: Anthropic.Tool = {
         type: "array",
         items: {
           type: "object",
-          properties: {
-            unitId: { type: "string" },
-            lines: {
-              type: "array",
-              items: { type: "string" },
-              description: "What the unit seems like after the fight. One to ten lines. Change a line only when the chronicle shows that change. Do not give them a trick that is not already in their lines.",
-            },
-          },
-          required: ["unitId", "lines"],
+          properties: { id: { type: "string" }, lines: { type: "array", items: { type: "string" } } },
+          required: ["id", "lines"],
         },
       },
     },
-    required: ["playerHoldsField", "banditDeaths", "deaths", "morale", "stance", "condition", "lines"],
+    required: ["holds", "dead", "grainToB", "coinsToB", "morale", "stance", "condition"],
   },
 };
 
-function battlePrompt(state: GameState): string {
-  const pending = state.pendingBattle;
-  const place = NODES[state.location];
-  const how =
-    pending?.reason === "retreat"
-      ? "The company was trying to retreat when the band found them."
-      : pending?.reason === "leader"
-        ? "The company was trying to sneak. The bandits found them, and the leader chose to attack."
-        : "The company chose to fight.";
-  const units = state.units
-    .map(
-      (unit) =>
-        `  ${unit.name} [${unit.id}] ${unit.count} ${WIKI[unit.type].title} (entry id: ${unit.type})
-    Origin, fixed: ${unit.origin}
-    What they can do: ${unit.lines.join(" / ")}
-    Battles: ${unit.battles.length ? unit.battles.map((battle) => `week ${battle.week} at ${battle.place}, lost ${battle.deaths}: ${battle.result}`).join("; ") : "none"}`
-    )
-    .join("\n");
-  return `Place: ${place.name}. ${place.ground}
-Week ${state.week}.
-${how}
-${pending?.sneakNote ? `Sneak: ${pending.sneakNote}` : ""}
-Approach, in the company's words: ${pending?.approach || "(none)"}
-Supply spent on this fight: ${pending?.supplySpent ?? 0}. That is oil, hurdles, extra arrows, and the like. It has already been spent.
-Company morale: ${state.morale}
-Company stance: ${state.stance}
-Company condition: ${state.condition}
+const SUMMARISE: Anthropic.Tool = {
+  name: "summarise",
+  description: "One finished paragraph of what happened, for someone who was not there.",
+  input_schema: {
+    type: "object",
+    properties: { summary: { type: "string" } },
+    required: ["summary"],
+  },
+};
 
-The company
-${units}
-
-The band
-${banditDescription(state)}
-Leader: ${state.leader.name}
-His history with this company:
-${state.leader.withCompany.join("\n") || "None."}
-
-${companyDescription(state)}`;
+function firstParagraph(account: string): string {
+  const para = account.split(/\n\s*\n/)[0]?.trim() || account.trim();
+  return para;
 }
 
-function executorPrompt(state: GameState, chronicle: string, brief: string): string {
-  const roster = state.units
-    .map((unit) => `- unitId "${unit.id}" is ${unit.name}, ${unit.count} men. Current lines: ${unit.lines.join(" / ")}`)
-    .join("\n");
-  const bandits = state.bandits?.count ?? 0;
-  return `${battlePrompt(state)}
-
-REPORT:
-${chronicle}
-
-BRIEF:
-${brief}
-
-Call record_outcome once. Use only these unit ids:
-${roster}
-Bandits alive at the start: ${bandits}. banditDeaths is an integer from 0 to ${bandits}.
-Each deaths count is an integer from 0 to that unit's men. A real clash often costs someone, on the company, the band, or both, in proportion to how the fight went. A careful or one-sided brush can kill no one. Record 0 when the chronicle kills no one. Do not invent a death the chronicle does not describe.
-playerHoldsField is true or false.
-morale, stance, and condition are one sentence each.
-lines: for every unit that still has men, what they seem like now, from 1 to 10 lines. Their current lines are what they can do. If the approach asks for a trick that is not in those lines, the chronicle says they fail at it. Rewrite, drop, or add a line only when the chronicle shows that change, and put the new sentence in the chronicle so it can be kept.
-Do not name a unit that is not listed.`;
-}
-
-function readBrief(input: unknown): { brief: string; chronicle: string } | null {
-  if (!input || typeof input !== "object") return null;
-  const body = input as { brief?: unknown; chronicle?: unknown };
-  const brief = typeof body.brief === "string" ? body.brief.trim() : "";
-  const chronicle = typeof body.chronicle === "string" ? body.chronicle.trim() : "";
-  const combined = [brief, chronicle].filter(Boolean).join("\n\n");
-  return parseReport(combined);
+async function forceTool(
+  client: Anthropic,
+  system: string,
+  tool: Anthropic.Tool,
+  user: string,
+  max: number
+): Promise<{ input: unknown } | { error: string }> {
+  let extra = "";
+  for (let round = 0; round < 2; round++) {
+    const response = await createMessage(client, {
+      max_tokens: max,
+      system,
+      tools: [tool],
+      tool_choice: { type: "tool", name: tool.name },
+      messages: [{ role: "user", content: extra ? `${user}\n\n${extra}` : user }],
+    });
+    if ("error" in response) return { error: response.error };
+    const call = toolUses(response).find((item) => item.name === tool.name);
+    if (call) return { input: call.input };
+    const text = textOf(response);
+    extra = text ? `Use the tool. You wrote: ${text}` : "Call the tool.";
+  }
+  return { error: "The call did not use its tool." };
 }
 
 export async function POST(req: NextRequest) {
@@ -156,9 +94,11 @@ export async function POST(req: NextRequest) {
   if ("error" in client) return NextResponse.json({ error: client.error }, { status: 500 });
 
   let state: GameState;
+  let raid = false;
   try {
-    const body = (await req.json()) as { state?: GameState };
-    if (!body.state?.pendingBattle || !body.state.bandits) {
+    const body = (await req.json()) as { state?: GameState; raid?: boolean };
+    raid = body.raid === true;
+    if (!body.state?.bandits || (!raid && !body.state.pendingBattle)) {
       return NextResponse.json({ error: "There is no fight to judge." }, { status: 400 });
     }
     state = body.state;
@@ -166,115 +106,54 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "The battle request was unreadable." }, { status: 400 });
   }
 
-  const messages: Anthropic.Messages.MessageParam[] = [{ role: "user", content: battlePrompt(state) }];
-  let brief = "";
-  let chronicle = "";
-  let prose = "";
+  const sides = fightSides(state, raid);
+  const groups = [...sides.a.groups, ...sides.b.groups];
+  const asked = await forceTool(client, BATTLER_SYSTEM, WRITE_ACCOUNT, battlerPrompt(sides.ground, sides.a, sides.b), 2500);
+  if ("error" in asked) return NextResponse.json({ error: asked.error }, { status: 500 });
+  const account = typeof (asked.input as { account?: unknown })?.account === "string" ? (asked.input as { account: string }).account.trim() : "";
+  if (account.length < 40) return NextResponse.json({ error: "The fight was not told." }, { status: 500 });
 
-  for (let round = 0; round < 6; round++) {
-    const response = await createMessage(client, {
-      max_tokens: 4000,
-      system: `You adjudicate one fight. A real clash often costs someone: the company, the band, or both, in proportion to how it went. A careful or one-sided brush can still kill no one. Do not take prisoners. Do not invent troop types. Do not say where anyone marches after the fight.
-
-Answer in this order:
-1. Optional. Call read_entry if you need a bible entry. Valid ids: ${WIKI_IDS.join(", ")}.
-2. Required. Call submit_report exactly once.
-   brief: one paragraph, about forty words, the result the player reads first. No heading.
-   chronicle: Opening, Clash, and End. A few sentences each. Who acted, what they did, what it cost.
-
-If you write prose instead of the tool, still include the result in the first paragraph and the phases after it.`,
-      tools: [READ_ENTRY, SUBMIT_REPORT],
-      tool_choice: round >= 2 ? { type: "tool", name: "submit_report" } : { type: "auto" },
-      messages,
-    });
-    if ("error" in response) return NextResponse.json({ error: response.error }, { status: 500 });
-
-    const calls = toolUses(response);
-    const submitted = calls.find((call) => call.name === "submit_report");
-    if (submitted) {
-      const split = readBrief(submitted.input);
-      if (split) {
-        brief = split.brief;
-        chronicle = split.chronicle;
-        break;
-      }
-    }
-
-    if (calls.length) {
-      const results: Anthropic.Messages.ToolResultBlockParam[] = calls.map((call) => {
-        if (call.name === "read_entry") {
-          const raw = String((call.input as { id?: unknown }).id ?? "");
-          const id = resolveWikiId(raw);
-          return {
-            type: "tool_result" as const,
-            tool_use_id: call.id,
-            content: id ? wikiText(id) : `No entry for "${raw}". Use one of: ${WIKI_IDS.join(", ")}.`,
-          };
-        }
-        if (call.name === "submit_report") {
-          return {
-            type: "tool_result" as const,
-            tool_use_id: call.id,
-            content: "That report was too short to use. Call submit_report again with a brief of about forty words and a chronicle of Opening, Clash, and End.",
-          };
-        }
-        return { type: "tool_result" as const, tool_use_id: call.id, content: "Unknown tool." };
-      });
-      messages.push({ role: "assistant", content: response.content });
-      messages.push({ role: "user", content: results });
-      continue;
-    }
-
-    const text = textOf(response);
-    if (text) prose = `${prose}\n${text}`.trim();
-    const split = parseReport(text);
-    if (split) {
-      brief = split.brief;
-      chronicle = split.chronicle;
-      break;
-    }
-
-    messages.push({ role: "assistant", content: response.content });
-    messages.push({
-      role: "user",
-      content: "Call submit_report now. brief is about forty words. chronicle is the Opening, Clash, and End.",
-    });
-  }
-
-  if (!brief) {
-    const split = parseReport(prose);
-    if (split) {
-      brief = split.brief;
-      chronicle = split.chronicle;
-    }
-  }
-  if (!brief) return NextResponse.json({ error: "The chronicler did not finish a report." }, { status: 500 });
-
-  const askExecutor = async (extra: string) =>
-    createMessage(client, {
-      max_tokens: 2000,
-      system: `You turn a finished battle report into mechanics. Call record_outcome once. Deaths cannot exceed the men present. Do not capture anyone. Do not change a unit's origin.`,
-      tools: [RECORD],
-      tool_choice: { type: "tool", name: "record_outcome" },
-      messages: [{ role: "user", content: extra ? `${executorPrompt(state, chronicle, brief)}\n\n${extra}` : executorPrompt(state, chronicle, brief) }],
-    });
-
-  const first = await askExecutor("");
-  if ("error" in first) return NextResponse.json({ error: first.error }, { status: 500 });
-  const firstRecord = toolUses(first).find((call) => call.name === "record_outcome");
-  if (!firstRecord) return NextResponse.json({ error: "The executor did not record an outcome." }, { status: 500 });
-
-  let validated = validateOutcome(state, firstRecord.input);
-  if (!validated.ok) {
-    const second = await askExecutor(
-      `Your last record_outcome was unusable: ${validated.error}\nPayload: ${JSON.stringify(firstRecord.input)}\nCall record_outcome again with the unit ids listed above.`
+  const recorded = await forceTool(client, TRANSLATOR_SYSTEM, RECORD_FIGHT, translatorPrompt(account, groups), 1500);
+  if ("error" in recorded) return NextResponse.json({ error: recorded.error }, { status: 500 });
+  let fight = parseFight(recorded.input, groups);
+  if (!fight) {
+    const again = await forceTool(
+      client,
+      TRANSLATOR_SYSTEM,
+      RECORD_FIGHT,
+      `${translatorPrompt(account, groups)}\n\nThe last record could not be used. holds must be "a" or "b". dead ids must be the group ids above.`,
+      1500
     );
-    if ("error" in second) return NextResponse.json({ error: second.error }, { status: 500 });
-    const secondRecord = toolUses(second).find((call) => call.name === "record_outcome");
-    if (!secondRecord) return NextResponse.json({ error: "The executor did not record an outcome." }, { status: 500 });
-    validated = validateOutcome(state, secondRecord.input);
+    if ("error" in again) return NextResponse.json({ error: again.error }, { status: 500 });
+    fight = parseFight(again.input, groups);
   }
-  if (!validated.ok) return NextResponse.json({ error: validated.error }, { status: 422 });
+  if (!fight) return NextResponse.json({ error: "The fight could not be recorded." }, { status: 422 });
 
-  return NextResponse.json({ brief, chronicle, outcome: validated.value });
+  const told = await forceTool(
+    client,
+    SUMMARIZER_SYSTEM,
+    SUMMARISE,
+    `Account:\n${account}\n\nRecorded: force ${fight.holds.toUpperCase()} holds the ground. Dead: ${fight.dead.map((row) => `${row.id} ${row.count}`).join(", ") || "none"}.`,
+    800
+  );
+  const summary =
+    "error" in told
+      ? firstParagraph(account)
+      : typeof (told.input as { summary?: unknown })?.summary === "string" && (told.input as { summary: string }).summary.trim().length >= 20
+        ? (told.input as { summary: string }).summary.trim()
+        : firstParagraph(account);
+
+  if (raid) return NextResponse.json({ brief: summary, chronicle: account, outcome: fight satisfies FightResult });
+
+  const validated = validateOutcome(state, {
+    playerHoldsField: fight.holds === "a",
+    banditDeaths: fight.dead.find((row) => row.id === "band")?.count ?? 0,
+    deaths: fight.dead.filter((row) => row.id !== "band" && row.id !== "village").map((row) => ({ unitId: row.id, count: row.count })),
+    morale: fight.morale,
+    stance: fight.stance,
+    condition: fight.condition,
+    lines: fight.lines.filter((row) => row.id !== "band" && row.id !== "village").map((row) => ({ unitId: row.id, lines: row.lines })),
+  });
+  if (!validated.ok) return NextResponse.json({ error: validated.error }, { status: 422 });
+  return NextResponse.json({ brief: summary, chronicle: account, outcome: validated.value });
 }

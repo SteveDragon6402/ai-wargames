@@ -20,7 +20,6 @@ import {
   nextContractTemplate,
   recruitableTypes,
   recruitmentPlan,
-  weeksOfFood,
   wordCount,
 } from "../lib/engine";
 import { REPUTATION_LABEL, type GameState } from "../lib/types";
@@ -102,10 +101,12 @@ export default function Board({ game }: { game: Game }) {
   }
 
   const special = state.screen === "approach" || state.screen === "result" || state.screen === "chronicle" || state.screen === "choice";
-  const portrait =
+  const spoken =
     state.portraitAt === state.location && state.placePortrait
       ? state.placePortrait.split("\n").map((line) => line.trim()).filter(Boolean).slice(0, 2)
       : [place.ground];
+  const labor = state.location === "millcross" ? state.settlements.millcross.labor : "";
+  const portrait = labor ? [labor, ...spoken] : spoken;
   const speaker = city ? "steward" : "elder";
   const reading = readingId ? state.units.find((unit) => unit.id === readingId) ?? null : null;
 
@@ -434,11 +435,7 @@ export default function Board({ game }: { game: Game }) {
         <DialogContent className={`max-w-lg ${paper}`}>
           <DialogTitle className="font-gothic text-3xl">{town ? town.merchant.name : "The merchant"}</DialogTitle>
           <DialogDescription className="text-[var(--merc-muted)]">
-            {town
-              ? town.merchant.price === null
-                ? `${town.merchant.name} has not posted a price. ${town.merchant.grain} grain, ${town.merchant.coins} coins.`
-                : `${town.merchant.grain} grain at ${town.merchant.price} coin. He holds ${town.merchant.coins} coins.`
-              : `Food is ${state.foodPrice} coin a ration. Buying does not spend the week.`}
+            {town ? "He sells his own grain." : `Food is ${state.foodPrice} coin a ration. Buying does not spend the week.`}
           </DialogDescription>
           <MerchantTalk state={state} game={game} onBought={() => setMerchantOpen(false)} />
         </DialogContent>
@@ -811,26 +808,11 @@ function KingdomMap({
 
 function ElderTalk({ state, game }: { state: GameState; game: Game }) {
   const [text, setText] = useState("");
-  const [unitName, setUnitName] = useState("The Fields");
+  const [unitName, setUnitName] = useState("");
   const workHere = !state.villageWork && !!state.bandits && state.location === state.payAt && state.location === "millcross";
-  const town = state.location === "millcross" && state.settlements.millcross?.populated ? state.settlements.millcross : null;
-  const openDebts = town?.debts.filter((debt) => debt.status === "open") ?? [];
+  const offer = state.offers?.elder ?? null;
   return (
     <div>
-      {town && (
-        <p className="mb-3 text-[15px] leading-relaxed">
-          {town.elder.name}. Chest {town.elder.coins}. Granary {town.granary}, {weeksOfFood(state, town)} weeks until the harvest. {town.able} men at home.
-        </p>
-      )}
-      {openDebts.length > 0 && (
-        <ul className="mb-3 space-y-1 text-[14px] text-[var(--merc-muted)]">
-          {openDebts.map((debt) => (
-            <li key={debt.id}>
-              {debt.coins} owed, {debt.from} to {debt.to}. {debt.why}
-            </li>
-          ))}
-        </ul>
-      )}
       <div className="max-h-64 space-y-3 overflow-y-auto">
         {state.elderTalk.length === 0 && <p className="text-[14px] text-[var(--merc-muted)]">He is here.</p>}
         {state.elderTalk.map((turn, index) => (
@@ -873,20 +855,24 @@ function ElderTalk({ state, game }: { state: GameState; game: Game }) {
             </button>
           </p>
         )}
-        {town?.muster && (
+        {offer && (
           <form
             className="flex gap-2"
             onSubmit={(event) => {
               event.preventDefault();
-              game.acceptMuster(unitName);
+              game.acceptElder(unitName);
             }}
           >
-            <label htmlFor="muster-name" className="sr-only">
-              Name the men
-            </label>
-            <Input id="muster-name" value={unitName} onChange={(event) => setUnitName(event.target.value)} className={`h-10 ${field}`} />
+            {offer.kind === "muster" && (
+              <>
+                <label htmlFor="muster-name" className="sr-only">
+                  Name the men
+                </label>
+                <Input id="muster-name" value={unitName} onChange={(event) => setUnitName(event.target.value)} placeholder="Name them" className={`h-10 ${field}`} />
+              </>
+            )}
             <Button type="submit" variant="outline" disabled={!!game.busy}>
-              Take {town.muster.count}
+              Accept
             </Button>
           </form>
         )}
@@ -898,25 +884,12 @@ function ElderTalk({ state, game }: { state: GameState; game: Game }) {
 function MerchantTalk({ state, game, onBought }: { state: GameState; game: Game; onBought: () => void }) {
   const [text, setText] = useState("");
   const town = state.location === "millcross" && state.settlements.millcross?.populated ? state.settlements.millcross : null;
-  const price = town ? town.merchant.price : state.foodPrice === 1 ? 1 : 2;
-  const owed = town?.debts.filter((debt) => debt.status === "open" && debt.to === "merchant") ?? [];
+  const price = town ? null : state.foodPrice === 1 ? 1 : 2;
+  const offer = state.offers?.merchant ?? null;
   return (
     <div>
-      {owed.length > 0 && (
-        <ul className="mb-3 space-y-1 text-[14px] text-[var(--merc-muted)]">
-          {owed.map((debt) => (
-            <li key={debt.id}>
-              {debt.coins} still owed. {debt.why}
-            </li>
-          ))}
-        </ul>
-      )}
       <div className="max-h-48 space-y-3 overflow-y-auto">
-        {state.merchantTalk.length === 0 && (
-          <p className="text-[14px] text-[var(--merc-muted)]">
-            {price === null ? "He has not posted a price." : `Posted price, ${price} coin a ration.`}
-          </p>
-        )}
+        {state.merchantTalk.length === 0 && !town && <p className="text-[14px] text-[var(--merc-muted)]">Posted price, {state.foodPrice} coins a ration.</p>}
         {state.merchantTalk.map((turn, index) => (
           <p key={index} className={turn.role === "player" ? "text-[15px] text-[var(--merc-muted)]" : "text-[16px] leading-relaxed"}>
             {turn.role === "player" ? `You. ${turn.text}` : turn.text}
@@ -944,26 +917,27 @@ function MerchantTalk({ state, game, onBought }: { state: GameState; game: Game;
         </Button>
       </form>
       <div className="mt-3 flex flex-wrap gap-2">
-        {[5, 10, 20].map((amount) => {
-          const bill = price === null ? null : price * amount;
-          const short = town ? amount > town.merchant.grain : false;
-          const unaffordable = bill !== null && bill > 0 && state.money < bill;
-          const label = bill === null ? `${amount}` : bill < 0 ? `${amount}, he pays ${-bill}` : bill === 0 ? `${amount} for nothing` : `${amount} for ${bill}`;
-          return (
+        {offer && (
+          <Button type="button" variant="outline" disabled={!!game.busy} onClick={() => game.acceptMerchant()}>
+            Accept
+          </Button>
+        )}
+        {!town &&
+          price !== null &&
+          [5, 10, 20].map((amount) => (
             <Button
               key={amount}
               type="button"
               variant="outline"
-              disabled={price === null || short || unaffordable}
+              disabled={state.money < price * amount}
               onClick={() => {
                 game.buyFood(amount);
                 onBought();
               }}
             >
-              {label}
+              {amount} for {price * amount}
             </Button>
-          );
-        })}
+          ))}
       </div>
     </div>
   );
@@ -971,8 +945,7 @@ function MerchantTalk({ state, game, onBought }: { state: GameState; game: Game;
 
 function SquareTalk({ state, game, city }: { state: GameState; game: Game; city: boolean }) {
   const [text, setText] = useState("");
-  const [levies, setLevies] = useState<number | null>(null);
-  const [name, setName] = useState("The Levies");
+  const [name, setName] = useState("");
   const unarmed = state.units.filter((unit) => unit.type === "militia");
 
   return (
@@ -1006,24 +979,22 @@ function SquareTalk({ state, game, city }: { state: GameState; game: Game; city:
       <Button type="button" variant="outline" className="mt-3" disabled={!!game.busy} onClick={() => void say("We call for men.")}>
         Call for men
       </Button>
-      {levies !== null && (
-        <div className="mt-3">
-          <p className="text-[15px]">{levies} will come, free and unarmed. You can leave them and equip them from the company.</p>
-          <label htmlFor="levy-name" className="mt-2 block text-[14px]">
+      {(state.offers?.square ?? 0) > 0 && (
+        <form
+          className="mt-3"
+          onSubmit={(event) => {
+            event.preventDefault();
+            game.acceptSquare(name);
+          }}
+        >
+          <label htmlFor="levy-name" className="block text-[14px]">
             Name them
-            <Input id="levy-name" value={name} maxLength={40} onChange={(event) => setName(event.target.value)} className={`mt-1 h-9 ${field}`} />
+            <Input id="levy-name" value={name} maxLength={40} onChange={(event) => setName(event.target.value)} placeholder="Name them" className={`mt-1 h-9 ${field}`} />
           </label>
-          <Button
-            type="button"
-            className="mt-2 border border-[var(--merc-line)] bg-[var(--merc-raise)] text-[var(--merc-text)] hover:bg-[var(--merc-raise)]"
-            onClick={() => {
-              game.takeMilitia(levies, name);
-              setLevies(null);
-            }}
-          >
-            Take them
+          <Button type="submit" className="mt-2 border border-[var(--merc-line)] bg-[var(--merc-raise)] text-[var(--merc-text)] hover:bg-[var(--merc-raise)]">
+            Accept
           </Button>
-        </div>
+        </form>
       )}
       {unarmed.map((unit) => (
         <div key={unit.id} className="mt-3">
@@ -1050,9 +1021,8 @@ function SquareTalk({ state, game, city }: { state: GameState; game: Game; city:
 
   async function say(message: string) {
     if (!message.trim() || game.busy) return;
-    const offered = await game.sendSquare(message);
+    await game.sendSquare(message);
     setText("");
-    if (offered) setLevies(offered);
   }
 }
 

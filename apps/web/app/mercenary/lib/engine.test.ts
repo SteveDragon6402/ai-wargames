@@ -3,7 +3,9 @@ import { describe, it } from "node:test";
 import { NODE_IDS, NODES, neighbors } from "../data/map";
 import { WIKI } from "../data/wiki";
 import {
+  acceptElderOffer,
   acceptMuster,
+  acceptSquareOffer,
   acceptWork,
   agreeFoodPrice,
   agreePurse,
@@ -14,6 +16,7 @@ import {
   beginResolution,
   canEnqueue,
   chooseTypes,
+  claimReward,
   commitApproach,
   dismissTemporary,
   enqueue,
@@ -39,6 +42,8 @@ import {
   linesTouchedByChronicle,
   offerContract,
   offerMuster,
+  offerPurse,
+  offerSquare,
   openBattle,
   recruitableTypes,
   retreatStartsFight,
@@ -273,18 +278,18 @@ describe("blackwood", () => {
     assert.equal(retreatStartsFight(0.05), false);
   });
 
-  it("makes the leader attack a much smaller company and refuse a much larger one", () => {
+  it("keeps the leader's choice when the numbers are uneven", () => {
     assert.equal(forceComparison(10, 20), "smaller");
     assert.equal(forceComparison(30, 20), "larger");
     assert.equal(forceComparison(18, 20), "close");
-    assert.equal(settleLeaderAttack("smaller", false), true);
-    assert.equal(settleLeaderAttack("larger", true), false);
+    assert.equal(settleLeaderAttack("smaller", false), false);
+    assert.equal(settleLeaderAttack("larger", true), true);
     assert.equal(settleLeaderAttack("close", false), false);
     assert.equal(settleLeaderAttack("close", true), true);
   });
 
   it("pays, spares, or recruits after a victory", () => {
-    const booked = must(acceptWork(must(hearWork(playing()))));
+    const booked = must(acceptWork(must(agreePurse(must(hearWork(playing())), "millcross", 30, "When the bandits are beaten."))));
     let state = openBattle(booked, "fight", null);
     state = must(commitApproach(state, "The bows shoot, then the file closes.", 0));
     const lines = state.units.map((unit) => ({
@@ -312,18 +317,23 @@ describe("blackwood", () => {
     const killed = must(applyAftermath(fought.state, "kill", []));
     assert.equal(killed.bandits, null);
     assert.equal(killed.rewardPurse, null);
-    assert.equal(killed.money, fought.state.money + 30);
-    assert.equal(killed.settlements.millcross.elder.coins, 170);
+    assert.equal(killed.money, fought.state.money);
+    assert.equal(killed.settlements.millcross.elder.coins, 200);
+    const collected = must(claimReward(killed));
+    assert.equal(collected.money, fought.state.money + 30);
+    assert.equal(collected.settlements.millcross.elder.coins, 170);
 
     const spared = must(applyAftermath(fought.state, "justice", []));
     assert.equal(spared.rewardPurse, null);
-    assert.equal(spared.money, fought.state.money + 30);
+    assert.equal(spared.money, fought.state.money);
     assert.equal(spared.bandits, null);
 
     const hired = must(applyAftermath(fought.state, "recruit", ["The Reed Men"]));
     assert.equal(hired.rewardPurse, null);
-    assert.equal(hired.money, fought.state.money + 10);
-    assert.equal(hired.settlements.millcross.elder.coins, 190);
+    assert.equal(hired.money, fought.state.money);
+    const hiredPay = must(claimReward(hired));
+    assert.equal(hiredPay.money, fought.state.money + 10);
+    assert.equal(hiredPay.settlements.millcross.elder.coins, 190);
     const band = hired.units.find((unit) => unit.type === "bandit");
     assert.equal(band?.count, 10);
     assert.equal(band?.origin, WIKI.bandit.origin);
@@ -387,6 +397,32 @@ describe("validator", () => {
 
     const labelled = parseReport("The opening was ugly.\n\nBrief: The company held the track and the band broke before dusk, leaving their dead in the ferns.\n\nOpening\nThey met on the path.");
     assert.match(labelled?.brief ?? "", /held the track/);
+
+    const long = Array.from({ length: 80 }, (_, index) => `word${index}`).join(" ");
+    const whole = parseReport(`${long}.`);
+    assert.ok(whole);
+    assert.equal(whole?.brief.includes("…"), false);
+    assert.ok((whole?.brief.split(" ").length ?? 0) > 70);
+  });
+
+  it("records the fight it was given", () => {
+    const state = playing();
+    const fought = applyOutcome(
+      state,
+      {
+        playerHoldsField: true,
+        banditDeaths: 20,
+        deaths: [],
+        morale: "Proud.",
+        stance: "They hold.",
+        condition: "Blooded.",
+        lines: [],
+      },
+      "The band broke on the file and did not come again.",
+      "The file held the track and walked away whole."
+    );
+    assert.equal(fought.state.banditSurvivors, 0);
+    assert.equal(headcount(fought.state.units), headcount(state.units));
   });
 });
 
@@ -465,7 +501,7 @@ describe("week gates", () => {
 
 describe("opening loop", () => {
   it("can fight, choose, march home, and be paid", () => {
-    const booked = must(acceptWork(must(hearWork(playing()))));
+    const booked = must(acceptWork(must(agreePurse(must(hearWork(playing())), "millcross", 30, "When the bandits are beaten."))));
     let step = stepQueue(beginResolution(must(enqueue(booked, { kind: "move", to: "blackwood" }))));
     while (step.kind === "continue") step = stepQueue(step.state);
     assert.equal(step.kind, "done");
@@ -492,6 +528,7 @@ describe("opening loop", () => {
     );
     assert.equal(fought.result, "victory");
     assert.equal(fought.state.banditSurvivors, 0);
+    assert.ok(headcount(fought.state.units) < headcount(playing().units));
     state = must(applyAftermath(fought.state, "kill", []));
     state = finishWeek(state);
     state = must(enqueue(state, { kind: "move", to: "millcross" }));
@@ -501,7 +538,8 @@ describe("opening loop", () => {
     if (step.kind !== "done") return;
     state = finishWeek(step.state);
     assert.equal(state.location, "millcross");
-    assert.equal(state.rewardClaimed, false);
+    assert.equal(state.settlements.millcross.elder.coins, 200);
+    state = must(claimReward(state));
     assert.equal(state.settlements.millcross.elder.coins, 170);
     assert.ok(state.money > playing().money);
   });
@@ -552,17 +590,22 @@ describe("year", () => {
 });
 
 describe("settlement accounts", () => {
-  it("opens Millcross at 1,800 grain and eats fifty in a quiet week", () => {
+  it("opens Millcross at 1,800 grain and feeds empty bins from it", () => {
     const state = playing();
     assert.equal(state.settlements.millcross.granary, 1800);
     assert.equal(state.settlements.millcross.mouths, 50);
     assert.equal(state.settlements.millcross.able, 30);
+    assert.equal(state.settlements.millcross.people.length, 50);
     for (const id of ["harrow", "high-ash", "greylake", "pikeham", "fenwatch"] as const) {
       assert.equal(state.settlements[id].populated, false);
       assert.equal(state.settlements[id].granary, 0);
     }
+    const empty = state.settlements.millcross.people.filter((person) => person.alive && person.grain === 0).length;
     const next = finishWeek(state);
-    assert.equal(next.settlements.millcross.granary, 1750);
+    assert.equal(next.settlements.millcross.granary, 1800 - empty);
+    const before = state.settlements.millcross.people.find((person) => person.id === "alden");
+    const after = next.settlements.millcross.people.find((person) => person.id === "alden");
+    assert.equal(after?.grain, (before?.grain ?? 0) - 1);
   });
 
   it("treats a gift of grain as gone", () => {
@@ -607,6 +650,9 @@ describe("settlement accounts", () => {
     assert.equal(open[0]?.coins, 50);
     const before = state.money;
     state = must(applyAftermath(beaten(state), "kill", []));
+    assert.equal(state.money, before);
+    assert.equal(state.settlements.millcross.elder.coins, 200);
+    state = must(claimReward(state));
     assert.equal(state.money, before + 50);
     assert.equal(state.settlements.millcross.elder.coins, 150);
     assert.equal(state.settlements.millcross.debts.find((debt) => debt.to === "company")?.status, "settled");
@@ -615,8 +661,29 @@ describe("settlement accounts", () => {
     deep = must(acceptWork(deep));
     const purse = deep.money;
     deep = must(applyAftermath(beaten(deep), "kill", []));
+    deep = must(claimReward(deep));
     assert.equal(deep.money, purse + 250);
     assert.equal(deep.settlements.millcross.elder.coins, -50);
+  });
+
+  it("keeps an offer off the books until it is accepted", () => {
+    const offered = must(offerPurse(playing(), 60, "When the bandits are beaten."));
+    assert.equal(offered.settlements.millcross.debts.length, 0);
+    assert.equal(offered.settlements.millcross.elder.coins, 200);
+    const accepted = must(acceptElderOffer(offered));
+    assert.equal(accepted.offers.elder, null);
+    assert.equal(accepted.settlements.millcross.debts[0]?.coins, 60);
+    assert.equal(accepted.money, offered.money);
+  });
+
+  it("adds men to the levy instead of replacing it", () => {
+    let state = must(acceptSquareOffer(must(offerSquare(playing(), 6)), "The Fields"));
+    assert.equal(state.units.find((unit) => unit.name === "The Fields")?.count, 6);
+    assert.equal(state.settlements.millcross.able, 24);
+    state = must(acceptSquareOffer(must(offerSquare(state, 4)), "The Fields"));
+    assert.equal(state.units.find((unit) => unit.name === "The Fields")?.count, 10);
+    assert.equal(state.settlements.millcross.able, 20);
+    assert.equal(state.offers.square, 0);
   });
 
   it("musters only the men at home, sends temporary men back, and charges permanent wages", () => {
@@ -629,9 +696,11 @@ describe("settlement accounts", () => {
       ...state,
       units: state.units.map((unit) => (unit.name === "The Fields" ? { ...unit, count: 3 } : unit)),
     };
-    state = must(applyAftermath(beaten(must(acceptWork(must(hearWork(state))))), "kill", []));
+    const fought = beaten(must(acceptWork(must(hearWork(state)))));
+    const survivors = fought.units.find((unit) => unit.name === "The Fields")?.count ?? 0;
+    state = must(applyAftermath(fought, "kill", []));
     assert.equal(state.units.some((unit) => unit.term === "temporary"), false);
-    assert.equal(state.settlements.millcross.able, 29);
+    assert.equal(state.settlements.millcross.able, fought.settlements.millcross.able + survivors);
 
     const staying = must(acceptMuster(must(offerMuster(playing(), "millcross", { count: 2, term: "permanent", salary: 4 })), "millcross", "The Stayers"));
     assert.equal(staying.settlements.millcross.able, 28);
