@@ -2,8 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import {
+  acceptMuster,
   acceptWork,
   agreeFoodPrice,
+  agreePurse,
   armMilitia,
   applyAftermath,
   applyForage,
@@ -25,6 +27,7 @@ import {
   fallbackForageMeals,
   finishWeek,
   freshGame,
+  grantGrain,
   headcount,
   hearWork,
   nameStartingUnits,
@@ -35,7 +38,10 @@ import {
   retreatQuiet,
   retreatStartsFight,
   offerContract,
+  offerMuster,
   purchaseFood,
+  sellGrain,
+  setMerchantPrice,
   weekLedger,
   raiseMilitia,
   renameUnit,
@@ -49,10 +55,13 @@ import {
   stepQueue,
   takeForestForage,
   validateOutcome,
+  weeksOfFood,
+  writeNote,
 } from "../lib/engine";
 import { NODES } from "../data/map";
+import { ELDER_PERSONA, MERCHANT_PERSONA, SETTLEMENT_IDS } from "../data/millcross";
 import type { BaseTypeId } from "../data/wiki";
-import { REPUTATION_KEYS, type Aftermath, type DeedOrder, type GameState, type MovementOrder, type ReputationShift, type WeekAction, type WeekOrder } from "../lib/types";
+import { REPUTATION_KEYS, type Aftermath, type DeedOrder, type Due, type GameState, type MovementOrder, type ReputationShift, type Result, type SettlementId, type WeekAction, type WeekOrder } from "../lib/types";
 
 const KEY = "mercenary-band-v1";
 
@@ -96,10 +105,14 @@ function revive(parsed: GameState): GameState {
     drillDiffs: Array.isArray(parsed.drillDiffs) ? parsed.drillDiffs : [],
     reputationShift: Array.isArray(parsed.reputationShift) ? parsed.reputationShift : [],
     yearClosing: parsed.yearClosing ?? null,
+    settlements: parsed.settlements ?? blank.settlements,
     units: (parsed.units ?? []).map((unit) => ({
       ...unit,
       lines: Array.isArray(unit.lines) ? unit.lines.filter((line) => typeof line === "string" && line.trim()) : [],
       raw: unit.raw ?? false,
+      salary: typeof unit.salary === "number" ? unit.salary : 1,
+      term: unit.term === "temporary" ? "temporary" : "permanent",
+      home: unit.home ?? null,
     })),
     bandits: parsed.bandits
       ? {
@@ -110,6 +123,18 @@ function revive(parsed: GameState): GameState {
     ledger: parsed.screen === "resolving" && parsed.ledger ? parsed.ledger : null,
     screen: parsed.screen === "resolving" && parsed.ledger ? "resolving" : parsed.screen === "resolving" ? "dashboard" : (parsed.screen ?? blank.screen),
   };
+}
+
+function townId(id: string): SettlementId | null {
+  return (SETTLEMENT_IDS as readonly string[]).includes(id) ? (id as SettlementId) : null;
+}
+
+function applyTown(next: GameState, result: Result, setError: (message: string) => void): GameState {
+  if (!result.ok) {
+    setError(result.error);
+    return next;
+  }
+  return result.state;
 }
 
 async function errorText(res: Response): Promise<string> {
@@ -450,6 +475,22 @@ export function useMercenary() {
     const battles = current.units
       .flatMap((unit) => unit.battles.map((battle) => `${unit.name}, week ${battle.week}: ${battle.result} (${battle.deaths} lost)`))
       .join("\n");
+    const id = townId(current.location);
+    const place = id ? current.settlements[id] : null;
+    const books = place?.populated
+      ? {
+          persona: ELDER_PERSONA,
+          coins: place.elder.coins,
+          granary: place.granary,
+          weeksLeft: weeksOfFood(current, place),
+          able: place.able,
+          notes: place.elder.notes.map((note) => `Week ${note.week}: ${note.text}`).join("\n"),
+          debts: place.debts
+            .filter((debt) => debt.status === "open")
+            .map((debt) => `${debt.coins} from ${debt.from} to ${debt.to}: ${debt.why}`)
+            .join("; "),
+        }
+      : null;
     const res = await fetch("/api/mercenary/elder", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -470,6 +511,7 @@ export function useMercenary() {
         leader: current.leader.name,
         bandPlace: NODES[current.bandAt].name,
         speaker,
+        books,
       }),
     });
     if (!res.ok) {
@@ -477,7 +519,16 @@ export function useMercenary() {
       setBusy(null);
       return false;
     }
-    const data = (await res.json()) as { line?: string; paid?: boolean; workTold?: boolean };
+    const data = (await res.json()) as {
+      line?: string;
+      paid?: boolean;
+      workTold?: boolean;
+      note?: string;
+      purse?: number | null;
+      purseWhy?: string;
+      grain?: number | null;
+      muster?: { count: number; term: "permanent" | "temporary"; salary: number } | null;
+    };
     if (!data.line?.trim()) {
       setError("The elder said nothing.");
       setBusy(null);
@@ -499,6 +550,11 @@ export function useMercenary() {
         void refreshReputation(next, next.decisions.at(-1)?.text ?? "Claimed the pay.");
       }
     }
+    const here = townId(next.location);
+    if (here && data.note?.trim()) next = applyTown(next, writeNote(next, here, "elder", data.note), setError);
+    if (here && data.purse && data.purseWhy) next = applyTown(next, agreePurse(next, here, data.purse, data.purseWhy), setError);
+    if (here && data.grain) next = applyTown(next, grantGrain(next, here, data.grain), setError);
+    if (here && data.muster) next = applyTown(next, offerMuster(next, here, data.muster), setError);
     commit(next);
     setBusy(null);
     return true;
@@ -602,6 +658,17 @@ export function useMercenary() {
         commit(result.state);
       }
     },
+    acceptMuster(name: string) {
+      if (!ref.current) return;
+      const id = townId(ref.current.location);
+      if (!id) return;
+      const result = acceptMuster(ref.current, id, name);
+      if (!result.ok) setError(result.error);
+      else {
+        setError(null);
+        commit(result.state);
+      }
+    },
     enlist(type: Parameters<typeof enlist>[1], count: number, names: string[], into: string) {
       if (!ref.current) return;
       const result = enlist(ref.current, type, count, names, into);
@@ -679,6 +746,9 @@ export function useMercenary() {
       commit({ ...current, merchantTalk: [...current.merchantTalk, { role: "player", text: line }] });
       setBusy("The merchant is thinking…");
       setError(null);
+      const id = townId(current.location);
+      const place = id ? current.settlements[id] : null;
+      const filled = !!place?.populated;
       const res = await fetch("/api/mercenary/merchant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -686,7 +756,17 @@ export function useMercenary() {
           message,
           history: current.merchantTalk,
           place: NODES[current.location].name,
-          price: current.foodPrice,
+          price: filled ? place.merchant.price : current.foodPrice,
+          filled,
+          persona: filled ? MERCHANT_PERSONA : undefined,
+          grain: place?.merchant.grain,
+          coins: place?.merchant.coins,
+          cost: place?.merchant.cost,
+          notes: place?.merchant.notes.map((note) => `Week ${note.week}: ${note.text}`).join("\n"),
+          debts: place?.debts
+            .filter((debt) => debt.status === "open" && debt.to === "merchant")
+            .map((debt) => `${debt.coins} from ${debt.from}: ${debt.why}`)
+            .join("; "),
         }),
       });
       if (!res.ok) {
@@ -694,7 +774,12 @@ export function useMercenary() {
         setBusy(null);
         return;
       }
-      const data = (await res.json()) as { line?: string; price?: number | null };
+      const data = (await res.json()) as {
+        line?: string;
+        price?: number | null;
+        note?: string;
+        sale?: { amount: number; payNow: number; due: Due } | null;
+      };
       if (!data.line?.trim()) {
         setError("The merchant said nothing.");
         setBusy(null);
@@ -705,7 +790,13 @@ export function useMercenary() {
         ...spoken,
         merchantTalk: [...spoken.merchantTalk, { role: "merchant", text: data.line.trim() }],
       };
-      if (data.price === 1 || data.price === 2) {
+      const here = townId(next.location);
+      const book = here ? next.settlements[here] : null;
+      if (book?.populated && here) {
+        if (data.note?.trim()) next = applyTown(next, writeNote(next, here, "merchant", data.note), setError);
+        if (Number.isInteger(data.price)) next = applyTown(next, setMerchantPrice(next, here, data.price as number), setError);
+        if (data.sale) next = applyTown(next, sellGrain(next, here, data.sale.amount, data.sale.payNow, data.sale.due), setError);
+      } else if (data.price === 1 || data.price === 2) {
         const agreed = agreeFoodPrice(next, data.price);
         if (agreed.ok) next = agreed.state;
       }

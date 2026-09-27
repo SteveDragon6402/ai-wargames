@@ -20,6 +20,7 @@ import {
   nextContractTemplate,
   recruitableTypes,
   recruitmentPlan,
+  weeksOfFood,
   wordCount,
 } from "../lib/engine";
 import { REPUTATION_LABEL, type GameState } from "../lib/types";
@@ -63,6 +64,7 @@ export default function Board({ game }: { game: Game }) {
   const deed = state.weekPlan.deed;
   const settlement = isSettlement(state.location);
   const city = place.kind === "capital";
+  const town = state.location === "millcross" && state.settlements.millcross?.populated ? state.settlements.millcross : null;
   const woodHere = isForest(state.location);
   const bandHere = !!state.bandits && state.location === state.bandAt;
   const coming = nextContractTemplate(state);
@@ -430,8 +432,14 @@ export default function Board({ game }: { game: Game }) {
 
       <Dialog open={merchantOpen} onOpenChange={setMerchantOpen}>
         <DialogContent className={`max-w-lg ${paper}`}>
-          <DialogTitle className="font-gothic text-3xl">The merchant</DialogTitle>
-          <DialogDescription className="text-[var(--merc-muted)]">Food is {state.foodPrice} coin a ration. Buying does not spend the week.</DialogDescription>
+          <DialogTitle className="font-gothic text-3xl">{town ? town.merchant.name : "The merchant"}</DialogTitle>
+          <DialogDescription className="text-[var(--merc-muted)]">
+            {town
+              ? town.merchant.price === null
+                ? `${town.merchant.name} has not posted a price. ${town.merchant.grain} grain, ${town.merchant.coins} coins.`
+                : `${town.merchant.grain} grain at ${town.merchant.price} coin. He holds ${town.merchant.coins} coins.`
+              : `Food is ${state.foodPrice} coin a ration. Buying does not spend the week.`}
+          </DialogDescription>
           <MerchantTalk state={state} game={game} onBought={() => setMerchantOpen(false)} />
         </DialogContent>
       </Dialog>
@@ -633,6 +641,7 @@ function Ground({
     (state.location === "millcross" && !!state.bandits && !state.villageWork && !state.workHeard) ||
     (game.rewardReady && state.location === state.payAt) ||
     (city && (coming || state.contract?.status === "offered"));
+  const town = state.location === "millcross" && state.settlements.millcross?.populated ? state.settlements.millcross : null;
 
   return (
     <>
@@ -642,7 +651,7 @@ function Ground({
         </Act>
       )}
       {settlement && (
-        <Act onClick={onMerchant} hint="Food. Two coins a ration, unless he agrees one.">
+        <Act onClick={onMerchant} hint={town ? "His own grain. He names the price." : "Food. Two coins a ration, unless he agrees one."}>
           The merchant
         </Act>
       )}
@@ -802,9 +811,26 @@ function KingdomMap({
 
 function ElderTalk({ state, game }: { state: GameState; game: Game }) {
   const [text, setText] = useState("");
+  const [unitName, setUnitName] = useState("The Fields");
   const workHere = !state.villageWork && !!state.bandits && state.location === state.payAt && state.location === "millcross";
+  const town = state.location === "millcross" && state.settlements.millcross?.populated ? state.settlements.millcross : null;
+  const openDebts = town?.debts.filter((debt) => debt.status === "open") ?? [];
   return (
     <div>
+      {town && (
+        <p className="mb-3 text-[15px] leading-relaxed">
+          {town.elder.name}. Chest {town.elder.coins}. Granary {town.granary}, {weeksOfFood(state, town)} weeks until the harvest. {town.able} men at home.
+        </p>
+      )}
+      {openDebts.length > 0 && (
+        <ul className="mb-3 space-y-1 text-[14px] text-[var(--merc-muted)]">
+          {openDebts.map((debt) => (
+            <li key={debt.id}>
+              {debt.coins} owed, {debt.from} to {debt.to}. {debt.why}
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="max-h-64 space-y-3 overflow-y-auto">
         {state.elderTalk.length === 0 && <p className="text-[14px] text-[var(--merc-muted)]">He is here.</p>}
         {state.elderTalk.map((turn, index) => (
@@ -847,6 +873,23 @@ function ElderTalk({ state, game }: { state: GameState; game: Game }) {
             </button>
           </p>
         )}
+        {town?.muster && (
+          <form
+            className="flex gap-2"
+            onSubmit={(event) => {
+              event.preventDefault();
+              game.acceptMuster(unitName);
+            }}
+          >
+            <label htmlFor="muster-name" className="sr-only">
+              Name the men
+            </label>
+            <Input id="muster-name" value={unitName} onChange={(event) => setUnitName(event.target.value)} className={`h-10 ${field}`} />
+            <Button type="submit" variant="outline" disabled={!!game.busy}>
+              Take {town.muster.count}
+            </Button>
+          </form>
+        )}
       </div>
     </div>
   );
@@ -854,11 +897,26 @@ function ElderTalk({ state, game }: { state: GameState; game: Game }) {
 
 function MerchantTalk({ state, game, onBought }: { state: GameState; game: Game; onBought: () => void }) {
   const [text, setText] = useState("");
-  const price = state.foodPrice === 1 ? 1 : 2;
+  const town = state.location === "millcross" && state.settlements.millcross?.populated ? state.settlements.millcross : null;
+  const price = town ? town.merchant.price : state.foodPrice === 1 ? 1 : 2;
+  const owed = town?.debts.filter((debt) => debt.status === "open" && debt.to === "merchant") ?? [];
   return (
     <div>
+      {owed.length > 0 && (
+        <ul className="mb-3 space-y-1 text-[14px] text-[var(--merc-muted)]">
+          {owed.map((debt) => (
+            <li key={debt.id}>
+              {debt.coins} still owed. {debt.why}
+            </li>
+          ))}
+        </ul>
+      )}
       <div className="max-h-48 space-y-3 overflow-y-auto">
-        {state.merchantTalk.length === 0 && <p className="text-[14px] text-[var(--merc-muted)]">Posted price, {price} coins a ration.</p>}
+        {state.merchantTalk.length === 0 && (
+          <p className="text-[14px] text-[var(--merc-muted)]">
+            {price === null ? "He has not posted a price." : `Posted price, ${price} coin a ration.`}
+          </p>
+        )}
         {state.merchantTalk.map((turn, index) => (
           <p key={index} className={turn.role === "player" ? "text-[15px] text-[var(--merc-muted)]" : "text-[16px] leading-relaxed"}>
             {turn.role === "player" ? `You. ${turn.text}` : turn.text}
@@ -886,20 +944,26 @@ function MerchantTalk({ state, game, onBought }: { state: GameState; game: Game;
         </Button>
       </form>
       <div className="mt-3 flex flex-wrap gap-2">
-        {[5, 10, 20].map((amount) => (
-          <Button
-            key={amount}
-            type="button"
-            variant="outline"
-            disabled={state.money < price * amount}
-            onClick={() => {
-              game.buyFood(amount);
-              onBought();
-            }}
-          >
-            {amount} for {price * amount}
-          </Button>
-        ))}
+        {[5, 10, 20].map((amount) => {
+          const bill = price === null ? null : price * amount;
+          const short = town ? amount > town.merchant.grain : false;
+          const unaffordable = bill !== null && bill > 0 && state.money < bill;
+          const label = bill === null ? `${amount}` : bill < 0 ? `${amount}, he pays ${-bill}` : bill === 0 ? `${amount} for nothing` : `${amount} for ${bill}`;
+          return (
+            <Button
+              key={amount}
+              type="button"
+              variant="outline"
+              disabled={price === null || short || unaffordable}
+              onClick={() => {
+                game.buyFood(amount);
+                onBought();
+              }}
+            >
+              {label}
+            </Button>
+          );
+        })}
       </div>
     </div>
   );

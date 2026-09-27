@@ -1,4 +1,6 @@
 export const MAX_WEEK = 52;
+/** The harvest. Village granaries are eaten through this week. */
+export const HARVEST_WEEK = 36;
 export const UNIT_CAP = 10;
 export const START_MEN = 5;
 export const BANDIT_COUNT = 20;

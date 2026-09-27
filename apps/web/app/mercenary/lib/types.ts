@@ -32,6 +32,11 @@ export interface Unit {
   lines: string[];
   /** Farmers handed weapons, until a drill rewrites them. */
   raw?: boolean;
+  /** Coins per man per week. */
+  salary: number;
+  term: "permanent" | "temporary";
+  /** Settlement these men were mustered from, if they were. */
+  home?: NodeId | null;
   battles: BattleRecord[];
 }
 
@@ -43,6 +48,58 @@ export interface Decision {
 export interface ChatTurn {
   role: "player" | "elder" | "merchant" | "square";
   text: string;
+}
+
+export interface Note {
+  week: number;
+  text: string;
+}
+
+export type Party = "company" | "elder" | "merchant";
+export type TownTrigger = "bandits-defeated";
+export type Due = { kind: "now" } | { kind: "trigger"; trigger: TownTrigger };
+
+export interface Debt {
+  id: string;
+  from: Party;
+  to: Party;
+  coins: number;
+  why: string;
+  due: Due;
+  status: "open" | "settled";
+}
+
+export interface PersonBook {
+  name: string;
+  coins: number;
+  notes: Note[];
+}
+
+export interface MerchantBook extends PersonBook {
+  grain: number;
+  cost: number;
+  price: number | null;
+}
+
+export type SettlementId = "millcross" | "harrow" | "high-ash" | "greylake" | "pikeham" | "fenwatch";
+
+export interface MusterOffer {
+  count: number;
+  term: "permanent" | "temporary";
+  salary: number;
+}
+
+export interface Settlement {
+  id: SettlementId;
+  populated: boolean;
+  mouths: number;
+  granary: number;
+  able: number;
+  elder: PersonBook;
+  merchant: MerchantBook;
+  debts: Debt[];
+  nextDebtId: number;
+  muster: MusterOffer | null;
 }
 
 export type WeekAction =
@@ -212,6 +269,7 @@ export interface GameState {
   lastChronicle: string | null;
   banditSurvivors: number | null;
   ledger: WeekLedger | null;
+  settlements: Record<SettlementId, Settlement>;
 }
 
 export type Ok<T> = { ok: true; state: T };

@@ -1,3 +1,4 @@
+import { freshSettlements } from "../data/millcross";
 import { CONTRACTS } from "../data/contracts";
 import { KINGDOM_SPECIAL, NODES, isForest, isSettlement, neighbors, type NodeId } from "../data/map";
 import {
@@ -40,6 +41,9 @@ import {
   type WeekOrder,
   type WeekPlan,
 } from "./types";
+import { cutPurse, dismissTemporary, dropUnpaid, eatGranaries, ensureWorkPurse, sellGrain, settleTrigger, wageDue } from "./settlement";
+
+export { acceptMuster, agreePurse, dismissTemporary, grantGrain, mouthsAtHome, offerMuster, sellGrain, setMerchantPrice, weeksOfFood, writeNote } from "./settlement";
 
 export function wordCount(text: string): number {
   return text.trim().split(/\s+/).filter(Boolean).length;
@@ -166,6 +170,7 @@ export function freshGame(): GameState {
     lastChronicle: null,
     banditSurvivors: null,
     ledger: null,
+    settlements: freshSettlements(),
   };
 }
 
@@ -201,6 +206,8 @@ function makeUnit(state: GameState, type: UnitTypeId, count: number, name: strin
     origin: entry.origin,
     lines: startingDescription(type),
     raw: false,
+    salary: 1,
+    term: "permanent",
     battles: [],
   };
   return { state: { ...state, nextUnitId: state.nextUnitId + 1 }, unit };
@@ -421,6 +428,9 @@ function project(state: GameState): Projected | { error: string } {
           count,
           origin: "",
           lines: [],
+          raw: false,
+          salary: 1,
+          term: "permanent",
           battles: [],
         });
       }
@@ -520,12 +530,18 @@ export function enlist(state: GameState, type: UnitTypeId, count: number, names:
   return { ok: true, state: decide(hired, `Hired ${count} ${WIKI[type].title.toLowerCase()} at ${NODES[state.location].name}.`) };
 }
 
-/** Buy food where you stand. It does not spend the week's action. Price is 1 or 2 coins a ration. */
+/** Buy food where you stand. It does not spend the week's action. At a filled town, the merchant's stock and price are used. */
 export function purchaseFood(state: GameState, amount: number, price = state.foodPrice): Result {
   const closed = weekOpen(state);
   if (closed) return fail(closed);
   if (!isSettlement(state.location)) return fail("Nobody is selling there.");
   if (!Number.isInteger(amount) || amount < 1 || amount > 100) return fail("Buy a sensible amount.");
+  const town = state.settlements[state.location as keyof GameState["settlements"]];
+  if (town?.populated) {
+    if (town.merchant.price === null) return fail("He has not posted a price.");
+    const bill = Math.max(0, town.merchant.price * amount);
+    return sellGrain(state, town.id, amount, bill, { kind: "now" });
+  }
   const each = price === 1 ? 1 : 2;
   const cost = each * amount;
   if (state.money < cost) return fail("Not enough coin.");
@@ -678,14 +694,15 @@ function starveCount(count: number): number {
 }
 
 export function finishWeek(state: GameState): GameState {
-  const men = headcount(state.units);
-  const late = (state.lateBasic ?? 0) + (state.lateGood ?? 0);
-  const stock = Math.max(0, state.basicFood + state.goodFood - late);
+  const fed = eatGranaries(state);
+  const men = headcount(fed.units);
+  const late = (fed.lateBasic ?? 0) + (fed.lateGood ?? 0);
+  const stock = Math.max(0, fed.basicFood + fed.goodFood - late);
   const missing = Math.max(0, men - stock);
   const left = Math.max(0, stock - men);
-  let units = state.units;
+  let units = fed.units;
   let hunger: "fed" | "hungry" | "starving" = "fed";
-  let next = state;
+  let next = fed;
   if (men > 0 && stock === 0) {
     units = units
       .map((unit) => ({ ...unit, count: unit.count - starveCount(unit.count) }))
@@ -706,13 +723,14 @@ export function finishWeek(state: GameState): GameState {
         ? "They are starving."
         : "They ate.";
   const hungry = hunger === "hungry" || hunger === "starving";
-  const due = headcount(units);
+  const due = wageDue(units);
   const paid = Math.min(next.money, due);
   const unpaid = due - paid;
   if (paid > 0) next = { ...next, money: next.money - paid };
   if (unpaid > 0) {
-    units = killFromLargest(units, unpaid);
-    next = notice(next, `${unpaid} went unpaid, and they left.`);
+    const dropped = dropUnpaid(units, unpaid);
+    units = dropped.units;
+    if (dropped.gone > 0) next = notice(next, `${dropped.gone} went unpaid, and they left.`);
   }
   const doubleRest = state.weekPlan.movement.kind === "rest" && state.weekPlan.deed.kind === "rest" && !state.movedThisWeek;
   const marched = state.weekPlan.movement.kind === "march" || state.movedThisWeek;
@@ -1079,11 +1097,11 @@ export function applyAftermath(state: GameState, choice: Aftermath, names: strin
   };
   if (choice === "kill") {
     next = decide(next, "After the fight, the company killed whoever was left.");
-    next.rewardPurse = contracted ? contracted.purse : REWARD_FULL;
+    next.rewardPurse = contracted ? contracted.purse : null;
     next.villageDeeds = [...next.villageDeeds, "Killed the Blackwood bandits."];
   } else if (choice === "justice") {
     next = decide(next, "After the fight, the company brought the survivors in for justice.");
-    next.rewardPurse = contracted ? contracted.purse : REWARD_FULL;
+    next.rewardPurse = contracted ? contracted.purse : null;
     next.villageDeeds = [...next.villageDeeds, "Brought the Blackwood survivors to Millcross for justice."];
   } else {
     const needed = namesForSurvivors(survivors);
@@ -1099,8 +1117,13 @@ export function applyAftermath(state: GameState, choice: Aftermath, names: strin
       next = { ...next, units: [...next.units, made.unit] };
     });
     next = decide(next, "After the fight, the company recruited the surviving bandits.");
-    next.rewardPurse = contracted ? Math.min(contracted.purse, REWARD_RECRUIT) : REWARD_RECRUIT;
+    next.rewardPurse = contracted ? Math.min(contracted.purse, REWARD_RECRUIT) : null;
     next.villageDeeds = [...next.villageDeeds, "Recruited the Blackwood survivors instead of hanging them."];
+  }
+  if (!contracted && state.payAt === "millcross") {
+    if (choice === "recruit") next = cutPurse(next, "millcross");
+    next = settleTrigger(next, "bandits-defeated");
+    next = dismissTemporary(next, "millcross");
   }
   next = rememberLeader(next, `The company chose to ${choice} whoever remained.`);
   return { ok: true, state: next };
@@ -1112,13 +1135,14 @@ export function acceptWork(state: GameState): Result {
   if (state.villageWork) return fail("The work is already accepted.");
   if (!state.workHeard) return fail("The elder has not told you the work.");
   if (!state.bandits) return fail("The bandits are already gone.");
+  const booked = ensureWorkPurse(state, "millcross");
   return {
     ok: true,
     state: decide(
       {
-        ...state,
+        ...booked,
         villageWork: true,
-        villageDeeds: [...state.villageDeeds, "Accepted Millcross's request to deal with the Blackwood bandits."],
+        villageDeeds: [...booked.villageDeeds, "Accepted Millcross's request to deal with the Blackwood bandits."],
       },
       "Accepted Millcross's request to deal with the Blackwood bandits."
     ),
