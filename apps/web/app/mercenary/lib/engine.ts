@@ -178,7 +178,7 @@ export function freshGame(): GameState {
     offers: emptyOffers(),
     pendingRaid: false,
     raidDone: false,
-    camps: [{ at: "blackwood", coins: CAMP_COINS, grain: CAMP_GRAIN, taken: null, seen: false }],
+    camps: [{ at: "blackwood", coins: CAMP_COINS, grain: CAMP_GRAIN, taken: null, seen: false, searches: 0 }],
     returned: [],
     searchHit: null,
   };
@@ -852,18 +852,22 @@ export function passSearch(state: GameState): GameState {
 export function applySearch(state: GameState, found: "nothing" | "bandits" | "camp"): Result {
   const camp = (state.camps ?? []).find((item) => item.at === state.location && !item.taken);
   if (!camp || camp.seen) return fail("There is nothing left to search for here.");
+  const counted: GameState = {
+    ...state,
+    camps: state.camps.map((item) => (item.at === state.location && !item.taken ? { ...item, searches: (item.searches ?? 0) + 1 } : item)),
+  };
   const bandAlive = !!state.bandits && state.bandits.count > 0 && state.location === state.bandAt;
   if (found === "bandits" && bandAlive) {
-    return { ok: true, state: notice({ ...state, searchHit: "bandits" }, "They found the band.") };
+    return { ok: true, state: notice({ ...counted, searchHit: "bandits" }, "They found the band.") };
   }
   if (found === "camp") {
     return {
       ok: true,
       state: notice(
         {
-          ...state,
+          ...counted,
           searchHit: "camp",
-          camps: state.camps.map((item) => (item.at === state.location && !item.taken ? { ...item, seen: true } : item)),
+          camps: counted.camps.map((item) => (item.at === state.location && !item.taken ? { ...item, seen: true } : item)),
         },
         "They found the camp."
       ),
@@ -871,7 +875,7 @@ export function applySearch(state: GameState, found: "nothing" | "bandits" | "ca
   }
   return {
     ok: true,
-    state: notice({ ...state, resolveIndex: state.resolveIndex + 1, searchHit: null }, "They searched and found nothing."),
+    state: notice({ ...counted, resolveIndex: state.resolveIndex + 1, searchHit: null }, "They searched and found nothing."),
   };
 }
 
@@ -1599,7 +1603,7 @@ export function takeContract(state: GameState): Result {
         },
         camps: state.camps.some((camp) => camp.at === contract.place && !camp.taken)
           ? state.camps
-          : [...state.camps, { at: contract.place, coins: 40, grain: 25, taken: null, seen: false }],
+          : [...state.camps, { at: contract.place, coins: 40, grain: 25, taken: null, seen: false, searches: 0 }],
       },
       `Took the offer against ${contract.bandName} at ${NODES[contract.place].name}. The purse is ${contract.purse} coins at ${NODES[contract.payAt].name}.`
     ),
@@ -1624,6 +1628,18 @@ export function linesTouchedByChronicle(previous: string[], proposed: string[], 
   }
   const clamped = clampDescription(next);
   return clamped.length ? clamped : previous;
+}
+
+export function actionLabel(action: WeekAction): string {
+  if (action.kind === "train") return "Drill two units";
+  return describeAction(action);
+}
+
+export function describeLevy(state: GameState, unitIds: string[], lines: string[]): GameState {
+  const next = clampDescription(lines);
+  if (!unitIds.length || !next.length) return state;
+  const ids = new Set(unitIds);
+  return { ...state, units: state.units.map((unit) => (ids.has(unit.id) ? { ...unit, lines: next } : unit)) };
 }
 
 export function describeAction(action: WeekAction): string {

@@ -12,6 +12,7 @@ import {
   DEFAULT_DRILL,
   defaultNamesFor,
   describeAction,
+  actionLabel,
   foodWarning,
   foodWeeks,
   headcount,
@@ -44,7 +45,7 @@ function placeLine(id: NodeId): string {
 function turnLine(state: GameState): string {
   const movement = state.weekPlan.movement;
   const march = movement.kind === "march" ? `March to ${NODES[movement.to].name}` : "Stay";
-  const deed = state.weekPlan.deed.kind === "rest" ? "Rest" : describeAction(state.weekPlan.deed);
+  const deed = state.weekPlan.deed.kind === "rest" ? "Rest" : actionLabel(state.weekPlan.deed);
   return `${deed}, then ${march.charAt(0).toLowerCase()}${march.slice(1)}`;
 }
 
@@ -141,13 +142,13 @@ export default function Board({ game }: { game: Game }) {
           <p className="text-[13px] text-[var(--merc-muted)]">Actions this turn</p>
           <p className="font-gothic text-xl leading-tight">{turnLine(state)}</p>
           <div className="mt-2 flex gap-2">
+            <button type="button" onClick={() => setSlot("action")} disabled={spent} className={`${inkButton} min-w-[7.5rem] disabled:opacity-40`}>
+              <span className="block text-[12px] text-[var(--merc-muted)]">Action</span>
+              <span className="font-gothic text-lg leading-none">{deed.kind === "rest" ? "Rest" : actionLabel(deed)}</span>
+            </button>
             <button type="button" onClick={() => setSlot("move")} disabled={spent} className={`${inkButton} min-w-[7.5rem] disabled:opacity-40`}>
               <span className="block text-[12px] text-[var(--merc-muted)]">Move</span>
               <span className="font-gothic text-lg leading-none">{movement.kind === "march" ? NODES[movement.to].name : "Stay"}</span>
-            </button>
-            <button type="button" onClick={() => setSlot("action")} disabled={spent} className={`${inkButton} min-w-[7.5rem] disabled:opacity-40`}>
-              <span className="block text-[12px] text-[var(--merc-muted)]">Action</span>
-              <span className="line-clamp-2 font-gothic text-lg leading-tight">{deed.kind === "rest" ? "Rest" : describeAction(deed)}</span>
             </button>
           </div>
           <button

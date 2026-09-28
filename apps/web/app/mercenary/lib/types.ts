@@ -206,6 +206,8 @@ export interface HiddenCamp {
   grain: number;
   taken: "kept" | "returned" | null;
   seen: boolean;
+  /** Searches of this ground already made. The next judgement is told this number. */
+  searches: number;
 }
 
 export type SearchHit = "bandits" | "camp" | null;

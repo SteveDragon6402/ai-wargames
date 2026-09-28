@@ -4,6 +4,7 @@ export const SEARCH_SYSTEM = `You are judging a search through wild ground. You 
 A company is trying to find a band, and to find the camp where that band keeps what it has taken.
 Give two whole numbers from 0 to 100: the chance they find the band, and the chance they find the camp.
 If no band is left in the ground, the chance of finding the band is 0. The camp can still be hidden.
+If they have searched this ground before, both chances should be higher than a first search. Each earlier search makes this one more likely. The chances compound. Give new numbers for this search.
 Do not decide what they find. Call give_chances.`;
 
 function clamp(value: number): number {

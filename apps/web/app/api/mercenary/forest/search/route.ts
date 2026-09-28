@@ -28,14 +28,16 @@ export async function POST(req: NextRequest) {
     ground?: string;
     band?: string;
     bandAlive?: boolean;
+    searched?: number;
   } | null;
   if (!body?.company?.trim() || !body.place?.trim() || !body.ground?.trim() || !body.band?.trim()) {
     return NextResponse.json({ error: "The search is missing its ground." }, { status: 400 });
   }
 
   const bandAlive = !!body.bandAlive;
-  let findBandits = bandAlive ? 40 : 0;
-  let findCamp = 20;
+  const searched = Number.isInteger(body.searched) ? Math.max(0, body.searched as number) : 0;
+  let findBandits = bandAlive ? Math.min(90, 40 + searched * 10) : 0;
+  let findCamp = Math.min(90, 20 + searched * 5);
   const client = anthropicClient();
   if (!("error" in client)) {
     const response = await createMessage(client, {
@@ -52,6 +54,7 @@ Stance: ${body.stance?.trim() || "Unstated."}
 Condition: ${body.condition?.trim() || "Unstated."}
 Ground: ${body.place.trim()}, ${body.ground.trim()}.
 ${body.band.trim()}
+${searched === 0 ? "This is their first search of this ground." : `They have already searched this ground ${searched} ${searched === 1 ? "time" : "times"}.`}
 What is the chance they find the band, and the chance they find the camp?`,
         },
       ],

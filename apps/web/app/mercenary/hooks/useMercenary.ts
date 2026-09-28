@@ -25,6 +25,7 @@ import {
   defaultWeekPlan,
   enlist,
   describeAction,
+  describeLevy,
   decisionsKnownTo,
   disbandBand,
   dequeue,
@@ -151,6 +152,7 @@ function revive(parsed: GameState): GameState {
             grain: typeof camp.grain === "number" ? camp.grain : 0,
             taken: camp.taken === "kept" || camp.taken === "returned" ? camp.taken : null,
             seen: !!camp.seen,
+            searches: typeof camp.searches === "number" ? camp.searches : 0,
           }))
         : blank.camps,
     searchHit: parsed.searchHit === "bandits" || parsed.searchHit === "camp" ? parsed.searchHit : null,
@@ -537,6 +539,7 @@ export function useMercenary() {
   async function judgeSearch(state: GameState): Promise<"nothing" | "bandits" | "camp"> {
     const place = NODES[state.location];
     const bandAlive = !!state.bandits && state.bandits.count > 0 && state.location === state.bandAt;
+    const searched = state.camps.find((camp) => camp.at === state.location && !camp.taken)?.searches ?? 0;
     try {
       const res = await fetch("/api/mercenary/forest/search", {
         method: "POST",
@@ -550,6 +553,7 @@ export function useMercenary() {
           ground: place.ground,
           band: bandAlive ? banditDescription(state) : "No band is left in this ground. Their camp may still be hidden.",
           bandAlive,
+          searched,
         }),
       });
       if (res.ok) {
@@ -906,14 +910,44 @@ export function useMercenary() {
         commit(result.state);
       }
     },
-    acceptSquare(name: string) {
-      if (!ref.current) return;
-      const result = acceptSquareOffer(ref.current, name);
-      if (!result.ok) setError(result.error);
-      else {
-        setError(null);
-        commit(result.state);
+    async acceptSquare(name: string) {
+      const current = ref.current;
+      if (!current || busy) return;
+      const before = new Map(current.units.map((unit) => [unit.id, unit.count]));
+      const result = acceptSquareOffer(current, name);
+      if (!result.ok) {
+        setError(result.error);
+        return;
       }
+      const touched = result.state.units.filter((unit) => unit.type === "militia" && (before.get(unit.id) ?? 0) < unit.count);
+      const call = current.squareTalk
+        .filter((turn) => turn.role === "player")
+        .map((turn) => turn.text)
+        .join("\n");
+      commit(result.state);
+      if (!touched.length || !call.trim()) return;
+      setBusy("The new men are being looked at.");
+      setError(null);
+      try {
+        const res = await fetch("/api/mercenary/square/men", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            call,
+            place: NODES[current.location].name,
+            count: touched.reduce((sum, unit) => sum + unit.count - (before.get(unit.id) ?? 0), 0),
+            name: name.trim(),
+          }),
+        });
+        if (res.ok) {
+          const data = (await res.json()) as { lines?: string[] };
+          const latest = ref.current;
+          if (latest && Array.isArray(data.lines)) commit(describeLevy(latest, touched.map((unit) => unit.id), data.lines));
+        }
+      } catch {
+        /* The men stay as they were raised. */
+      }
+      setBusy(null);
     },
     enlist(type: Parameters<typeof enlist>[1], count: number, names: string[], into: string) {
       if (!ref.current) return;

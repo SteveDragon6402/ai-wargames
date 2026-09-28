@@ -20,6 +20,8 @@ import {
   claimReward,
   commitApproach,
   applySearch,
+  actionLabel,
+  describeLevy,
   decisionsKnownTo,
   disbandBand,
   dismissTemporary,
@@ -876,6 +878,31 @@ describe("a search", () => {
     assert.equal(lads?.seenFrom, start.decisions.length);
     assert.equal(decisionsKnownTo(hired, "millcross").some((item) => /Founded/.test(item.text)), false);
     assert.equal(decisionsKnownTo(hired, "millcross").some((item) => /Hired/.test(item.text)), true);
+  });
+
+  it("counts each search, and keeps the count after the company leaves", () => {
+    const wood = { ...playing(), location: "blackwood" as const };
+    const once = must(applySearch(wood, "nothing"));
+    assert.equal(once.camps.find((camp) => camp.at === "blackwood")?.searches, 1);
+    const again = must(applySearch({ ...once, resolveIndex: 0 }, "nothing"));
+    assert.equal(again.camps.find((camp) => camp.at === "blackwood")?.searches, 2);
+    const planned = beginResolution(must(setMovement({ ...again, resolveIndex: 0 }, { kind: "march", to: "millcross" })));
+    const rested = stepQueue(planned);
+    assert.equal(rested.kind, "continue");
+    if (rested.kind !== "continue") return;
+    const marched = stepQueue(rested.state);
+    assert.equal(marched.kind, "continue");
+    if (marched.kind !== "continue") return;
+    assert.equal(marched.state.location, "millcross");
+    assert.equal(marched.state.camps.find((camp) => camp.at === "blackwood")?.searches, 2);
+    assert.equal(actionLabel({ kind: "train", unitIds: ["a", "b"], drill: "They practice the wheel until dark." }), "Drill two units");
+  });
+
+  it("writes the call onto the men who answered it", () => {
+    const start = playing();
+    const next = describeLevy(start, [start.units[0].id], ["They know the deer paths.", "They are not soldiers."]);
+    assert.match(next.units[0].lines[0] ?? "", /deer paths/);
+    assert.equal(next.units[1].lines[0], start.units[1].lines[0]);
   });
 });
 
