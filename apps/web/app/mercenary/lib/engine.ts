@@ -179,6 +179,7 @@ export function freshGame(): GameState {
     pendingRaid: false,
     raidDone: false,
     camps: [{ at: "blackwood", coins: CAMP_COINS, grain: CAMP_GRAIN, taken: null, seen: false }],
+    returned: [],
     searchHit: null,
   };
 }
@@ -205,7 +206,7 @@ export function rememberLeader(state: GameState, text: string): GameState {
   };
 }
 
-function makeUnit(state: GameState, type: UnitTypeId, count: number, name: string): { state: GameState; unit: Unit } {
+function makeUnit(state: GameState, type: UnitTypeId, count: number, name: string, home: NodeId | null = null): { state: GameState; unit: Unit } {
   const entry = WIKI[type];
   const unit: Unit = {
     id: `u${state.nextUnitId}`,
@@ -217,6 +218,8 @@ function makeUnit(state: GameState, type: UnitTypeId, count: number, name: strin
     raw: false,
     salary: 1,
     term: "permanent",
+    home,
+    seenFrom: state.decisions.length,
     battles: [],
   };
   return { state: { ...state, nextUnitId: state.nextUnitId + 1 }, unit };
@@ -622,7 +625,7 @@ function applyListed(state: GameState, action: WeekAction): GameState {
       return fill ? { ...unit, count: unit.count + fill.add } : unit;
     });
     plan.fresh.forEach((count, index) => {
-      const made = makeUnit(next, action.type, count, action.names[index].trim());
+      const made = makeUnit(next, action.type, count, action.names[index].trim(), isSettlement(state.location) ? state.location : null);
       next = made.state;
       next = { ...next, units: [...next.units, made.unit] };
     });
@@ -745,8 +748,10 @@ export function finishWeek(state: GameState): GameState {
   const unpaid = due - paid;
   if (paid > 0) next = { ...next, money: next.money - paid };
   if (unpaid > 0) {
+    const beforePay = units;
     const dropped = dropUnpaid(units, unpaid);
     units = dropped.units;
+    next = rememberReturns(next, beforePay, units);
     if (dropped.gone > 0) next = notice(next, `${dropped.gone} went unpaid, and they left.`);
   }
   const doubleRest = state.weekPlan.movement.kind === "rest" && state.weekPlan.deed.kind === "rest" && !state.movedThisWeek;
@@ -870,26 +875,23 @@ export function applySearch(state: GameState, found: "nothing" | "bandits" | "ca
   };
 }
 
-function soldierHomes(state: GameState): SettlementId[] {
-  const homes = new Set<SettlementId>();
-  for (const unit of state.units) {
-    if (unit.count <= 0 || !unit.home) continue;
-    if (unit.home in state.settlements) homes.add(unit.home as SettlementId);
+function rememberReturns(state: GameState, before: Unit[], after: Unit[]): GameState {
+  const to = state.decisions.length - 1;
+  const returned = [...(state.returned ?? [])];
+  for (const unit of before) {
+    if (!unit.home || (unit.seenFrom ?? 0) > to) continue;
+    const stayed = after.find((item) => item.id === unit.id)?.count ?? 0;
+    if (stayed < unit.count) returned.push({ home: unit.home, from: unit.seenFrom ?? 0, to });
   }
-  return [...homes];
+  return { ...state, returned };
 }
 
 export function takeCamp(state: GameState, choice: "kept" | "returned"): Result {
   const camp = (state.camps ?? []).find((item) => item.at === state.location && !item.taken && item.seen);
   if (!camp) return fail("There is no camp in hand.");
   const placeName = NODES[camp.at].name;
-  const homes = soldierHomes(state);
   const villageId = (isSettlement(state.payAt) ? state.payAt : "millcross") as SettlementId;
   const villageName = NODES[villageId].name;
-  const fact =
-    choice === "kept"
-      ? `Men of this village were with the company in ${placeName}. They found a camp. The company kept the coin and the grain.`
-      : `Men of this village were with the company in ${placeName}. They found a camp and brought the coin and the grain back to ${villageName}.`;
   let settlements = state.settlements;
   if (choice === "returned") {
     const place = settlements[villageId];
@@ -901,15 +903,6 @@ export function takeCamp(state: GameState, choice: "kept" | "returned"): Result 
         elder: { ...place.elder, coins: place.elder.coins + camp.coins },
       },
     };
-  }
-  if (homes.length > 0) {
-    for (const home of homes) {
-      const place = settlements[home];
-      settlements = {
-        ...settlements,
-        [home]: { ...place, heard: [...(place.heard ?? []), { week: state.week, text: fact }] },
-      };
-    }
   }
   const onSearch = state.queue[state.resolveIndex]?.kind === "search";
   const next: GameState = {
@@ -928,11 +921,19 @@ export function takeCamp(state: GameState, choice: "kept" | "returned"): Result 
   return { ok: true, state: decide(notice(next, line), line) };
 }
 
-export function decisionsKnownTo(state: GameState, id: SettlementId | null) {
-  const places = id ? [state.settlements[id]].filter(Boolean) : Object.values(state.settlements);
-  const knows = places.some((place) => (place.heard ?? []).some((note) => /\bcamp\b/i.test(note.text)));
-  if (knows) return state.decisions;
-  return state.decisions.filter((item) => !/\bcamp\b/i.test(item.text));
+export function decisionsKnownTo(state: GameState, place: NodeId | null) {
+  if (!place) return [];
+  const spans: { from: number; to: number }[] = [];
+  if (state.location === place) {
+    for (const unit of state.units) {
+      if (unit.count > 0 && unit.home === place) spans.push({ from: unit.seenFrom ?? 0, to: state.decisions.length - 1 });
+    }
+  }
+  for (const back of state.returned ?? []) {
+    if (back.home === place) spans.push(back);
+  }
+  if (!spans.length) return [];
+  return state.decisions.filter((_, index) => spans.some((span) => index >= span.from && index <= span.to));
 }
 
 export function openBattle(state: GameState, reason: PendingBattleReason, sneakNote: string | null): GameState {
@@ -1397,7 +1398,7 @@ export function raiseMilitia(state: GameState, count: number, name: string): Res
   const trimmed = name.trim();
   if (!trimmed || trimmed.length > 40) return fail("Name the new unit, forty characters or fewer.");
   if (state.units.some((unit) => unit.name.toLowerCase() === trimmed.toLowerCase())) return fail("That name is already in the company.");
-  const made = makeUnit(state, "militia", count, trimmed);
+  const made = makeUnit(state, "militia", count, trimmed, isSettlement(state.location) ? state.location : null);
   const unit = { ...made.unit, raw: true };
   return {
     ok: true,
@@ -1438,7 +1439,7 @@ export function addMilitia(state: GameState, count: number, name: string): Resul
     let built = { ...next, units };
     while (left > 0) {
       const batch = Math.min(UNIT_CAP, left);
-      const made = makeUnit(built, "militia", batch, `${trimmed} ${built.units.filter((unit) => unit.name.toLowerCase().startsWith(trimmed.toLowerCase())).length + 1}`);
+      const made = makeUnit(built, "militia", batch, `${trimmed} ${built.units.filter((unit) => unit.name.toLowerCase().startsWith(trimmed.toLowerCase())).length + 1}`, isSettlement(state.location) ? state.location : null);
       built = { ...made.state, units: [...built.units, { ...made.unit, raw: true }] };
       left -= batch;
     }
@@ -1452,7 +1453,7 @@ export function addMilitia(state: GameState, count: number, name: string): Resul
   while (left > 0) {
     const batch = Math.min(UNIT_CAP, left);
     const unitName = index === 0 ? trimmed : `${trimmed} ${index + 1}`;
-    const made = makeUnit(built, "militia", batch, unitName);
+    const made = makeUnit(built, "militia", batch, unitName, isSettlement(state.location) ? state.location : null);
     built = made.state;
     units.push({ ...made.unit, raw: true });
     left -= batch;

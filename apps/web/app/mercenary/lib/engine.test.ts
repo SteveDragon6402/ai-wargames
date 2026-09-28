@@ -23,6 +23,7 @@ import {
   decisionsKnownTo,
   disbandBand,
   dismissTemporary,
+  enlist,
   enqueue,
   finishWeek,
   armMilitia,
@@ -828,30 +829,53 @@ describe("a search", () => {
     assert.equal(found.bandits, null);
   });
 
-  it("keeps the hoard quiet unless village soldiers were there", () => {
+  it("tells a place only what its own men saw, and only once they are back there", () => {
+    const start = playing();
     const wood = {
-      ...playing(),
+      ...start,
       location: "blackwood" as const,
       searchHit: "camp" as const,
-      camps: playing().camps.map((camp) => ({ ...camp, seen: true })),
+      camps: start.camps.map((camp) => ({ ...camp, seen: true })),
     };
     const kept = must(takeCamp(wood, "kept"));
     assert.equal(kept.money, wood.money + 80);
-    assert.equal(kept.basicFood, wood.basicFood + 55);
-    assert.equal(kept.camps[0]?.taken, "kept");
     assert.equal(kept.settlements.millcross.heard.length, 0);
-    assert.match(kept.decisions.at(-1)?.text ?? "", /camp/);
-    assert.equal(decisionsKnownTo(kept, "millcross").some((item) => /\bcamp\b/i.test(item.text)), false);
+    assert.equal(decisionsKnownTo({ ...kept, location: "millcross" }, "millcross").some((item) => /\bcamp\b/i.test(item.text)), false);
 
-    const levy = { ...wood.units[0], id: "levy", name: "The Fields", count: 3, home: "millcross" as const, term: "temporary" as const };
+    const levy = {
+      ...start.units[0],
+      id: "levy",
+      name: "The Fields",
+      count: 3,
+      home: "millcross" as const,
+      seenFrom: start.decisions.length,
+      term: "temporary" as const,
+    };
     const withMen = { ...wood, units: [...wood.units, levy] };
-    const returned = must(takeCamp(withMen, "returned"));
-    assert.equal(returned.money, withMen.money);
-    assert.equal(returned.settlements.millcross.granary, wood.settlements.millcross.granary + 55);
-    assert.equal(returned.settlements.millcross.elder.coins, wood.settlements.millcross.elder.coins + 80);
-    assert.match(returned.settlements.millcross.heard[0]?.text ?? "", /brought the coin and the grain back/);
-    assert.equal(decisionsKnownTo(returned, "millcross").some((item) => /\bcamp\b/i.test(item.text)), true);
-    assert.equal(decisionsKnownTo(returned, "harrow").some((item) => /\bcamp\b/i.test(item.text)), false);
+    const taken = must(takeCamp(withMen, "returned"));
+    assert.equal(taken.settlements.millcross.granary, wood.settlements.millcross.granary + 55);
+    assert.equal(decisionsKnownTo(taken, "millcross").some((item) => /\bcamp\b/i.test(item.text)), false);
+    assert.equal(decisionsKnownTo({ ...taken, location: "millcross" }, "millcross").some((item) => /\bcamp\b/i.test(item.text)), true);
+    assert.equal(decisionsKnownTo({ ...taken, location: "millcross" }, "harrow").some((item) => /\bcamp\b/i.test(item.text)), false);
+
+    const late = { ...levy, seenFrom: 9999 };
+    const after = must(takeCamp({ ...wood, units: [...wood.units, late] }, "kept"));
+    assert.equal(decisionsKnownTo({ ...after, location: "millcross" }, "millcross").some((item) => /\bcamp\b/i.test(item.text)), false);
+
+    const sentHome = dismissTemporary(taken, "millcross");
+    assert.equal(sentHome.location, "blackwood");
+    assert.equal(decisionsKnownTo(sentHome, "millcross").some((item) => /\bcamp\b/i.test(item.text)), true);
+  });
+
+  it("marks recruits with the place they joined, and leaves the first units unmarked", () => {
+    const start = playing();
+    assert.ok(start.units.every((unit) => unit.home == null));
+    const hired = must(enlist(start, "swordsmen", 1, ["The Lads"], "new"));
+    const lads = hired.units.find((unit) => unit.name === "The Lads");
+    assert.equal(lads?.home, "millcross");
+    assert.equal(lads?.seenFrom, start.decisions.length);
+    assert.equal(decisionsKnownTo(hired, "millcross").some((item) => /Founded/.test(item.text)), false);
+    assert.equal(decisionsKnownTo(hired, "millcross").some((item) => /Hired/.test(item.text)), true);
   });
 });
 

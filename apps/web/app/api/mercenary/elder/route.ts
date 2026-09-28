@@ -64,7 +64,7 @@ export async function POST(req: NextRequest) {
     },
     {
       name: "read_decision_log",
-      description: "Read the company's significant decisions.",
+      description: "Read what men of this place, now here, saw while they marched with the company.",
       input_schema: { type: "object", properties: {} },
     },
     {
@@ -217,7 +217,7 @@ Your tools read your own things, your neighbours, and the common stores, and the
           type: "tool_result",
           tool_use_id: call.id,
           content: books
-            ? `Chest ${books.coins}. Granary ${books.granary}, about ${books.weeksLeft} weeks. Men at home ${books.able}. ${books.labor || ""} Debts: ${books.debts || "None."}${books.heard ? ` Heard in the village: ${books.heard}` : ""}`
+            ? `Chest ${books.coins}. Granary ${books.granary}, about ${books.weeksLeft} weeks. Men at home ${books.able}. ${books.labor || ""} Debts: ${books.debts || "None."}`
             : "No books.",
         });
         continue;
@@ -293,7 +293,7 @@ Your tools read your own things, your neighbours, and the common stores, and the
       } else if (call.name === "read_battle_history") {
         content = body.battles?.trim() || "They have not fought.";
       } else if (call.name === "read_decision_log") {
-        content = (body.decisions ?? []).map((item) => `Week ${item.week}: ${item.text}`).join("\n") || "Nothing significant.";
+        content = (body.decisions ?? []).map((item) => `Week ${item.week}: ${item.text}`).join("\n") || "No man of this place is here with anything he saw.";
       } else if (call.name === "read_village_deeds") {
         content = (body.deeds ?? []).join("\n") || "They have done nothing for Millcross yet.";
       }

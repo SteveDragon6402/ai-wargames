@@ -68,7 +68,7 @@ import {
   weeksOfFood,
   writeNote,
 } from "../lib/engine";
-import { NODES } from "../data/map";
+import { NODES, isSettlement } from "../data/map";
 import { ELDER_PERSONA, MERCHANT_PERSONA, SETTLEMENT_IDS } from "../data/millcross";
 import { applyVillageRaid, fallbackRaid, type FightResult } from "../lib/world";
 import type { BaseTypeId } from "../data/wiki";
@@ -154,6 +154,9 @@ function revive(parsed: GameState): GameState {
           }))
         : blank.camps,
     searchHit: parsed.searchHit === "bandits" || parsed.searchHit === "camp" ? parsed.searchHit : null,
+    returned: Array.isArray(parsed.returned)
+      ? parsed.returned.filter((item) => item && typeof item.from === "number" && typeof item.to === "number" && typeof item.home === "string")
+      : [],
     offers: {
       elder: parsed.offers?.elder ?? null,
       merchant: parsed.offers?.merchant ?? null,
@@ -166,6 +169,7 @@ function revive(parsed: GameState): GameState {
       salary: typeof unit.salary === "number" ? unit.salary : 1,
       term: unit.term === "temporary" ? "temporary" : "permanent",
       home: unit.home ?? null,
+      seenFrom: typeof unit.seenFrom === "number" ? unit.seenFrom : 0,
     })),
     bandits: parsed.bandits
       ? {
@@ -241,7 +245,7 @@ export function useMercenary() {
             key,
             companyName: current.companyName,
             current: current.reputation[key],
-            decisions: decisionsKnownTo(current, null),
+            decisions: current.decisions,
             justHappened,
           }),
         });
@@ -296,7 +300,7 @@ export function useMercenary() {
         body: JSON.stringify({
           companyName: current.companyName,
           units: current.units.map((unit) => ({ name: unit.name, count: unit.count, lines: unit.lines })),
-          decisions: decisionsKnownTo(current, null),
+          decisions: current.decisions,
           reputation: current.reputation,
         }),
       });
@@ -718,7 +722,6 @@ export function useMercenary() {
             relations: person.relations.map((bond) => `${bond.bond} ${bond.id}`).join(", "),
           })),
           notes: place.elder.notes.map((note) => `Week ${note.week}: ${note.text}`).join("\n"),
-          heard: (place.heard ?? []).map((note) => `Week ${note.week}: ${note.text}`).join("\n"),
           debts: place.debts
             .filter((debt) => debt.status === "open")
             .map((debt) => `${debt.coins} from ${debt.from} to ${debt.to}: ${debt.why}`)
@@ -732,7 +735,7 @@ export function useMercenary() {
         message,
         history: current.elderTalk,
         reputation: current.reputation,
-        decisions: decisionsKnownTo(current, id),
+        decisions: decisionsKnownTo(current, isSettlement(current.location) ? current.location : null),
         battles,
         deeds: current.villageDeeds,
         company: companyDescription(current),
@@ -1007,7 +1010,9 @@ export function useMercenary() {
           people: filled ? place?.people : undefined,
           labor: filled ? place?.labor : undefined,
           granary: filled ? place?.granary : undefined,
-          heard: filled ? (place?.heard ?? []).map((note) => `Week ${note.week}: ${note.text}`).join("\n") : "",
+          known: decisionsKnownTo(current, isSettlement(current.location) ? current.location : null)
+            .map((item) => `Week ${item.week}: ${item.text}`)
+            .join("\n"),
           grain: place?.merchant.grain,
           coins: place?.merchant.coins,
           cost: place?.merchant.cost,
@@ -1074,7 +1079,9 @@ export function useMercenary() {
           city,
           standing: current.offers?.square ?? 0,
           atHome: id && current.settlements[id]?.populated ? current.settlements[id].able : null,
-          heard: id ? (current.settlements[id]?.heard ?? []).map((note) => `Week ${note.week}: ${note.text}`).join("\n") : "",
+          known: decisionsKnownTo(current, isSettlement(current.location) ? current.location : null)
+            .map((item) => `Week ${item.week}: ${item.text}`)
+            .join("\n"),
         }),
       });
       if (!res.ok) {

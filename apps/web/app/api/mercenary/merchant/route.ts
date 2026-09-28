@@ -19,7 +19,7 @@ interface MerchantBody {
   self?: string;
   labor?: string;
   granary?: number;
-  heard?: string;
+  known?: string;
   household?: { name: string; grain: number; coins: number; possessions: string[]; relations: { id: string; bond: string }[] };
   people?: { id: string; name: string; description: string; alive: boolean; grain: number; coins: number; possessions: string[]; relations: { id: string; bond: string }[] }[];
 }
@@ -57,6 +57,11 @@ export async function POST(req: NextRequest) {
     {
       name: "read_commons",
       description: "Read the village granary and what the village is doing. Those sacks are not yours.",
+      input_schema: { type: "object", properties: {} },
+    },
+    {
+      name: "read_decision_log",
+      description: "Read what men of this place, now here, saw while they marched with the company.",
       input_schema: { type: "object", properties: {} },
     },
     {
@@ -138,7 +143,15 @@ Your tools read your house, your sacks, your neighbours, and the common granary,
         results.push({
           type: "tool_result",
           tool_use_id: call.id,
-          content: `Village granary ${body.granary ?? 0}. ${body.labor || ""}${body.heard ? ` Heard in the village: ${body.heard}` : ""}`,
+          content: `Village granary ${body.granary ?? 0}. ${body.labor || ""}`,
+        });
+        continue;
+      }
+      if (call.name === "read_decision_log") {
+        results.push({
+          type: "tool_result",
+          tool_use_id: call.id,
+          content: body.known?.trim() || "No man of this place is here with anything he saw.",
         });
         continue;
       }
@@ -233,6 +246,11 @@ async function unfilled(client: Anthropic, body: MerchantBody) {
       },
     },
     {
+      name: "read_decision_log",
+      description: "Read what men of this place, now here, saw while they marched with the company.",
+      input_schema: { type: "object", properties: {} },
+    },
+    {
       name: "speak",
       description: "Say your reply. A few sentences about food.",
       input_schema: { type: "object", properties: { line: { type: "string" } }, required: ["line"] },
@@ -261,6 +279,14 @@ async function unfilled(client: Anthropic, body: MerchantBody) {
     const results: Anthropic.Messages.ToolResultBlockParam[] = [];
     for (const call of calls) {
       const input = (call.input ?? {}) as { line?: string; price?: number };
+      if (call.name === "read_decision_log") {
+        results.push({
+          type: "tool_result",
+          tool_use_id: call.id,
+          content: body.known?.trim() || "No man of this place is here with anything he saw.",
+        });
+        continue;
+      }
       if (call.name === "agree_price") {
         const price = input.price === 1 ? 1 : input.price === 2 ? 2 : null;
         if (price === null) {

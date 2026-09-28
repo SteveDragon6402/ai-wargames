@@ -205,6 +205,7 @@ export function acceptMuster(state: GameState, id: SettlementId, name: string): 
       salary: offer.salary,
       term: offer.term,
       home: id,
+      seenFrom: next.decisions.length,
       battles: [],
     };
     units.push(unit);
@@ -229,14 +230,17 @@ export function dismissTemporary(state: GameState, id: SettlementId): GameState 
   const place = placeOf(state, id);
   if (!place) return state;
   let able = place.able;
+  const to = state.decisions.length - 1;
+  const returned = [...(state.returned ?? [])];
   const units = state.units.filter((unit) => {
     if (unit.term === "temporary" && unit.home === id) {
       able += unit.count;
+      if ((unit.seenFrom ?? 0) <= to) returned.push({ home: id, from: unit.seenFrom ?? 0, to });
       return false;
     }
     return true;
   });
-  return put({ ...state, units }, { ...place, able });
+  return put({ ...state, units, returned }, { ...place, able });
 }
 
 export function wageDue(units: Unit[]): number {

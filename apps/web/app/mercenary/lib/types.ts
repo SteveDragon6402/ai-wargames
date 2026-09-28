@@ -35,14 +35,23 @@ export interface Unit {
   /** Coins per man per week. */
   salary: number;
   term: "permanent" | "temporary";
-  /** Settlement these men were mustered from, if they were. */
+  /** Where these men were recruited. The company's first units have none. */
   home?: NodeId | null;
+  /** Index of the first company-log entry these men were present for. */
+  seenFrom?: number;
   battles: BattleRecord[];
 }
 
 export interface Decision {
   week: number;
   text: string;
+}
+
+/** Men who have gone home. They can tell their place what they saw. */
+export interface ReturnedMen {
+  home: NodeId;
+  from: number;
+  to: number;
 }
 
 export interface ChatTurn {
@@ -324,6 +333,8 @@ export interface GameState {
   raidDone: boolean;
   /** Hidden stores. Finding one is a search, not a consequence of the band dying. */
   camps: HiddenCamp[];
+  /** Recruits who have gone back to the place they came from. */
+  returned: ReturnedMen[];
   /** Set when a search has found something and the company has not chosen yet. */
   searchHit: SearchHit;
 }
