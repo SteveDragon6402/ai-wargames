@@ -43,7 +43,7 @@ import {
   type WeekPlan,
 } from "./types";
 import { acceptMuster, agreePurse, collectVillagePurse, cutPurse, dismissTemporary, dropUnpaid, eatGranaries, emptyOffers, grantGrain, offerMuster, sellGrain, setMerchantPrice, villagePurseDue, wageDue } from "./settlement";
-import { tickWorld } from "./world";
+import { CAMP_GRAIN, CAMP_COINS, tickWorld } from "./world";
 
 export { acceptMuster, agreePurse, dismissTemporary, grantGrain, mouthsAtHome, offerGrain, offerMenFromElder, offerMuster, offerPurse, offerSale, offerSquare, sellGrain, setMerchantPrice, weeksOfFood, writeNote } from "./settlement";
 
@@ -178,6 +178,8 @@ export function freshGame(): GameState {
     offers: emptyOffers(),
     pendingRaid: false,
     raidDone: false,
+    camps: [{ at: "blackwood", coins: CAMP_COINS, grain: CAMP_GRAIN, taken: null, seen: false }],
+    searchHit: null,
   };
 }
 
@@ -445,6 +447,10 @@ function project(state: GameState): Projected | { error: string } {
       if (!isForest(projected.location)) return { error: "There is no forest here to forage." };
       if (projected.foraged) return { error: "The company is already foraging this week." };
       projected.foraged = true;
+    } else if (action.kind === "search") {
+      if (!isForest(projected.location)) return { error: "There is no forest here to search." };
+      const hidden = (state.camps ?? []).some((camp) => camp.at === projected.location && !camp.taken && !camp.seen);
+      if (!hidden) return { error: "There is nothing left to search for here." };
     } else if (action.kind === "talk") {
       if (!isSettlement(projected.location)) return { error: "There is no one here to talk to." };
     } else if (action.kind === "convert") {
@@ -635,6 +641,10 @@ export function stepQueue(state: GameState): Step {
     return { kind: "train", state, unitIds: action.unitIds, drill: action.drill };
   }
   if (action.kind === "forage") return { kind: "forage", state };
+  if (action.kind === "search") {
+    if (state.searchHit === "bandits" || state.searchHit === "camp") return { kind: "search-wait", state };
+    return { kind: "search", state };
+  }
   const applied = applyListed(state, action);
   return { kind: "continue", state: { ...applied, resolveIndex: state.resolveIndex + 1 } };
 }
@@ -768,6 +778,7 @@ export function finishWeek(state: GameState): GameState {
     movedThisWeek: false,
     cameFrom: null,
     pendingBattle: null,
+    searchHit: null,
     screen: next.phase === "wiped" ? next.screen : "dashboard",
   };
   if (headcount(closed.units) === 0) return { ...closed, phase: "wiped" };
@@ -777,6 +788,39 @@ export function finishWeek(state: GameState): GameState {
 
 export function retreatStartsFight(roll: number): boolean {
   return roll < RETREAT_FIGHT_CHANCE;
+}
+
+/** The band is in this forest, and the company did not already fight them this week. */
+export function canAmbush(state: GameState): boolean {
+  return (
+    state.phase === "play" &&
+    !!state.bandits &&
+    state.bandits.count > 0 &&
+    state.location === state.bandAt &&
+    isForest(state.location) &&
+    !state.moraleFromBattle &&
+    headcount(state.units) > 0
+  );
+}
+
+/** The leader breaks the band up. Coin does not move. A purse, if one was agreed, is still collected later. */
+export function disbandBand(state: GameState, reason: string): GameState {
+  if (!state.bandits) return state;
+  const line = reason.trim() || `${state.leader.name} broke the band up.`;
+  const contracted = state.contract?.status === "taken" ? state.contract : null;
+  let next: GameState = {
+    ...state,
+    bandits: null,
+    banditSurvivors: null,
+    pendingRaid: false,
+    raidDone: true,
+    contract: contracted ? null : state.contract,
+    contractStep: contracted ? state.contractStep + 1 : state.contractStep,
+    rewardPurse: contracted ? contracted.purse : state.rewardPurse,
+    rewardClaimed: contracted ? false : state.rewardClaimed,
+  };
+  if (!contracted && next.payAt === "millcross") next = dismissTemporary(next, "millcross");
+  return rememberLeader(decide(notice(next, line), line), line);
 }
 
 export function cancelRest(state: GameState): GameState {
@@ -791,6 +835,106 @@ export function retreatQuiet(state: GameState): GameState {
   );
 }
 
+export function passSearch(state: GameState): GameState {
+  const onSearch = state.queue[state.resolveIndex]?.kind === "search";
+  return {
+    ...state,
+    searchHit: null,
+    resolveIndex: onSearch ? state.resolveIndex + 1 : state.resolveIndex,
+  };
+}
+
+export function applySearch(state: GameState, found: "nothing" | "bandits" | "camp"): Result {
+  const camp = (state.camps ?? []).find((item) => item.at === state.location && !item.taken);
+  if (!camp || camp.seen) return fail("There is nothing left to search for here.");
+  const bandAlive = !!state.bandits && state.bandits.count > 0 && state.location === state.bandAt;
+  if (found === "bandits" && bandAlive) {
+    return { ok: true, state: notice({ ...state, searchHit: "bandits" }, "They found the band.") };
+  }
+  if (found === "camp") {
+    return {
+      ok: true,
+      state: notice(
+        {
+          ...state,
+          searchHit: "camp",
+          camps: state.camps.map((item) => (item.at === state.location && !item.taken ? { ...item, seen: true } : item)),
+        },
+        "They found the camp."
+      ),
+    };
+  }
+  return {
+    ok: true,
+    state: notice({ ...state, resolveIndex: state.resolveIndex + 1, searchHit: null }, "They searched and found nothing."),
+  };
+}
+
+function soldierHomes(state: GameState): SettlementId[] {
+  const homes = new Set<SettlementId>();
+  for (const unit of state.units) {
+    if (unit.count <= 0 || !unit.home) continue;
+    if (unit.home in state.settlements) homes.add(unit.home as SettlementId);
+  }
+  return [...homes];
+}
+
+export function takeCamp(state: GameState, choice: "kept" | "returned"): Result {
+  const camp = (state.camps ?? []).find((item) => item.at === state.location && !item.taken && item.seen);
+  if (!camp) return fail("There is no camp in hand.");
+  const placeName = NODES[camp.at].name;
+  const homes = soldierHomes(state);
+  const villageId = (isSettlement(state.payAt) ? state.payAt : "millcross") as SettlementId;
+  const villageName = NODES[villageId].name;
+  const fact =
+    choice === "kept"
+      ? `Men of this village were with the company in ${placeName}. They found a camp. The company kept the coin and the grain.`
+      : `Men of this village were with the company in ${placeName}. They found a camp and brought the coin and the grain back to ${villageName}.`;
+  let settlements = state.settlements;
+  if (choice === "returned") {
+    const place = settlements[villageId];
+    settlements = {
+      ...settlements,
+      [villageId]: {
+        ...place,
+        granary: place.granary + camp.grain,
+        elder: { ...place.elder, coins: place.elder.coins + camp.coins },
+      },
+    };
+  }
+  if (homes.length > 0) {
+    for (const home of homes) {
+      const place = settlements[home];
+      settlements = {
+        ...settlements,
+        [home]: { ...place, heard: [...(place.heard ?? []), { week: state.week, text: fact }] },
+      };
+    }
+  }
+  const onSearch = state.queue[state.resolveIndex]?.kind === "search";
+  const next: GameState = {
+    ...state,
+    money: choice === "kept" ? state.money + camp.coins : state.money,
+    basicFood: choice === "kept" ? state.basicFood + camp.grain : state.basicFood,
+    searchHit: null,
+    resolveIndex: onSearch ? state.resolveIndex + 1 : state.resolveIndex,
+    settlements,
+    camps: state.camps.map((item) => (item === camp ? { ...item, taken: choice, coins: 0, grain: 0 } : item)),
+  };
+  const line =
+    choice === "kept"
+      ? `Kept the coin and grain from the camp in ${placeName}.`
+      : `Brought the coin and grain from the camp in ${placeName} back to ${villageName}.`;
+  return { ok: true, state: decide(notice(next, line), line) };
+}
+
+export function decisionsKnownTo(state: GameState, id: SettlementId | null) {
+  const places = id ? [state.settlements[id]].filter(Boolean) : Object.values(state.settlements);
+  const knows = places.some((place) => (place.heard ?? []).some((note) => /\bcamp\b/i.test(note.text)));
+  if (knows) return state.decisions;
+  return state.decisions.filter((item) => !/\bcamp\b/i.test(item.text));
+}
+
 export function openBattle(state: GameState, reason: PendingBattleReason, sneakNote: string | null): GameState {
   const from = state.cameFrom ?? "millcross";
   return {
@@ -800,7 +944,7 @@ export function openBattle(state: GameState, reason: PendingBattleReason, sneakN
   };
 }
 
-type PendingBattleReason = "fight" | "retreat" | "leader";
+type PendingBattleReason = "fight" | "retreat" | "leader" | "ambush";
 
 export function commitApproach(state: GameState, approach: string, supply: number): Result {
   if (!state.pendingBattle) return fail("No fight is waiting.");
@@ -974,11 +1118,15 @@ export function validateOutcome(state: GameState, raw: unknown): { ok: true; val
     }
   }
 
+  const livingBand = Math.max(0, banditCount - banditDeaths);
+  const inHand = Math.min(livingBand, Math.max(0, asInt(body.inHand) ?? 0));
+
   return {
     ok: true,
     value: {
       playerHoldsField: holds,
       banditDeaths,
+      inHand,
       deaths: [...deaths.entries()].map(([unitId, count]) => ({ unitId, count })),
       morale: nonEmpty(body.morale) ?? state.morale,
       stance: nonEmpty(body.stance) ?? state.stance,
@@ -1027,7 +1175,7 @@ export function foodWarning(state: GameState): string | null {
   return `${rations} You can still march. Buy before the march if you want them fed this week.`;
 }
 
-export function applyOutcome(state: GameState, outcome: ValidatedBattle, brief: string, chronicle: string): { state: GameState; result: "victory" | "defeat" } {
+export function applyOutcome(state: GameState, outcome: ValidatedBattle, brief: string, chronicle: string): { state: GameState; result: "victory" | "defeat" | "stood" } {
   const settled = outcome;
   const told = brief;
   const approach = state.pendingBattle?.approach ?? "";
@@ -1059,31 +1207,47 @@ export function applyOutcome(state: GameState, outcome: ValidatedBattle, brief: 
     })
     .filter((unit) => unit.count > 0);
 
-  const remaining = state.bandits ? state.bandits.count - settled.banditDeaths : 0;
-  const bandits = state.bandits && remaining > 0 ? { ...state.bandits, count: remaining } : null;
+  const living = state.bandits ? Math.max(0, state.bandits.count - settled.banditDeaths) : 0;
+  const inHand = Math.min(living, Math.max(0, settled.inHand ?? 0));
+  const atLarge = living - inHand;
+  const withCount = (count: number) => (state.bandits && count > 0 ? { ...state.bandits, count } : null);
   const playerAlive = headcount(units) > 0;
-  const victory = playerAlive && (bandits === null || outcome.playerHoldsField);
   const base: GameState = {
     ...state,
     units,
-    bandits,
     morale: settled.morale,
     stance: settled.stance,
     condition: settled.condition,
     moraleFromBattle: true,
     lastBrief: told,
     lastChronicle: chronicle,
+    pendingBattle: null,
   };
-  if (!victory) {
+  if (!playerAlive) {
     const from = state.pendingBattle?.from ?? state.cameFrom ?? "millcross";
     const beaten = rememberLeader(
-      { ...base, location: from, screen: "dashboard", pendingBattle: null, banditSurvivors: null },
+      { ...base, bandits: withCount(living), location: from, screen: "dashboard", banditSurvivors: null },
       `He fought ${state.companyName} and beat them. ${told}`
     );
-    return { state: playerAlive ? beaten : { ...beaten, phase: "wiped" }, result: "defeat" };
+    return { state: { ...beaten, phase: "wiped" }, result: "defeat" };
+  }
+  if (!outcome.playerHoldsField && living > 0) {
+    const from = state.pendingBattle?.from ?? state.cameFrom ?? "millcross";
+    const beaten = rememberLeader(
+      { ...base, bandits: withCount(living), location: from, screen: "dashboard", banditSurvivors: null },
+      `He fought ${state.companyName} and beat them. ${told}`
+    );
+    return { state: beaten, result: "defeat" };
+  }
+  if (atLarge > 0 && inHand === 0) {
+    const stood = rememberLeader(
+      { ...base, bandits: withCount(atLarge), screen: "result", banditSurvivors: null },
+      `He fought ${state.companyName}. They did not take his men. ${told}`
+    );
+    return { state: stood, result: "stood" };
   }
   const won = rememberLeader(
-    { ...base, screen: "choice", pendingBattle: null, banditSurvivors: remaining },
+    { ...base, bandits: withCount(atLarge), screen: "choice", banditSurvivors: inHand },
     `He fought ${state.companyName} and lost the field. ${told}`
   );
   return { state: won, result: "victory" };
@@ -1099,22 +1263,28 @@ export function applyAftermath(state: GameState, choice: Aftermath, names: strin
   const survivors = state.banditSurvivors ?? 0;
   if (survivors <= 0 && choice !== "kill") return fail("No one lived to be spared.");
   const contracted = state.contract?.status === "taken" ? state.contract : null;
+  const bandLeft = state.bandits && state.bandits.count > 0 ? state.bandits : null;
+  const finished = !bandLeft;
   let next: GameState = {
     ...state,
-    bandits: null,
+    bandits: bandLeft,
     banditSurvivors: null,
     screen: "dashboard",
-    contract: null,
-    contractStep: contracted ? state.contractStep + 1 : state.contractStep,
+    contract: finished ? null : state.contract,
+    contractStep: finished && contracted ? state.contractStep + 1 : state.contractStep,
   };
   if (choice === "kill") {
     next = decide(next, "After the fight, the company killed whoever was left.");
-    next.rewardPurse = contracted ? contracted.purse : null;
-    next.villageDeeds = [...next.villageDeeds, "Killed the Blackwood bandits."];
+    if (finished) {
+      next.rewardPurse = contracted ? contracted.purse : null;
+      next.villageDeeds = [...next.villageDeeds, "Killed the Blackwood bandits."];
+    }
   } else if (choice === "justice") {
     next = decide(next, "After the fight, the company brought the survivors in for justice.");
-    next.rewardPurse = contracted ? contracted.purse : null;
-    next.villageDeeds = [...next.villageDeeds, "Brought the Blackwood survivors to Millcross for justice."];
+    if (finished) {
+      next.rewardPurse = contracted ? contracted.purse : null;
+      next.villageDeeds = [...next.villageDeeds, "Brought the Blackwood survivors to Millcross for justice."];
+    }
   } else {
     const needed = namesForSurvivors(survivors);
     const cleaned = names.map((name) => name.trim());
@@ -1129,10 +1299,12 @@ export function applyAftermath(state: GameState, choice: Aftermath, names: strin
       next = { ...next, units: [...next.units, made.unit] };
     });
     next = decide(next, "After the fight, the company recruited the surviving bandits.");
-    next.rewardPurse = contracted ? Math.min(contracted.purse, REWARD_RECRUIT) : null;
-    next.villageDeeds = [...next.villageDeeds, "Recruited the Blackwood survivors instead of hanging them."];
+    if (finished) {
+      next.rewardPurse = contracted ? Math.min(contracted.purse, REWARD_RECRUIT) : null;
+      next.villageDeeds = [...next.villageDeeds, "Recruited the Blackwood survivors instead of hanging them."];
+    }
   }
-  if (!contracted && state.payAt === "millcross") {
+  if (finished && !contracted && state.payAt === "millcross") {
     if (choice === "recruit") next = cutPurse(next, "millcross");
     next = dismissTemporary(next, "millcross");
   }
@@ -1424,6 +1596,9 @@ export function takeContract(state: GameState): Result {
           generalHistory: `${contract.leaderName} keeps ${contract.bandName} at ${NODES[contract.place].name}.`,
           withCompany: [],
         },
+        camps: state.camps.some((camp) => camp.at === contract.place && !camp.taken)
+          ? state.camps
+          : [...state.camps, { at: contract.place, coins: 40, grain: 25, taken: null, seen: false }],
       },
       `Took the offer against ${contract.bandName} at ${NODES[contract.place].name}. The purse is ${contract.purse} coins at ${NODES[contract.payAt].name}.`
     ),
@@ -1455,6 +1630,7 @@ export function describeAction(action: WeekAction): string {
   if (action.kind === "move") return `March to ${NODES[action.to].name}`;
   if (action.kind === "train") return `Drill two units: ${action.drill}`;
   if (action.kind === "forage") return "Forage in the forest";
+  if (action.kind === "search") return "Search for the bandits";
   if (action.kind === "talk") return "Talk";
   if (action.kind === "convert") return "Food";
   if (action.kind === "recruit") {

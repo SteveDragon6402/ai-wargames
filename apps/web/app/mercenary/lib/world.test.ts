@@ -83,6 +83,9 @@ describe("the year", () => {
     const next = finishWeek(playing());
     assert.equal(next.bandits?.coins, 43);
     assert.equal(next.bandits?.grain, 32);
+    assert.equal(next.camps.find((camp) => camp.at === "blackwood")?.coins, 84);
+    assert.equal(next.camps.find((camp) => camp.at === "blackwood")?.grain, 58);
+    assert.equal(next.camps.find((camp) => camp.at === "blackwood")?.seen, false);
     const raid = finishWeek({ ...playing(), week: 12 });
     assert.equal(raid.pendingRaid, true);
     assert.equal(raid.raidDone, false);
@@ -110,8 +113,11 @@ describe("a fight", () => {
     assert.equal(fight?.holds, "a");
     assert.equal(fight?.dead.length, 1);
     assert.equal(fight?.dead[0].count, 20);
+    assert.equal(fight?.inHand, 0);
     assert.equal(fight?.grainToB, 3);
     assert.equal(fight?.coinsToB, 0);
+    const taken = parseFight({ holds: "a", dead: [{ id: "band", count: 4 }], inHand: 100 }, [{ id: "band", count: 20 }]);
+    assert.equal(taken?.inHand, 16);
   });
 
   it("applies a raid to the people, the granary, and the band", () => {
@@ -124,6 +130,7 @@ describe("a fight", () => {
           { id: "village", count: 2 },
           { id: "band", count: 3 },
         ],
+        inHand: 0,
         grainToB: 10,
         coinsToB: 5,
         morale: "They took what they came for.",

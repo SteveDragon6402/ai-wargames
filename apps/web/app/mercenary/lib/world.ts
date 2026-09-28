@@ -21,8 +21,12 @@ function copyPeople(people: Villager[]): Villager[] {
   }));
 }
 
+/** What the Blackwood camp holds at the start. They have been taking from the road since the thaw, and the camp is the store, not the purse they carry. */
+export const CAMP_COINS = 80;
+export const CAMP_GRAIN = 55;
+
 export function tickWorld(state: GameState): GameState {
-  return markRaid(tickBand(tickVillage(state)));
+  return markRaid(growCamps(tickBand(tickVillage(state))));
 }
 
 function tickVillage(state: GameState): GameState {
@@ -82,6 +86,16 @@ function tickBand(state: GameState): GameState {
   };
 }
 
+function growCamps(state: GameState): GameState {
+  if (!state.bandits || state.bandits.count <= 0) return state;
+  return {
+    ...state,
+    camps: (state.camps ?? []).map((camp) =>
+      camp.at === state.bandAt && !camp.taken ? { ...camp, coins: camp.coins + 4, grain: camp.grain + 3 } : camp
+    ),
+  };
+}
+
 function markRaid(state: GameState): GameState {
   if (state.week !== 12 || !state.bandits || state.raidDone || state.contract || state.payAt !== "millcross") return state;
   if (state.location === state.bandAt) return { ...state, raidDone: true };
@@ -91,6 +105,8 @@ function markRaid(state: GameState): GameState {
 export interface FightResult {
   holds: "a" | "b";
   dead: { id: string; count: number }[];
+  /** How many of force B were taken. People who withdrew are not included. */
+  inHand: number;
   grainToB: number;
   coinsToB: number;
   morale: string;
@@ -130,9 +146,11 @@ export function parseFight(raw: unknown, groups: { id: string; count: number }[]
   }
   const sentence = (value: unknown, fallback: string) => (typeof value === "string" && value.trim() ? value.trim() : fallback);
   const whole = (value: unknown) => (typeof value === "number" && Number.isInteger(value) && value > 0 ? value : 0);
+  const bandLiving = Math.max(0, (caps.get("band") ?? 0) - (dead.find((row) => row.id === "band")?.count ?? 0));
   return {
     holds,
     dead,
+    inHand: Math.min(bandLiving, whole(body.inHand)),
     grainToB: whole(body.grainToB),
     coinsToB: whole(body.coinsToB),
     morale: sentence(body.morale, "They are shaken."),
@@ -226,6 +244,7 @@ export function fallbackRaid(state: GameState): GameState {
         { id: "village", count: 2 },
         { id: "band", count: Math.min(1, band) },
       ],
+      inHand: 0,
       grainToB: 15,
       coinsToB: 8,
       morale: "They took what they came for.",

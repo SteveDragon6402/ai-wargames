@@ -10,11 +10,13 @@ import {
   armMilitia,
   applyAftermath,
   applyForage,
+  applySearch,
   applyOpeningReputation,
   applyOutcome,
   applyTraining,
   banditDescription,
   beginResolution,
+  canAmbush,
   canClaimReward,
   chooseTypes,
   claimReward,
@@ -23,6 +25,8 @@ import {
   defaultWeekPlan,
   enlist,
   describeAction,
+  decisionsKnownTo,
+  disbandBand,
   dequeue,
   enqueue,
   fallbackForageMeals,
@@ -42,6 +46,7 @@ import {
   rememberLeader,
   retreatQuiet,
   retreatStartsFight,
+  passSearch,
   offerContract,
   offerMuster,
   purchaseFood,
@@ -54,6 +59,7 @@ import {
   setMovement,
   setRation,
   setWeekOrder,
+  takeCamp,
   takeContract,
   slipPast,
   stepQueue,
@@ -96,6 +102,7 @@ function reviveSettlements(saved: Partial<Record<SettlementId, Settlement>> | un
       debts: place.debts ?? [],
       people: place.people?.length ? place.people : blank[id].people,
       labor: place.labor || blank[id].labor,
+      heard: place.heard ?? [],
     };
   }
   return next;
@@ -136,6 +143,17 @@ function revive(parsed: GameState): GameState {
     settlements: reviveSettlements(parsed.settlements, blank.settlements),
     pendingRaid: parsed.pendingRaid ?? false,
     raidDone: parsed.raidDone ?? false,
+    camps:
+      Array.isArray(parsed.camps) && parsed.camps.length > 0
+        ? parsed.camps.map((camp) => ({
+            at: camp.at,
+            coins: typeof camp.coins === "number" ? camp.coins : 0,
+            grain: typeof camp.grain === "number" ? camp.grain : 0,
+            taken: camp.taken === "kept" || camp.taken === "returned" ? camp.taken : null,
+            seen: !!camp.seen,
+          }))
+        : blank.camps,
+    searchHit: parsed.searchHit === "bandits" || parsed.searchHit === "camp" ? parsed.searchHit : null,
     offers: {
       elder: parsed.offers?.elder ?? null,
       merchant: parsed.offers?.merchant ?? null,
@@ -223,7 +241,7 @@ export function useMercenary() {
             key,
             companyName: current.companyName,
             current: current.reputation[key],
-            decisions: current.decisions,
+            decisions: decisionsKnownTo(current, null),
             justHappened,
           }),
         });
@@ -278,7 +296,7 @@ export function useMercenary() {
         body: JSON.stringify({
           companyName: current.companyName,
           units: current.units.map((unit) => ({ name: unit.name, count: unit.count, lines: unit.lines })),
-          decisions: current.decisions,
+          decisions: decisionsKnownTo(current, null),
           reputation: current.reputation,
         }),
       });
@@ -290,7 +308,92 @@ export function useMercenary() {
     }
   }
 
+  function bandStores(state: GameState): string {
+    const band = state.bandits;
+    if (!band) return "";
+    return `${band.coins} coins, ${band.grain} grain. Equipment: ${band.equipment.join(", ") || "what they carry"}. ${(band.loot ?? []).join(" ")}`;
+  }
+
+  function whatTheyAreDoing(state: GameState): string {
+    const place = NODES[state.location].name;
+    const deed = state.weekPlan.deed;
+    if (deed.kind === "train") return `In ${place}, drilling. ${deed.drill}`;
+    if (deed.kind === "forage") return `In ${place}, out foraging.`;
+    if (deed.kind === "talk") return `In ${place}, talking.`;
+    if (deed.kind === "recruit") return `In ${place}, hiring men.`;
+    if (deed.kind === "convert") return `In ${place}, seeing to the food.`;
+    if (state.weekPlan.movement.kind === "march") return `Just arrived in ${place}.`;
+    return `In ${place}, resting.`;
+  }
+
+  async function askLeaderAttack(state: GameState, occasion: string): Promise<{ reason: string } | null> {
+    if (!state.bandits) return null;
+    setBusy(`${state.leader.name} is deciding.`);
+    try {
+      const res = await fetch("/api/mercenary/forest/leader", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          playerMen: headcount(state.units),
+          banditMen: state.bandits.count,
+          company: companyDescription(state),
+          bandits: banditDescription(state),
+          persona: state.leader.blurb,
+          stores: bandStores(state),
+          generalHistory: state.leader.generalHistory,
+          withCompany: state.leader.withCompany,
+          ask: "attack",
+          occasion,
+        }),
+      });
+      if (!res.ok) return null;
+      const data = (await res.json()) as { attack?: boolean; reason?: string };
+      if (!data.attack) return null;
+      return { reason: data.reason?.trim() || `${state.leader.name} came out of the trees.` };
+    } catch {
+      return null;
+    }
+  }
+
+  async function askIfBandHolds(state: GameState): Promise<{ state: GameState; line: string }> {
+    if (!state.bandits || state.bandits.count <= 0 || state.phase === "wiped") return { state, line: "" };
+    setBusy(`${state.leader.name} is deciding.`);
+    try {
+      const res = await fetch("/api/mercenary/forest/leader", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          playerMen: headcount(state.units),
+          banditMen: state.bandits.count,
+          company: companyDescription(state),
+          bandits: banditDescription(state),
+          persona: state.leader.blurb,
+          stores: bandStores(state),
+          generalHistory: state.leader.generalHistory,
+          withCompany: state.leader.withCompany,
+          ask: "stay",
+          fight: state.lastBrief ?? "",
+        }),
+      });
+      if (!res.ok) return { state, line: "" };
+      const data = (await res.json()) as { stay?: boolean; reason?: string };
+      const reason = data.reason?.trim() ?? "";
+      if (data.stay === false) {
+        const line = reason || `${state.leader.name} broke the band up.`;
+        return { state: disbandBand(state, line), line };
+      }
+      const line = reason || `${state.leader.name} keeps the band.`;
+      return { state: rememberLeader(state, line), line };
+    } catch {
+      return { state, line: "" };
+    }
+  }
+
   async function narrateWeek(state: GameState): Promise<GameState> {
+    if (canAmbush(state)) {
+      const attack = await askLeaderAttack(state, whatTheyAreDoing(state));
+      if (attack) return openBattle(rememberLeader(state, attack.reason), "ambush", attack.reason);
+    }
     const plan = state.weekPlan;
     const place = NODES[state.location];
     const fought = state.moraleFromBattle;
@@ -427,6 +530,34 @@ export function useMercenary() {
     commit({ ...latest, weekScene: `${text} ${latest.weekScene ?? ""}`.trim() });
   }
 
+  async function judgeSearch(state: GameState): Promise<"nothing" | "bandits" | "camp"> {
+    const place = NODES[state.location];
+    const bandAlive = !!state.bandits && state.bandits.count > 0 && state.location === state.bandAt;
+    try {
+      const res = await fetch("/api/mercenary/forest/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          company: companyDescription(state),
+          morale: state.morale,
+          stance: state.stance,
+          condition: state.condition,
+          place: place.name,
+          ground: place.ground,
+          band: bandAlive ? banditDescription(state) : "No band is left in this ground. Their camp may still be hidden.",
+          bandAlive,
+        }),
+      });
+      if (res.ok) {
+        const data = (await res.json()) as { found?: string };
+        if (data.found === "bandits" || data.found === "camp" || data.found === "nothing") return data.found;
+      }
+    } catch {
+      /* A failed judgement finds nothing. The camp stays hidden. */
+    }
+    return "nothing";
+  }
+
   async function continueWeek(start: GameState) {
     let current = start.resolveIndex === 0 ? beginResolution(start) : start;
     while (true) {
@@ -476,6 +607,29 @@ export function useMercenary() {
             : applied.state;
         continue;
       }
+      if (step.kind === "search") {
+        setBusy("The search is being judged.");
+        const found = await judgeSearch(step.state);
+        const applied = applySearch(step.state, found);
+        if (!applied.ok) {
+          commit(current);
+          setError(applied.error);
+          setBusy(null);
+          return;
+        }
+        if (applied.state.searchHit) {
+          commit(applied.state);
+          setBusy(null);
+          return;
+        }
+        current = applied.state;
+        continue;
+      }
+      if (step.kind === "search-wait") {
+        commit(step.state);
+        setBusy(null);
+        return;
+      }
       if (step.kind === "train") {
         setBusy("The drill is being written down.");
         const units = step.unitIds.map((id) => current.units.find((unit) => unit.id === id));
@@ -510,6 +664,11 @@ export function useMercenary() {
       }
       if (step.kind === "done") {
         const narrated = await narrateWeek(step.state);
+        if (narrated.pendingBattle) {
+          commit(narrated);
+          setBusy(null);
+          return;
+        }
         const latest = ref.current;
         commit({
           ...narrated,
@@ -559,6 +718,7 @@ export function useMercenary() {
             relations: person.relations.map((bond) => `${bond.bond} ${bond.id}`).join(", "),
           })),
           notes: place.elder.notes.map((note) => `Week ${note.week}: ${note.text}`).join("\n"),
+          heard: (place.heard ?? []).map((note) => `Week ${note.week}: ${note.text}`).join("\n"),
           debts: place.debts
             .filter((debt) => debt.status === "open")
             .map((debt) => `${debt.coins} from ${debt.from} to ${debt.to}: ${debt.why}`)
@@ -572,7 +732,7 @@ export function useMercenary() {
         message,
         history: current.elderTalk,
         reputation: current.reputation,
-        decisions: current.decisions,
+        decisions: decisionsKnownTo(current, id),
         battles,
         deeds: current.villageDeeds,
         company: companyDescription(current),
@@ -847,6 +1007,7 @@ export function useMercenary() {
           people: filled ? place?.people : undefined,
           labor: filled ? place?.labor : undefined,
           granary: filled ? place?.granary : undefined,
+          heard: filled ? (place?.heard ?? []).map((note) => `Week ${note.week}: ${note.text}`).join("\n") : "",
           grain: place?.merchant.grain,
           coins: place?.merchant.coins,
           cost: place?.merchant.cost,
@@ -913,6 +1074,7 @@ export function useMercenary() {
           city,
           standing: current.offers?.square ?? 0,
           atHome: id && current.settlements[id]?.populated ? current.settlements[id].able : null,
+          heard: id ? (current.settlements[id]?.heard ?? []).map((note) => `Week ${note.week}: ${note.text}`).join("\n") : "",
         }),
       });
       if (!res.ok) {
@@ -1064,10 +1226,11 @@ export function useMercenary() {
     fight() {
       const current = ref.current;
       if (!current) return;
-      const ready =
+      const ready = passSearch(
         current.resolveIndex > 0
           ? current
-          : { ...current, weekPlan: { ...current.weekPlan, deed: { kind: "rest" as const }, order: "action-first" as const } };
+          : { ...current, weekPlan: { ...current.weekPlan, deed: { kind: "rest" as const }, order: "action-first" as const } }
+      );
       commit(openBattle(rememberLeader(ready, "The company chose to fight."), "fight", null));
     },
     async runAway() {
@@ -1080,6 +1243,7 @@ export function useMercenary() {
         await continueWeek({
           ...current,
           screen: "dashboard",
+          searchHit: null,
           resolveIndex: current.queue.length,
           notices: [...current.notices, line],
         });
@@ -1202,7 +1366,24 @@ export function useMercenary() {
       commit(shown);
       setBusy(null);
       void refreshReputation(shown, `Fought ${foe}. ${data.brief}`);
-      if (applied.result === "defeat" && shown.phase !== "wiped") await continueWeek(shown);
+      if (applied.result === "defeat" && shown.phase !== "wiped") {
+        const asked = shown.bandits ? await askIfBandHolds(shown) : { state: shown, line: "" };
+        await continueWeek(asked.state);
+        if (asked.line) stampScene(asked.line);
+      }
+    },
+    async leaveFight() {
+      const current = ref.current;
+      if (!current || busy) return;
+      const stillThere = current.moraleFromBattle && current.bandits && current.location === current.bandAt;
+      if (!stillThere) {
+        commit({ ...current, screen: "dashboard" });
+        return;
+      }
+      const asked = await askIfBandHolds(current);
+      setBusy("The week goes by.");
+      await continueWeek(asked.state);
+      if (asked.line) stampScene(asked.line);
     },
     async choose(choice: Aftermath, names: string[]) {
       const current = ref.current;
@@ -1213,9 +1394,11 @@ export function useMercenary() {
         return;
       }
       const happened = result.state.decisions.at(-1)?.text ?? "The company chose what to do with the survivors.";
-      commit(result.state);
-      void refreshReputation(result.state, happened);
-      await continueWeek(result.state);
+      const asked = result.state.bandits ? await askIfBandHolds(result.state) : { state: result.state, line: "" };
+      commit(asked.state);
+      void refreshReputation(asked.state, happened);
+      await continueWeek(asked.state);
+      if (asked.line) stampScene(asked.line);
     },
     async hearContract() {
       const current = ref.current;
@@ -1261,6 +1444,21 @@ export function useMercenary() {
       else {
         setError(null);
         commit(result.state);
+      }
+    },
+    async settleCamp(choice: "kept" | "returned") {
+      const current = ref.current;
+      if (!current || busy) return;
+      const result = takeCamp(current, choice);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      const mid = result.state.resolveIndex > 0 || current.resolveIndex > 0;
+      commit(result.state);
+      if (mid) {
+        setBusy("The week goes by.");
+        await continueWeek(result.state);
       }
     },
     rewardReady: state ? canClaimReward(state) : false,

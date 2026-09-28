@@ -23,7 +23,7 @@ export const TRANSLATOR_SYSTEM =
   "Read the account and record what it did. Do not take a side. Do not add events that are not in the account.";
 
 export const SUMMARIZER_SYSTEM =
-  "Write one finished paragraph of what happened, so someone who was not there can hear it. Use only the account and the recorded result. Do not stop mid-sentence.";
+  "Write what happened in a few sentences, so someone who was not there can hear it. Do not retell every clash. The long account is kept separately. Use only the account and the recorded result. Finish every sentence.";
 
 export function fightSides(state: GameState, raid: boolean): { ground: string; a: ForceCard; b: ForceCard } {
   const band = state.bandits;
@@ -63,12 +63,17 @@ export function fightSides(state: GameState, raid: boolean): { ground: string; a
   if (raid) groups.push(village);
   const men = groups.reduce((sum, group) => sum + group.count, 0);
   const approach = state.pendingBattle?.approach?.trim();
+  const surprised =
+    state.pendingBattle?.reason === "ambush"
+      ? `They were not seeking a fight. ${state.pendingBattle.sneakNote ?? ""}`.trim()
+      : "";
+  const stance = [state.stance, surprised, approach ? `They came on like this: ${approach}` : ""].filter(Boolean).join(" ");
   return {
     ground,
     a: {
       name: state.companyName || "The armed company",
       count: men,
-      stance: approach ? `${state.stance} They came on like this: ${approach}` : state.stance,
+      stance,
       description: `${state.condition} ${state.morale}`,
       groups,
     },
@@ -99,8 +104,9 @@ Groups, and the most each can lose:
 ${groups.map((group) => `- ${group.id}: ${group.name}, ${group.count}`).join("\n")}
 
 Record what the account did.
-holds is "a" if force A still has the ground, and "b" if force B does.
+holds is "a" if force A still has the ground, and "b" if force B does. Holding the ground is not the same as taking the other force.
 dead is how many each group lost.
+inHand is how many of force B were taken and are still there. People who withdrew, slipped away, or are still free are not in hand. Use 0 when the account does not take anyone.
 grainToB and coinsToB are grain and coin that passed from force A to force B. Use 0 if the account moves none.
 morale, stance, and condition are one sentence each about force B after the fight.
 lines, if a group's way of fighting changed in the account, are the new sentences for that group id.`;
@@ -108,4 +114,12 @@ lines, if a group's way of fighting changed in the account, are the new sentence
 
 export function mentionsPlayer(text: string): boolean {
   return /\bplayer\b/i.test(text);
+}
+
+/** The first few finished sentences. The long account stays beside this. */
+export function shortOf(text: string): string {
+  const trimmed = text.trim();
+  const sentences = trimmed.match(/[^.!?]+[.!?]+/g);
+  if (!sentences || sentences.length <= 4) return trimmed;
+  return sentences.slice(0, 4).join(" ").replace(/\s+/g, " ").trim();
 }

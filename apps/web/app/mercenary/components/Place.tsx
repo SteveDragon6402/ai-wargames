@@ -66,6 +66,7 @@ export default function Board({ game }: { game: Game }) {
   const town = state.location === "millcross" && state.settlements.millcross?.populated ? state.settlements.millcross : null;
   const woodHere = isForest(state.location);
   const bandHere = !!state.bandits && state.location === state.bandAt;
+  const campHidden = state.camps.some((camp) => camp.at === state.location && !camp.taken && !camp.seen);
   const coming = nextContractTemplate(state);
   const [mapOpen, setMapOpen] = useState(false);
   const [slot, setSlot] = useState<"move" | "action" | null>(null);
@@ -152,7 +153,7 @@ export default function Board({ game }: { game: Game }) {
           <button
             type="button"
             onClick={game.liveWeek}
-            disabled={!!game.busy}
+            disabled={!!game.busy || !!state.searchHit}
             className="mt-3 bg-[var(--merc-red-deep)] px-4 py-2 font-gothic text-xl text-[var(--merc-text)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--merc-red)] disabled:opacity-40"
           >
             {locked ? "Continue" : "Live the week"}
@@ -232,7 +233,6 @@ export default function Board({ game }: { game: Game }) {
                       onMerchant={() => setMerchantOpen(true)}
                       onSquare={() => setSquareOpen(true)}
                       onRecruit={() => setRecruitOpen(true)}
-                      onSearch={() => setWood("found")}
                       onRefuse={() => setWood("refused")}
                     />
                   </div>
@@ -253,6 +253,11 @@ export default function Board({ game }: { game: Game }) {
                         hint="Look for food in the trees."
                       >
                         Forage
+                      </Act>
+                    )}
+                    {campHidden && (
+                      <Act disabled={spent || !!game.busy} onClick={() => game.act({ kind: "search" })} hint="Look for the band, or for their camp. It takes the week.">
+                        Search for the bandits
                       </Act>
                     )}
                     {woodHere && bandHere && (
@@ -400,6 +405,18 @@ export default function Board({ game }: { game: Game }) {
                 }}
               >
                 Forage
+              </button>
+            )}
+            {campHidden && (
+              <button
+                type="button"
+                className={inkButton}
+                onClick={() => {
+                  game.act({ kind: "search" });
+                  setSlot(null);
+                }}
+              >
+                Search for the bandits
               </button>
             )}
           </div>
@@ -584,7 +601,6 @@ function Ground({
   onMerchant,
   onSquare,
   onRecruit,
-  onSearch,
   onRefuse,
 }: {
   state: GameState;
@@ -599,9 +615,23 @@ function Ground({
   onMerchant: () => void;
   onSquare: () => void;
   onRecruit: () => void;
-  onSearch: () => void;
   onRefuse: () => void;
 }) {
+  const foundCamp = state.camps.find((camp) => camp.at === state.location && !camp.taken && camp.seen);
+  const loot = foundCamp ? (
+    <>
+      <p className="max-w-sm text-[15px] leading-relaxed">
+        {foundCamp.coins} coins and {foundCamp.grain} grain are stored here.
+      </p>
+      <Act disabled={!!game.busy} onClick={() => void game.settleCamp("returned")} hint="Hand the coin and the grain back.">
+        Return it to the village
+      </Act>
+      <Act disabled={!!game.busy} onClick={() => void game.settleCamp("kept")} hint="The company takes the coin and the grain.">
+        Keep it
+      </Act>
+    </>
+  ) : null;
+
   if (bandHere && wood === "refused" && state.bandits) {
     return (
       <>
@@ -614,11 +644,35 @@ function Ground({
         <Act disabled={!!game.busy} onClick={() => void game.runAway()} hint="The week is spent.">
           Run
         </Act>
+        {loot}
       </>
     );
   }
 
-  if (bandHere && wood === "found" && state.bandits) {
+  if (state.searchHit === "camp") {
+    return (
+      <>
+        <p className="max-w-sm text-[15px] leading-relaxed">
+          {bandHere && state.bandits
+            ? `${state.leader.name} is in the trees, with ${state.bandits.count}. The camp is here too.`
+            : "The camp is empty of people."}
+        </p>
+        {bandHere && state.bandits && (
+          <>
+            <Act disabled={!!game.busy} onClick={game.fight} hint="Go in against them.">
+              Attack
+            </Act>
+            <Act disabled={!!game.busy} onClick={onRefuse} hint="Ask them to talk.">
+              Seek parley
+            </Act>
+          </>
+        )}
+        {loot}
+      </>
+    );
+  }
+
+  if (bandHere && state.searchHit === "bandits" && state.bandits) {
     return (
       <>
         <p className="max-w-sm text-[15px] leading-relaxed">
@@ -662,11 +716,7 @@ function Ground({
           The square
         </Act>
       )}
-      {bandHere && (
-        <Act disabled={!!game.busy} onClick={onSearch} hint="Look for the band in this ground.">
-          Search for the bandits
-        </Act>
-      )}
+      {foundCamp && loot}
       {game.rewardReady && (
         <p className="text-[15px]">
           {NODES[state.payAt].name} owes {state.rewardPurse} coins.{" "}
@@ -696,7 +746,7 @@ function Ground({
           {state.contract.leaderName} is at {NODES[state.contract.place].name}.
         </p>
       )}
-      {woodHere && !bandHere && <p className="text-[15px] text-[var(--merc-muted)]">The trees are quiet.</p>}
+      {woodHere && !bandHere && !foundCamp && <p className="text-[15px] text-[var(--merc-muted)]">The trees are quiet.</p>}
     </>
   );
 }
@@ -1223,6 +1273,7 @@ function Approach({ state, game }: { state: GameState; game: Game }) {
   return (
     <div>
       <h2 className="font-gothic text-4xl">Before the fight</h2>
+      {state.pendingBattle?.sneakNote && <p className="mt-3 max-w-prose text-[16px] leading-relaxed">{state.pendingBattle.sneakNote}</p>}
       <label htmlFor="approach" className="mt-3 block text-[16px]">
         How you mean to fight, in {APPROACH_WORDS} words or fewer
       </label>
@@ -1245,7 +1296,7 @@ function Result({ state, game }: { state: GameState; game: Game }) {
   const full = state.screen === "chronicle";
   return (
     <div>
-      <button type="button" onClick={() => game.show("dashboard")} className="text-[15px] underline decoration-[var(--merc-muted)] underline-offset-2">
+      <button type="button" onClick={() => void game.leaveFight()} className="text-[15px] underline decoration-[var(--merc-muted)] underline-offset-2">
         Back to {NODES[state.location].name}
       </button>
       <h2 className="mt-2 font-gothic text-4xl">The fight</h2>
@@ -1260,7 +1311,7 @@ function Result({ state, game }: { state: GameState; game: Game }) {
           ))}
         </ul>
       )}
-      <button type="button" onClick={() => game.show(full ? "dashboard" : "chronicle")} className="mt-3 text-[14px] text-[var(--merc-muted)]">
+      <button type="button" onClick={() => game.show(full ? "result" : "chronicle")} className="mt-3 text-[14px] text-[var(--merc-muted)]">
         {full ? "Hide the account" : "Read the account"}
       </button>
       {full && <p className="mt-3 whitespace-pre-wrap text-[15px] leading-relaxed text-[var(--merc-muted)]">{state.lastChronicle}</p>}
@@ -1272,17 +1323,25 @@ function Choice({ state, game }: { state: GameState; game: Game }) {
   const survivors = state.banditSurvivors ?? 0;
   const needed = namesForSurvivors(survivors);
   const [names, setNames] = useState<string[]>(() => defaultNamesFor("bandit", needed, state.units.map((unit) => unit.name)));
+  const [account, setAccount] = useState(false);
   return (
     <div>
       <h2 className="font-gothic text-4xl">After the fight</h2>
       <p className="mt-3 text-[16px] leading-relaxed">{state.lastBrief}</p>
+      {state.lastChronicle && (
+        <button type="button" onClick={() => setAccount((open) => !open)} className="mt-3 text-[14px] text-[var(--merc-muted)]">
+          {account ? "Hide the account" : "Read the account"}
+        </button>
+      )}
+      {account && <p className="mt-3 whitespace-pre-wrap text-[15px] leading-relaxed text-[var(--merc-muted)]">{state.lastChronicle}</p>}
       {survivors <= 0 ? (
         <Button type="button" className="mt-4 border border-[var(--merc-line)] bg-[var(--merc-raise)] text-[var(--merc-text)] hover:bg-[var(--merc-raise)]" disabled={!!game.busy} onClick={() => void game.choose("kill", [])}>
           Leave the dead
         </Button>
       ) : (
         <div className="mt-4 flex flex-col items-start gap-2">
-          <p className="text-[15px] text-[var(--merc-muted)]">{survivors} of them are still alive.</p>
+          {state.bandits ? <p className="text-[15px] text-[var(--merc-muted)]">The rest of the band got away.</p> : null}
+          <p className="text-[15px] text-[var(--merc-muted)]">{survivors} of them are in your hands.</p>
           <Button type="button" variant="outline" disabled={!!game.busy} onClick={() => void game.choose("kill", [])}>
             Kill them
           </Button>

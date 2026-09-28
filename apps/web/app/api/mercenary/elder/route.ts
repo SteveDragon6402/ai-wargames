@@ -32,6 +32,7 @@ interface ElderBody {
     notes?: string;
     debts?: string;
     labor?: string;
+    heard?: string;
     self?: string;
     people?: { id: string; name: string; description: string; alive: boolean; grain: number; coins: number; possessions: string[]; relations: string }[];
   } | null;
@@ -216,7 +217,7 @@ Your tools read your own things, your neighbours, and the common stores, and the
           type: "tool_result",
           tool_use_id: call.id,
           content: books
-            ? `Chest ${books.coins}. Granary ${books.granary}, about ${books.weeksLeft} weeks. Men at home ${books.able}. ${books.labor || ""} Debts: ${books.debts || "None."}`
+            ? `Chest ${books.coins}. Granary ${books.granary}, about ${books.weeksLeft} weeks. Men at home ${books.able}. ${books.labor || ""} Debts: ${books.debts || "None."}${books.heard ? ` Heard in the village: ${books.heard}` : ""}`
             : "No books.",
         });
         continue;

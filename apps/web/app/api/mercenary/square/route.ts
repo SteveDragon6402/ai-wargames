@@ -17,6 +17,7 @@ export async function POST(req: NextRequest) {
     city?: boolean;
     standing?: number;
     atHome?: number | null;
+    heard?: string;
   } | null;
   if (!body?.message?.trim()) return NextResponse.json({ error: "Say something in the square." }, { status: 400 });
 
@@ -41,6 +42,13 @@ export async function POST(req: NextRequest) {
       input_schema: { type: "object", properties: { line: { type: "string" } }, required: ["line"] },
     },
   ];
+  if (!city) {
+    tools.push({
+      name: "read_talk",
+      description: "Read what has been said in the village lately.",
+      input_schema: { type: "object", properties: {} },
+    });
+  }
 
   const history = (body.history ?? []).map((turn) => `${turn.role === "player" ? "Company" : "Square"}: ${turn.text}`).join("\n");
   const messages: Anthropic.Messages.MessageParam[] = [
@@ -85,6 +93,14 @@ export async function POST(req: NextRequest) {
             content: next > 0 ? `${next} are offered. They have not accepted.` : "No one is offered.",
           });
         }
+        continue;
+      }
+      if (call.name === "read_talk") {
+        results.push({
+          type: "tool_result",
+          tool_use_id: call.id,
+          content: body.heard?.trim() || "Nothing has been said.",
+        });
         continue;
       }
       if (call.name === "speak") {

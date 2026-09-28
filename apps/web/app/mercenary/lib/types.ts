@@ -117,6 +117,8 @@ export interface Settlement {
   people: Villager[];
   /** What the village is doing this week. A sentence, not a count. */
   labor: string;
+  /** What people in the village have said. Empty when nobody from the village was there to say it. */
+  heard: Note[];
 }
 
 export type WeekAction =
@@ -124,6 +126,7 @@ export type WeekAction =
   | { kind: "rest" }
   | { kind: "train"; unitIds: [string, string]; drill: string }
   | { kind: "forage" }
+  | { kind: "search" }
   | { kind: "talk" }
   | { kind: "convert"; direction: "to-good" | "to-basic" }
   | { kind: "recruit"; type: UnitTypeId; count: number; names: string[]; into?: string | "new" }
@@ -137,6 +140,7 @@ export type DeedOrder =
   | { kind: "rest" }
   | { kind: "train"; unitIds: [string, string]; drill: string }
   | { kind: "forage" }
+  | { kind: "search" }
   | { kind: "talk" }
   | { kind: "convert"; direction: "to-good" | "to-basic" }
   | { kind: "recruit"; type: UnitTypeId; count: number; names: string[]; into?: string | "new" }
@@ -186,6 +190,17 @@ export interface Villager {
   alive: boolean;
 }
 
+/** A hidden store of what a band has taken. It stays after the band is gone until someone takes it. */
+export interface HiddenCamp {
+  at: NodeId;
+  coins: number;
+  grain: number;
+  taken: "kept" | "returned" | null;
+  seen: boolean;
+}
+
+export type SearchHit = "bandits" | "camp" | null;
+
 export interface BanditForce {
   count: number;
   origin: string;
@@ -228,7 +243,7 @@ export interface WeekLedger {
 }
 
 export interface PendingBattle {
-  reason: "fight" | "retreat" | "leader";
+  reason: "fight" | "retreat" | "leader" | "ambush";
   sneakNote: string | null;
   from: NodeId;
   approach: string;
@@ -307,6 +322,10 @@ export interface GameState {
   /** The Blackwood band is in Millcross this week. The fight has not been judged yet. */
   pendingRaid: boolean;
   raidDone: boolean;
+  /** Hidden stores. Finding one is a search, not a consequence of the band dying. */
+  camps: HiddenCamp[];
+  /** Set when a search has found something and the company has not chosen yet. */
+  searchHit: SearchHit;
 }
 
 export type Ok<T> = { ok: true; state: T };
@@ -318,11 +337,15 @@ export type Step =
   | { kind: "forest"; state: GameState }
   | { kind: "train"; state: GameState; unitIds: [string, string]; drill: string }
   | { kind: "forage"; state: GameState }
+  | { kind: "search"; state: GameState }
+  | { kind: "search-wait"; state: GameState }
   | { kind: "done"; state: GameState };
 
 export interface ValidatedBattle {
   playerHoldsField: boolean;
   banditDeaths: number;
+  /** Living bandits taken and still in the company's hands. People who got away are not included. */
+  inHand: number;
   deaths: { unitId: string; count: number }[];
   morale: string;
   stance: string;

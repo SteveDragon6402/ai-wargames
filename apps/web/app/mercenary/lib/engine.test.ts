@@ -14,10 +14,14 @@ import {
   applyOutcome,
   applyTraining,
   beginResolution,
+  canAmbush,
   canEnqueue,
   chooseTypes,
   claimReward,
   commitApproach,
+  applySearch,
+  decisionsKnownTo,
+  disbandBand,
   dismissTemporary,
   enqueue,
   finishWeek,
@@ -52,11 +56,14 @@ import {
   setMovement,
   settleLeaderAttack,
   stepQueue,
+  takeCamp,
   takeContract,
   unitsNeeded,
   validateOutcome,
   writeNote,
 } from "./engine";
+import { rollD100 } from "./dice";
+import { SEARCH_SYSTEM, resolveSearchRoll } from "./search";
 import type { GameState } from "./types";
 
 function must<T extends { ok: true; state: GameState }>(result: T | { ok: false; error: string }): GameState {
@@ -278,6 +285,26 @@ describe("blackwood", () => {
     assert.equal(retreatStartsFight(0.05), false);
   });
 
+  it("can be ambushed in the band's forest, and not after a fight or in a town", () => {
+    const wood = { ...playing(), location: "blackwood" as const };
+    assert.equal(canAmbush(wood), true);
+    assert.equal(canAmbush({ ...wood, moraleFromBattle: true }), false);
+    assert.equal(canAmbush({ ...wood, location: "millcross" }), false);
+    assert.equal(canAmbush({ ...wood, bandits: null }), false);
+  });
+
+  it("breaks the band when the leader gives it up, and does not pay", () => {
+    const levied = must(acceptMuster(must(offerMuster(playing(), "millcross", { count: 3, term: "temporary", salary: 0 })), "millcross", "The Fields"));
+    const out = levied.units.find((unit) => unit.name === "The Fields")?.count ?? 0;
+    const gone = disbandBand({ ...levied, location: "blackwood" }, "He will not keep them another week.");
+    assert.ok(out > 0);
+    assert.equal(gone.bandits, null);
+    assert.equal(gone.money, levied.money);
+    assert.equal(gone.units.some((unit) => unit.name === "The Fields"), false);
+    assert.equal(gone.settlements.millcross.able, levied.settlements.millcross.able + out);
+    assert.match(gone.decisions.map((item) => item.text).join(" "), /another week/);
+  });
+
   it("keeps the leader's choice when the numbers are uneven", () => {
     assert.equal(forceComparison(10, 20), "smaller");
     assert.equal(forceComparison(30, 20), "larger");
@@ -301,6 +328,7 @@ describe("blackwood", () => {
       {
         playerHoldsField: true,
         banditDeaths: 10,
+        inHand: 10,
         deaths: [],
         morale: "Shaken and proud.",
         stance: "They keep their ranks.",
@@ -405,6 +433,31 @@ describe("validator", () => {
     assert.ok((whole?.brief.split(" ").length ?? 0) > 70);
   });
 
+  it("does not take a band that slipped away", () => {
+    let state = openBattle({ ...playing(), location: "blackwood", cameFrom: "millcross" }, "fight", null);
+    state = must(commitApproach(state, "The file holds the track.", 0));
+    const fought = applyOutcome(
+      state,
+      {
+        playerHoldsField: true,
+        banditDeaths: 0,
+        inHand: 0,
+        deaths: [],
+        morale: "They are unmoved.",
+        stance: "They hold where they stopped.",
+        condition: "No one is down.",
+        lines: [],
+      },
+      "The band slipped away intact. No one died.",
+      "A longer account of the same break."
+    );
+    assert.equal(fought.result, "stood");
+    assert.equal(fought.state.screen, "result");
+    assert.equal(fought.state.banditSurvivors, null);
+    assert.equal(fought.state.bandits?.count, 20);
+    assert.equal(fought.state.location, "blackwood");
+  });
+
   it("records the fight it was given", () => {
     const state = playing();
     const fought = applyOutcome(
@@ -412,6 +465,7 @@ describe("validator", () => {
       {
         playerHoldsField: true,
         banditDeaths: 20,
+        inHand: 0,
         deaths: [],
         morale: "Proud.",
         stance: "They hold.",
@@ -517,6 +571,7 @@ describe("opening loop", () => {
       {
         playerHoldsField: true,
         banditDeaths: 20,
+        inHand: 0,
         deaths: [{ unitId: state.units[0].id, count: 1 }],
         morale: "Proud and thin.",
         stance: "They keep the track.",
@@ -729,6 +784,77 @@ describe("settlement accounts", () => {
   });
 });
 
+describe("a search", () => {
+  it("spends the week's action and only works where a camp is still hidden", () => {
+    const wood = { ...playing(), location: "blackwood" as const };
+    const planned = must(setDeed(wood, { kind: "search" }));
+    assert.equal(planned.weekPlan.deed.kind, "search");
+    assert.equal(canEnqueue(planned, { kind: "forage" }), "One action this week.");
+    assert.equal(canEnqueue(playing(), { kind: "search" }), "There is no forest here to search.");
+    assert.equal(stepQueue(beginResolution(planned)).kind, "search");
+  });
+
+  it("maps one d100 onto nothing, the band, or the camp", () => {
+    assert.equal(resolveSearchRoll(10, 40, 15, true), "camp");
+    assert.equal(resolveSearchRoll(30, 40, 15, true), "bandits");
+    assert.equal(resolveSearchRoll(80, 40, 15, true), "nothing");
+    assert.equal(resolveSearchRoll(30, 40, 15, false), "nothing");
+    assert.equal(resolveSearchRoll(10, 40, 15, false), "camp");
+    assert.equal(resolveSearchRoll(50, 100, 100, true), "camp");
+    assert.equal(resolveSearchRoll(51, 100, 100, true), "bandits");
+    assert.doesNotMatch(SEARCH_SYSTEM, /\bplayer\b/i);
+  });
+
+  it("rolls a d100 in Python", () => {
+    for (let i = 0; i < 5; i += 1) {
+      const face = rollD100();
+      assert.equal(Number.isInteger(face), true);
+      assert.ok(face >= 1 && face <= 100);
+    }
+  });
+
+  it("does not find the camp because the band is gone", () => {
+    const gone = disbandBand({ ...playing(), location: "blackwood" }, "They walked away.");
+    assert.equal(gone.bandits, null);
+    assert.equal(gone.camps[0]?.seen, false);
+    assert.equal(gone.camps[0]?.taken, null);
+    assert.equal(gone.camps[0]?.coins, 80);
+    const missed = must(applySearch(gone, "bandits"));
+    assert.equal(missed.searchHit, null);
+    assert.equal(missed.camps[0]?.seen, false);
+    const found = must(applySearch({ ...gone, resolveIndex: 0 }, "camp"));
+    assert.equal(found.searchHit, "camp");
+    assert.equal(found.camps[0]?.seen, true);
+    assert.equal(found.bandits, null);
+  });
+
+  it("keeps the hoard quiet unless village soldiers were there", () => {
+    const wood = {
+      ...playing(),
+      location: "blackwood" as const,
+      searchHit: "camp" as const,
+      camps: playing().camps.map((camp) => ({ ...camp, seen: true })),
+    };
+    const kept = must(takeCamp(wood, "kept"));
+    assert.equal(kept.money, wood.money + 80);
+    assert.equal(kept.basicFood, wood.basicFood + 55);
+    assert.equal(kept.camps[0]?.taken, "kept");
+    assert.equal(kept.settlements.millcross.heard.length, 0);
+    assert.match(kept.decisions.at(-1)?.text ?? "", /camp/);
+    assert.equal(decisionsKnownTo(kept, "millcross").some((item) => /\bcamp\b/i.test(item.text)), false);
+
+    const levy = { ...wood.units[0], id: "levy", name: "The Fields", count: 3, home: "millcross" as const, term: "temporary" as const };
+    const withMen = { ...wood, units: [...wood.units, levy] };
+    const returned = must(takeCamp(withMen, "returned"));
+    assert.equal(returned.money, withMen.money);
+    assert.equal(returned.settlements.millcross.granary, wood.settlements.millcross.granary + 55);
+    assert.equal(returned.settlements.millcross.elder.coins, wood.settlements.millcross.elder.coins + 80);
+    assert.match(returned.settlements.millcross.heard[0]?.text ?? "", /brought the coin and the grain back/);
+    assert.equal(decisionsKnownTo(returned, "millcross").some((item) => /\bcamp\b/i.test(item.text)), true);
+    assert.equal(decisionsKnownTo(returned, "harrow").some((item) => /\bcamp\b/i.test(item.text)), false);
+  });
+});
+
 function beaten(state: GameState): GameState {
   let next = openBattle(state, "fight", null);
   next = must(commitApproach(next, "The bows shoot, then the file closes.", 0));
@@ -741,6 +867,7 @@ function beaten(state: GameState): GameState {
     {
       playerHoldsField: true,
       banditDeaths: 20,
+      inHand: 0,
       deaths: [],
       morale: "Shaken and proud.",
       stance: "They keep their ranks.",

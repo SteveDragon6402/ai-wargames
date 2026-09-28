@@ -3,7 +3,7 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { forceComparison } from "@/app/mercenary/lib/engine";
 import { anthropicClient, createMessage, toolUses } from "../../model";
 
-const TOOLS: Anthropic.Tool[] = [
+const HISTORY: Anthropic.Tool[] = [
   {
     name: "read_history_with_company",
     description: "Read this leader's history with this mercenary company.",
@@ -14,19 +14,33 @@ const TOOLS: Anthropic.Tool[] = [
     description: "Read this leader's own history.",
     input_schema: { type: "object", properties: {} },
   },
-  {
-    name: "decide_attack",
-    description: "Decide whether to attack.",
-    input_schema: {
-      type: "object",
-      properties: {
-        attack: { type: "boolean" },
-        reason: { type: "string" },
-      },
-      required: ["attack", "reason"],
-    },
-  },
 ];
+
+const DECIDE_ATTACK: Anthropic.Tool = {
+  name: "decide_attack",
+  description: "Decide whether to attack.",
+  input_schema: {
+    type: "object",
+    properties: {
+      attack: { type: "boolean" },
+      reason: { type: "string" },
+    },
+    required: ["attack", "reason"],
+  },
+};
+
+const DECIDE_STAY: Anthropic.Tool = {
+  name: "decide_stay",
+  description: "Decide whether the band keeps together. stay is false if you break it up.",
+  input_schema: {
+    type: "object",
+    properties: {
+      stay: { type: "boolean" },
+      reason: { type: "string" },
+    },
+    required: ["stay", "reason"],
+  },
+};
 
 export async function POST(req: NextRequest) {
   const client = anthropicClient();
@@ -41,21 +55,41 @@ export async function POST(req: NextRequest) {
     withCompany?: string[];
     persona?: string;
     stores?: string;
+    ask?: "attack" | "stay";
+    occasion?: string;
+    fight?: string;
   } | null;
 
   if (!body || typeof body.playerMen !== "number" || typeof body.banditMen !== "number" || !body.company || !body.bandits) {
     return NextResponse.json({ error: "The leader has nothing to judge." }, { status: 400 });
   }
 
+  const staying = body.ask === "stay";
   const comparison = forceComparison(body.playerMen, body.banditMen);
   const withCompany = body.withCompany ?? [];
   const general = body.generalHistory ?? "";
+  const stores = body.stores || "You have been taking from the road.";
+  const situation = staying
+    ? `The fight is over.
+What happened:
+${body.fight?.trim() || "The fight ended."}
+
+Their men still standing: ${body.playerMen}
+Your men still with you: ${body.banditMen}`
+    : body.occasion?.trim()
+      ? `Armed men are in your forest. They are not looking for you.
+${body.occasion.trim()}
+
+Their men: ${body.playerMen}
+Your men: ${body.banditMen}`
+      : `You found armed men moving through your ground.
+Their men: ${body.playerMen}
+Your men: ${body.banditMen}`;
+  const verb = staying ? "decide_stay" : "decide_attack";
   const messages: Anthropic.Messages.MessageParam[] = [
     {
       role: "user",
-      content: `You found armed men moving through your ground.
-Their men: ${body.playerMen}
-Your men: ${body.banditMen}
+      content: `${situation}
 
 Them:
 ${body.company}
@@ -64,9 +98,9 @@ Your band:
 ${body.bandits}
 
 Your stores:
-${body.stores || "You have been taking from the road."}
+${stores}
 
-Call your history tools if you need them, then decide_attack.`,
+Call your history tools if you need them, then ${verb}.`,
     },
   ];
 
@@ -74,7 +108,7 @@ Call your history tools if you need them, then decide_attack.`,
     const response = await createMessage(client, {
       max_tokens: 600,
       system: body.persona?.trim() || "You lead this band. You have men, coin, grain, and what you have taken. Decide for yourself.",
-      tools: TOOLS,
+      tools: [...HISTORY, staying ? DECIDE_STAY : DECIDE_ATTACK],
       messages,
     });
     if ("error" in response) return NextResponse.json({ error: response.error }, { status: 500 });
@@ -82,16 +116,23 @@ Call your history tools if you need them, then decide_attack.`,
     const calls = toolUses(response);
     if (!calls.length) {
       messages.push({ role: "assistant", content: response.content });
-      messages.push({ role: "user", content: "Call decide_attack." });
+      messages.push({ role: "user", content: `Call ${verb}.` });
       continue;
     }
 
-    let decision: { attack: boolean; reason: string } | null = null;
+    let attack: boolean | null = null;
+    let stay: boolean | null = null;
+    let reason = "";
     const results: Anthropic.Messages.ToolResultBlockParam[] = [];
     for (const call of calls) {
-      const input = (call.input ?? {}) as { attack?: unknown; reason?: unknown };
+      const input = (call.input ?? {}) as { attack?: unknown; stay?: unknown; reason?: unknown };
       if (call.name === "decide_attack" && typeof input.attack === "boolean" && typeof input.reason === "string") {
-        decision = { attack: input.attack, reason: input.reason.trim() };
+        attack = input.attack;
+        reason = input.reason.trim();
+        results.push({ type: "tool_result", tool_use_id: call.id, content: "Noted." });
+      } else if (call.name === "decide_stay" && typeof input.stay === "boolean" && typeof input.reason === "string") {
+        stay = input.stay;
+        reason = input.reason.trim();
         results.push({ type: "tool_result", tool_use_id: call.id, content: "Noted." });
       } else if (call.name === "read_history_with_company") {
         results.push({
@@ -105,9 +146,8 @@ Call your history tools if you need them, then decide_attack.`,
         results.push({ type: "tool_result", tool_use_id: call.id, content: "Nothing." });
       }
     }
-    if (decision) {
-      return NextResponse.json({ attack: decision.attack, reason: decision.reason, comparison });
-    }
+    if (stay !== null) return NextResponse.json({ stay, reason, comparison });
+    if (attack !== null) return NextResponse.json({ attack, reason, comparison });
     messages.push({ role: "assistant", content: response.content });
     messages.push({ role: "user", content: results });
   }

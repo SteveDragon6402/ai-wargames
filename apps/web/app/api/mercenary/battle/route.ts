@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type Anthropic from "@anthropic-ai/sdk";
-import { BATTLER_SYSTEM, SUMMARIZER_SYSTEM, TRANSLATOR_SYSTEM, battlerPrompt, fightSides, translatorPrompt } from "@/app/mercenary/lib/battle";
+import { BATTLER_SYSTEM, SUMMARIZER_SYSTEM, TRANSLATOR_SYSTEM, battlerPrompt, fightSides, shortOf, translatorPrompt } from "@/app/mercenary/lib/battle";
 import { validateOutcome } from "@/app/mercenary/lib/engine";
 import type { GameState } from "@/app/mercenary/lib/types";
 import { parseFight, type FightResult } from "@/app/mercenary/lib/world";
@@ -31,6 +31,7 @@ const RECORD_FIGHT: Anthropic.Tool = {
           required: ["id", "count"],
         },
       },
+      inHand: { type: "integer", description: "How many of force B were taken. 0 if they withdrew or nobody was taken." },
       grainToB: { type: "integer" },
       coinsToB: { type: "integer" },
       morale: { type: "string" },
@@ -45,7 +46,7 @@ const RECORD_FIGHT: Anthropic.Tool = {
         },
       },
     },
-    required: ["holds", "dead", "grainToB", "coinsToB", "morale", "stance", "condition"],
+    required: ["holds", "dead", "inHand", "grainToB", "coinsToB", "morale", "stance", "condition"],
   },
 };
 
@@ -133,21 +134,22 @@ export async function POST(req: NextRequest) {
     client,
     SUMMARIZER_SYSTEM,
     SUMMARISE,
-    `Account:\n${account}\n\nRecorded: force ${fight.holds.toUpperCase()} holds the ground. Dead: ${fight.dead.map((row) => `${row.id} ${row.count}`).join(", ") || "none"}.`,
+    `Account:\n${account}\n\nRecorded: force ${fight.holds.toUpperCase()} holds the ground. Dead: ${fight.dead.map((row) => `${row.id} ${row.count}`).join(", ") || "none"}. In hand: ${fight.inHand}. Anyone not in hand got away.`,
     800
   );
   const summary =
     "error" in told
       ? firstParagraph(account)
       : typeof (told.input as { summary?: unknown })?.summary === "string" && (told.input as { summary: string }).summary.trim().length >= 20
-        ? (told.input as { summary: string }).summary.trim()
-        : firstParagraph(account);
+        ? shortOf((told.input as { summary: string }).summary)
+        : shortOf(firstParagraph(account));
 
   if (raid) return NextResponse.json({ brief: summary, chronicle: account, outcome: fight satisfies FightResult });
 
   const validated = validateOutcome(state, {
     playerHoldsField: fight.holds === "a",
     banditDeaths: fight.dead.find((row) => row.id === "band")?.count ?? 0,
+    inHand: fight.inHand,
     deaths: fight.dead.filter((row) => row.id !== "band" && row.id !== "village").map((row) => ({ unitId: row.id, count: row.count })),
     morale: fight.morale,
     stance: fight.stance,

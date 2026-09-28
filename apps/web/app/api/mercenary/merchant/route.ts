@@ -19,6 +19,7 @@ interface MerchantBody {
   self?: string;
   labor?: string;
   granary?: number;
+  heard?: string;
   household?: { name: string; grain: number; coins: number; possessions: string[]; relations: { id: string; bond: string }[] };
   people?: { id: string; name: string; description: string; alive: boolean; grain: number; coins: number; possessions: string[]; relations: { id: string; bond: string }[] }[];
 }
@@ -137,7 +138,7 @@ Your tools read your house, your sacks, your neighbours, and the common granary,
         results.push({
           type: "tool_result",
           tool_use_id: call.id,
-          content: `Village granary ${body.granary ?? 0}. ${body.labor || ""}`,
+          content: `Village granary ${body.granary ?? 0}. ${body.labor || ""}${body.heard ? ` Heard in the village: ${body.heard}` : ""}`,
         });
         continue;
       }

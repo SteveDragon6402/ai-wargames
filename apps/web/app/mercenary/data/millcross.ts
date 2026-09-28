@@ -32,6 +32,7 @@ function blank(id: SettlementId): Settlement {
     muster: null,
     people: [],
     labor: "",
+    heard: [],
   };
 }
 
