@@ -192,6 +192,56 @@ describe("life path", () => {
     assert.equal(starkBent.options.find((option) => option.points === 1)?.label, "Unyielding");
   });
 
+  it("lets the raising decide the thing you own", () => {
+    function held(station: StationId, raisedId: string) {
+      const born = questionAt(0, []);
+      const stationQuestion = questionAt(1, [{ questionId: born.id, optionId: "fivekings" }]);
+      const origin = questionAt(2, [
+        { questionId: born.id, optionId: "fivekings" },
+        { questionId: stationQuestion.id, optionId: station },
+      ]);
+      const answers: Answer[] = [
+        { questionId: born.id, optionId: "fivekings" },
+        { questionId: stationQuestion.id, optionId: station },
+        { questionId: origin.id, optionId: origin.options[0].id },
+      ];
+      const third = questionAt(3, answers);
+      answers.push({ questionId: third.id, optionId: third.options[0].id });
+      const fourth = questionAt(4, answers);
+      const raisedOption = fourth.options.find((option) => option.id === raisedId) ?? fourth.options[0];
+      answers.push({ questionId: fourth.id, optionId: raisedOption.id });
+      if (station === "trade") {
+        const fifth = questionAt(5, answers);
+        const tradeRaised = fifth.options.find((option) => option.id === raisedId) ?? fifth.options[0];
+        answers.push({ questionId: fifth.id, optionId: tradeRaised.id });
+      } else {
+        const fifth = questionAt(5, answers);
+        answers.push({ questionId: fifth.id, optionId: fifth.options[0].id });
+      }
+      return questionAt(6, answers);
+    }
+    const sword = held("great", "sword");
+    assert.match(sword.prompt, /weapon/i);
+    assert.equal(sword.options.find((option) => option.points === 5)?.label, "A Valyrian steel sword");
+    assert.equal(sword.options.find((option) => option.points === 4)?.label, "A very fine sword, and armor to match");
+    const lesserSword = held("lesser", "sword");
+    assert.equal(lesserSword.options.find((option) => option.points === 5)?.label, "A Valyrian steel sword");
+    const rule = held("great", "rule");
+    assert.equal(rule.options.find((option) => option.points === 5)?.label, "Dragon eggs");
+    const coin = held("great", "coin");
+    assert.match(coin.prompt, /rich/i);
+    const study = held("great", "study");
+    assert.match(study.prompt, /study/i);
+    assert.equal(study.options.find((option) => option.points === 5)?.label, "A glass candle");
+    const shop = held("trade", "own");
+    assert.doesNotMatch(shop.prompt, /bent/i);
+    assert.match(shop.prompt, /shop/i);
+    for (const station of STATIONS) {
+      const text = held(station, "sword").prompt + held(station, station === "trade" ? "own" : "no-such");
+      assert.doesNotMatch(text, /what can you already do/i);
+    }
+  });
+
   it("stays deterministic across random paths", () => {
     const random = mulberry32(7);
     for (let n = 0; n < 30; n += 1) {

@@ -340,13 +340,45 @@ export const GREAT_RAISED: Row[] = [
   ["indulgent", "Raised indulgent, nothing special", "Kept, praised, and taught no work.", 1],
 ];
 
-export const GREAT_CAN: Row[] = [
-  ["court", "Hold a court", "You can sit the hall and be obeyed.", 5],
-  ["fight", "Fight", "You can hold a sword in a real press.", 4],
-  ["accounts", "Keep the accounts", "You can say what the house can spend.", 3],
-  ["read", "Read, and remember", "You can use a book and a raven.", 2],
-  ["little", "Very little", "You have been kept from the work.", 1],
+const WEAPON: Row[] = [
+  ["valyrian", "A Valyrian steel sword", "The rarest steel in the world.", 5],
+  ["fine", "A very fine sword, and armor to match", "Sharp, fitted, and worth a name.", 4],
+  ["castle", "Castle-forged sword and mail", "Honest steel.", 3],
+  ["serviceable", "A serviceable sword", "It will cut. It will not be remembered.", 2],
+  ["poor", "A poor blade", "Notched, borrowed, or taken off a dead man.", 1],
 ];
+
+export const HOUSE_HELD: Record<string, Row[]> = {
+  rule: [
+    ["eggs", "Dragon eggs", "A thing that should not be in a mortal house.", 5],
+    ["keys", "The keys to a castle", "A holdfast that answers when you turn them.", 4],
+    ["seal", "A seal that can bind the house", "Your word, in wax, spends people.", 3],
+    ["charters", "Charters and rents", "Paper that says who owes what.", 2],
+    ["clothes", "The clothes they dressed you in", "No keys. No seal. Nothing that is yours.", 1],
+  ],
+  sword: WEAPON,
+  coin: [
+    ["fortune", "A fortune of your own", "Gold enough to hire swords.", 5],
+    ["rich", "Rich", "Lands, ships, or a strongroom in your name.", 4],
+    ["comfortable", "Comfortable", "The house's coin is open to you.", 3],
+    ["purse", "A purse, and an allowance", "You are kept in coin, not given it.", 2],
+    ["nothing", "The books, and almost no gold", "You know the numbers. You do not own them.", 1],
+  ],
+  study: [
+    ["candle", "A glass candle", "Oldtown's rarest thing, and it is in your keeping.", 5],
+    ["chain", "A chain begun in the rare metals", "Valyrian steel, or the links that take years.", 4],
+    ["books", "A chest of books and maps", "A scholar's working wealth.", 3],
+    ["raven", "Letters, and the use of the maester's tower", "You may read. The chain is not yours.", 2],
+    ["borrowed", "One borrowed book", "Learning, and nothing you can keep.", 1],
+  ],
+  indulgent: [
+    ["jewels", "Jewels, silks, and a horse you do not need", "The best of being kept.", 5],
+    ["wardrobe", "A wardrobe and a hawk", "Pretty, and a sport.", 4],
+    ["table", "Fine clothes and a full table", "Comfort, and no duty attached.", 3],
+    ["pretty", "Pretty things, and no tool", "You were decorated.", 2],
+    ["none", "Nothing of your own", "Even the clothes are the house's.", 1],
+  ],
+};
 
 export const LESSER_HOUSES: Record<EraId, Row[]> = {
   conciliator: [
@@ -385,14 +417,6 @@ export const LESSER_HOUSES: Record<EraId, Row[]> = {
     ["reed", "House Reed of the Neck", "The crannogmen. Few, and hidden.", 1],
   ],
 };
-
-export const LESSER_CAN: Row[] = [
-  ["speak", "Speak for the house", "The hall listens when you stand.", 5],
-  ["fight", "Fight", "You can hold a sword for the house.", 4],
-  ["books", "Keep the books", "You can say what the hall can spend.", 3],
-  ["read", "Read", "You can use a letter and a raven.", 2],
-  ["little", "Very little", "You have been kept from the work.", 1],
-];
 
 export const KNIGHT_WHERE: Record<EraId, Row[]> = {
   conciliator: [
@@ -456,13 +480,37 @@ export const KNIGHT_BENT: Row[] = creed(
   ["A cloak over a killer", "The vows as a license."],
 );
 
-export const KNIGHT_CAN: Row[] = [
-  ["command", "Command a few men", "They will ride where you point.", 5],
-  ["fight", "Fight", "You can hold a press.", 4],
-  ["ransom", "Ransom, and pay", "You know what a life is worth in coin.", 3],
-  ["letter", "Read a letter", "A command, a debt, a name.", 2],
-  ["ride", "Ride, and little else", "A horse, and no trade of war.", 1],
-];
+export const KNIGHT_HELD: Record<string, Row[]> = {
+  tower: [
+    ["tower", "A tower and a village in your name", "The holding is yours.", 5],
+    ["grant", "A grant of land, written down", "Paper that can become a roof.", 4],
+    ["keys", "The keys, while your knight lives", "You hold them. You do not own them.", 3],
+    ["room", "Arms, and a room in the tower", "A place to sleep, and a blade.", 2],
+    ["bed", "A bed in the barracks", "No claim. No key.", 1],
+  ],
+  sword: WEAPON,
+  pay: [
+    ["ransoms", "Ransoms enough to buy a tower", "Other men's lives, turned into stone.", 5],
+    ["purse", "A strong purse from paid service", "Coin you earned, and still have.", 4],
+    ["wage", "A wage, a horse, and your own arms", "The ordinary pay of a sword.", 3],
+    ["season", "Coin for a season", "It will be gone when the season is.", 2],
+    ["unpaid", "Unpaid", "You know what a life is worth. You have not been given it.", 1],
+  ],
+  letters: [
+    ["war", "A lord's letters, and a book of war", "Writing that can move men.", 5],
+    ["maps", "Maps, and written orders you can use", "The country, on paper, is yours to read.", 4],
+    ["books", "A few books of your own", "Enough to be a reader, not a maester.", 3],
+    ["one", "One book", "Yours, and thin.", 2],
+    ["none", "A letter you can read and may not keep", "The skill, and nothing in your chest.", 1],
+  ],
+  soft: [
+    ["horse", "A fine horse and clothes above your station", "Kept well, and not made dangerous.", 5],
+    ["gentle", "Good clothes and a gentle horse", "Comfortable, and unblooded.", 4],
+    ["gear", "Comfortable gear you did not earn", "Soft leather. No name on it.", 3],
+    ["poor", "Soft living, and a poor sword", "You were spared the yard.", 2],
+    ["none", "Nothing of your own, and no skill of war", "Kept. Not armed.", 1],
+  ],
+};
 
 export const TRADE_CRAFT: Row[] = [
   ["gold", "A goldsmith and a changer", "Coin, and the people who need it counted.", 5],
@@ -515,7 +563,7 @@ export const TRADE_BENCH: Row[] = [
   ["skilled", "A skilled child, still of the shop", "The work is yours. The shop is not, yet.", 4],
   ["apprentice", "Apprenticed to a good master", "A place, and no blood claim.", 3],
   ["rough", "Kept for the rough work", "Hands, and no secret of the craft.", 2],
-  ["unclaimed", "The shop does not claim you", "You sleep there. It is not yours.", 1],
+  ["unclaimed", "Not taken for the shop", "You were never brought into the craft. The worst place at the bench.", 1],
 ];
 
 export const TRADE_RAISED: Row[] = [
@@ -526,13 +574,43 @@ export const TRADE_RAISED: Row[] = [
   ["indulgent", "Raised indulgent, away from the work", "Kept, and not made into the craft.", 1],
 ];
 
-export const TRADE_BENT: Row[] = creed(
-  ["The work, done right", "The creed of the bench, said straight."],
-  ["A fair price, paid", "The saying a good shop is known by."],
-  ["The shop before the person", "The working version."],
-  ["Coin above the work", "The hard version."],
-  ["The measure, thumbed", "A cheat, and a name that will not survive it."],
-);
+export const TRADE_HELD: Record<string, Row[]> = {
+  own: [
+    ["free", "The shop, the stock, and the name, free of debt", "The door is yours.", 5],
+    ["debt", "The shop, with a debt still on it", "Yours, and not yet clear.", 4],
+    ["share", "A half-share of the stock", "Part of the shop. Not the name.", 3],
+    ["tools", "Your tools, and a corner of the bench", "The work you can carry out.", 2],
+    ["none", "Nothing of the shop is yours", "You were raised toward it, and given none of it.", 1],
+  ],
+  bench: [
+    ["finest", "The finest tools of the craft, and stock to use them", "A lord would notice the bench.", 5],
+    ["set", "A complete set of your own", "Nothing borrowed that the work needs.", 4],
+    ["good", "Good tools", "Enough to do the craft properly.", 3],
+    ["few", "A few tools, some of them the master's", "You can work. You cannot leave with the shop.", 2],
+    ["worn", "Worn-out tools, or none", "The bench did not equip you.", 1],
+  ],
+  accounts: [
+    ["fortune", "A fortune in the strongbox, in your name", "The shop's gold, and it is yours.", 5],
+    ["owed", "Coin, and debts owed to you", "Rich, on paper and in the box.", 4],
+    ["share", "A comfortable share of the takings", "You are paid as someone who counts.", 3],
+    ["wage", "A wage", "Coin for the work, and nothing stored.", 2],
+    ["none", "The books, and no gold", "You can say what the shop is worth. You do not own it.", 1],
+  ],
+  letters: [
+    ["credit", "Letters of credit from a great house", "Paper that spends like gold.", 5],
+    ["contracts", "Contracts in your hand", "The shop's deals, and your name on them.", 4],
+    ["papers", "The shop's papers, and you understand them", "Knowledge. Not ownership.", 3],
+    ["few", "A few letters", "Yours, and thin.", 2],
+    ["none", "One paper you do not own", "You can read it. You cannot keep it.", 1],
+  ],
+  indulgent: [
+    ["silks", "Silks and jewels, bought with the shop's coin", "The best of being kept off the bench.", 5],
+    ["clothes", "Fine clothes", "You look like the shop is richer than you are.", 4],
+    ["room", "A soft room above the work", "Comfort, and no tool in it.", 3],
+    ["treats", "Treats, and no skill", "You were fed. You were not taught.", 2],
+    ["none", "Nothing of your own", "Kept away from the work, and given nothing to show for it.", 1],
+  ],
+};
 
 export function folkLand(war: string): Row[] {
   return [
@@ -568,13 +646,43 @@ export const FOLK_BENT: Row[] = creed(
   ["We take what is left, and call it fair", "Hunger, with a clean story."],
 );
 
-export const FOLK_CAN: Row[] = [
-  ["winter", "Keep a house through a winter", "People live because you planned.", 5],
-  ["day", "Work a full day", "The labor is real.", 4],
-  ["count", "Count a store", "You know what will last.", 3],
-  ["prayers", "Say the prayers right", "The gods, and no other tool.", 2],
-  ["little", "Very little", "You have not been taught a living.", 1],
-];
+export const FOLK_HELD: Record<string, Row[]> = {
+  roof: [
+    ["croft", "The croft, in your name", "The roof is yours.", 5],
+    ["team", "A team and a plow", "The means to work your own ground.", 4],
+    ["store", "Tools, and a full winter store", "Enough to last, and to start again.", 3],
+    ["bed", "A bed and a blanket of your own", "A place that is yours inside someone else's house.", 2],
+    ["none", "Nothing in your name", "You keep the roof. You do not own it.", 1],
+  ],
+  work: [
+    ["boat", "A boat, or a team, that is yours", "The best tool this life gets.", 5],
+    ["good", "Good tools of the work", "Yours, and fit for a full day.", 4],
+    ["decent", "A decent set", "Enough to be hired as someone who has them.", 3],
+    ["borrowed", "Borrowed tools", "You can work until someone asks for them back.", 2],
+    ["hands", "Your hands, and nothing else", "No tool. No beast. No boat.", 1],
+  ],
+  stores: [
+    ["hoard", "A granary that is yours, or coin buried", "A fortune, at this station.", 5],
+    ["season", "A season ahead, stored", "You will eat when others are buying.", 4],
+    ["winter", "Enough for one winter", "The ordinary good store.", 3],
+    ["coppers", "A purse of coppers", "A little, and it shows.", 2],
+    ["none", "Nothing stored", "You minded the stores. None of them are yours.", 1],
+  ],
+  prayers: [
+    ["holy", "A holy thing of real worth", "A crystal, a rare book, or a weirwood token.", 5],
+    ["shrine", "A shrine that is yours to keep", "The gods have a place with your name on the care of it.", 4],
+    ["book", "A book of prayers, or a well-made icon", "Yours.", 3],
+    ["tokens", "Cheap tokens", "Faith you can carry, and little else.", 2],
+    ["words", "The words, and nothing you can hold", "You were taught to pray. You were given nothing.", 1],
+  ],
+  nothing: [
+    ["gift", "A lord's gift, fine and useless", "The best thing idleness gets.", 5],
+    ["clothes", "Good clothes you did not work for", "You look kept.", 4],
+    ["trinket", "A trinket", "Small, and yours.", 3],
+    ["food", "Extra food, and no skill", "You were fed. You were not taught.", 2],
+    ["none", "Nothing of your own", "Kept, and empty-handed.", 1],
+  ],
+};
 
 export const CHIPS: Record<StationId, { want: string[]; hate: string[]; love: string[] }> = {
   great: {
