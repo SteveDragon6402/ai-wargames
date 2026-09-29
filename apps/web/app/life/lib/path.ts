@@ -1,35 +1,33 @@
 import {
-  BELIEF,
   BENT,
   CHIPS,
   ERA_CONTEXT,
   ERA_ROWS,
   FOLK_BENT,
-  FOLK_LINE,
+  FOLK_CAN,
   FOLK_RAISED,
   FOLK_WORK,
   GREAT_BLOOD,
+  GREAT_CAN,
+  GREAT_PLACE,
   GREAT_RAISED,
-  HOUSE_FLAVOR,
   KNIGHT_BENT,
   KNIGHT_BESIDE,
+  KNIGHT_CAN,
   KNIGHT_RAISED,
   KNIGHT_WHERE,
-  LESSER_BENT,
-  LESSER_CARRY,
-  LESSER_PLACE,
-  LESSER_RAISED,
+  LESSER_CAN,
+  LESSER_HOUSES,
   STATIONS,
   TRADE_BENCH,
   TRADE_BENT,
   TRADE_CRAFT,
+  TRADE_RAISED,
   TRADE_TOWN,
-  TRADE_TROUBLE,
   folkLand,
-  knightOath,
-  type Row,
 } from "./path-data";
 import type { Answer, ChipSet, EraId, LifeContext, Option, Price, Question, StationId } from "./types";
+import type { Row } from "./path-data";
 
 const PRICES = new Set<Price>([1, 2, 3, 4, 5]);
 
@@ -77,110 +75,53 @@ function picked(index: number, prior: Answer[]): Option {
   return requireOption(questionAt(index, prior.slice(0, index)), prior[index]);
 }
 
+function bentOf(houseId: string): Row[] {
+  const bent = BENT[houseId];
+  if (!bent) throw new Error("That house has no bent.");
+  return bent;
+}
+
 function greatQuestions(index: number, prior: Answer[], era: EraId): Question {
   if (index === 2) return questionOf("great-blood", "Which blood?", GREAT_BLOOD[era]);
   const house = picked(2, prior);
-  const flavor = HOUSE_FLAVOR[house.id];
-  if (!flavor) throw new Error("That house has no bent.");
-  if (index === 3) return questionOf("great-bent", `What is your bent, in ${house.label}?`, BENT[flavor]);
+  if (index === 3) return questionOf("great-who", `Who are you, in ${house.label}?`, GREAT_PLACE);
   if (index === 4) return questionOf("great-raised", `How did ${house.label} raise you?`, GREAT_RAISED);
-  if (index === 5) return questionOf("great-holds", "Who holds you, before any of this breaks?", holds(house.label));
-  return questionOf("great-believe", `What do you already believe, born to ${house.label}?`, BELIEF[flavor]);
-}
-
-function holds(house: string): Row[] {
-  return [
-    ["sibling", "A sibling", `If ${house} spends one of you, it spends both.`, 5],
-    ["parent", "A parent", "Their enemies are already yours.", 4],
-    ["sword", "A sworn sword", "Someone whose work is to stand between you and the yard.", 3],
-    ["forbidden", "Someone you should not love", "A closed door if anyone learns it. A life, if they do not.", 2],
-    ["none", "No one", "You are free, and you will be alone when it starts.", 1],
-  ];
+  if (index === 5) return questionOf("great-bent", `What is the bent of ${house.label}?`, bentOf(house.id));
+  return questionOf("great-can", `What can you already do for ${house.label}?`, GREAT_CAN);
 }
 
 function lesserQuestions(index: number, prior: Answer[], era: EraId): Question {
-  const houses = lesserHouses(era);
-  if (index === 2) return questionOf("lesser-house", "Which house?", houses);
+  if (index === 2) return questionOf("lesser-house", "Which house?", LESSER_HOUSES[era]);
   const house = picked(2, prior);
-  if (index === 3) return questionOf("lesser-place", `What is your place in ${house.label}?`, LESSER_PLACE);
-  if (index === 4) return questionOf("lesser-bent", `What is your bent, in ${house.label}?`, LESSER_BENT);
-  if (index === 5) return questionOf("lesser-raised", `How were you raised, in ${house.label}?`, LESSER_RAISED);
-  return questionOf("lesser-carry", "What loyalty or grievance do you carry in?", LESSER_CARRY);
-}
-
-function lesserHouses(era: EraId): Row[] {
-  const houses: Record<EraId, Row[]> = {
-    fivekings: [
-      ["manderly", "House Manderly of White Harbor", "A city, silver, and room a northern house rarely has.", 5],
-      ["royce", "House Royce of Runestone", "Bronze, and the Bloody Gate between you and the war.", 4],
-      ["reed", "House Reed of the Neck", "Secret country. Strange room, and few friends outside the bog.", 3],
-      ["frey", "House Frey of the Twins", "The crossing is power. It is also a trap.", 2],
-      ["bolton", "House Bolton of the Dreadfort", "A knife of a house. Little room to be anything else.", 1],
-    ],
-    robert: [
-      ["mallister", "House Mallister of Seagard", "A respected west-coast house, not yet spent by the war.", 5],
-      ["royce", "House Royce of Runestone", "The gate, and a lord who helps start the rebellion.", 4],
-      ["dustin", "House Dustin of Barrowton", "Northern, and the war will take their riders.", 3],
-      ["connington", "House Connington of Griffin's Roost", "On the dragon's side. The roost does not survive the choice cleanly.", 2],
-      ["darry", "House Darry", "Loyal to the dragons. The war guts houses that stay loyal.", 1],
-    ],
-    dance: [
-      ["manderly", "House Manderly of White Harbor", "Far north, a city, and late to the dragons.", 5],
-      ["blackwood", "House Blackwood of Raventree", "An old gods house in the riverlands, with a side still to pick.", 4],
-      ["celtigar", "House Celtigar of Claw Isle", "Close to the dragons, and small enough to be a retainer.", 3],
-      ["bracken", "House Bracken of Stone Hedge", "The old feud, and a riverlands war on the doorstep.", 2],
-      ["darklyn", "House Darklyn of Duskendale", "The crownlands. This war burns towns like Duskendale.", 1],
-    ],
-    blackfyre: [
-      ["reyne", "House Reyne of Castamere", "Rich, ambitious, and not yet broken.", 5],
-      ["yronwood", "House Yronwood", "Dornish power with room to pick a pretender or refuse one.", 4],
-      ["peake", "House Peake", "Three castles, and a name the rebels spend.", 3],
-      ["osgrey", "House Osgrey", "A fading house. A tower, a wood, and a memory of more.", 2],
-      ["butterwell", "House Butterwell of Whitewalls", "A wedding house. The rebellions know how to use a feast.", 1],
-    ],
-    heroes: [
-      ["royce", "the Royces of the mountains", "Bronze kings behind a wall of stone.", 5],
-      ["blackwood", "the Blackwoods", "An old line, not the greatest, still remembered.", 4],
-      ["reed", "the Reeds of the Neck", "The bog keeps them. It also hides them.", 3],
-      ["flint", "the Flints of the mountains", "Hard country, and little surplus to become anything else.", 2],
-      ["bolton", "the Boltons", "Flayers. The story is already a closed one.", 1],
-    ],
-  };
-  return houses[era];
+  if (index === 3) return questionOf("lesser-who", `What is your place in ${house.label}?`, GREAT_PLACE);
+  if (index === 4) return questionOf("lesser-raised", `How were you raised in ${house.label}?`, GREAT_RAISED);
+  if (index === 5) return questionOf("lesser-bent", `What do you bend toward in ${house.label}?`, bentOf(house.id));
+  return questionOf("lesser-can", `What can you already do in ${house.label}?`, LESSER_CAN);
 }
 
 function knightQuestions(index: number, prior: Answer[], era: EraId): Question {
-  if (index === 2) return questionOf("knight-where", "Where is the tower, or the road?", KNIGHT_WHERE[era]);
+  if (index === 2) return questionOf("knight-where", "Where is the sword?", KNIGHT_WHERE[era]);
   const where = picked(2, prior);
-  if (index === 3) {
-    return questionOf("knight-beside", `What knight's life were you born beside, in ${where.label}?`, KNIGHT_BESIDE);
-  }
-  if (index === 4) {
-    return questionOf("knight-raised", "How were you raised, before any lord owned your sword?", KNIGHT_RAISED);
-  }
-  if (index === 5) return questionOf("knight-bent", "What is your bent, with no keep to answer to?", KNIGHT_BENT);
-  return questionOf(
-    "knight-oath",
-    "What oath do you carry, or refuse, before the war looks for you?",
-    knightOath(ERA_CONTEXT[era].war),
-  );
+  if (index === 3) return questionOf("knight-beside", `What knight's life is this, in ${where.label}?`, KNIGHT_BESIDE);
+  if (index === 4) return questionOf("knight-raised", "How were you raised to the sword?", KNIGHT_RAISED);
+  if (index === 5) return questionOf("knight-bent", "What is the bent of that knighthood?", KNIGHT_BENT);
+  return questionOf("knight-can", "What can you already do with a sword?", KNIGHT_CAN);
 }
 
 function tradeQuestions(index: number, prior: Answer[], era: EraId): Question {
   if (index === 2) return questionOf("trade-craft", "What is the craft?", TRADE_CRAFT);
   if (index === 3) return questionOf("trade-town", "Which town holds the shop?", TRADE_TOWN[era]);
   if (index === 4) return questionOf("trade-bench", "What is your place at the bench?", TRADE_BENCH);
-  if (index === 5) return questionOf("trade-bent", "What are you bent toward, besides the work?", TRADE_BENT);
-  return questionOf("trade-trouble", "What trouble is already in the shop?", TRADE_TROUBLE);
+  if (index === 5) return questionOf("trade-raised", "How were you raised to the bench?", TRADE_RAISED);
+  return questionOf("trade-bent", "What is the bent of the shop?", TRADE_BENT);
 }
 
 function folkQuestions(index: number, prior: Answer[], era: EraId): Question {
-  const war = ERA_CONTEXT[era].war;
-  if (index === 2) return questionOf("folk-land", "Whose land?", folkLand(war));
+  if (index === 2) return questionOf("folk-land", "Whose land?", folkLand(ERA_CONTEXT[era].war));
   if (index === 3) return questionOf("folk-work", "What did your people do?", FOLK_WORK);
-  if (index === 4) return questionOf("folk-raised", "How were you raised, on someone else's land?", FOLK_RAISED);
-  if (index === 5) return questionOf("folk-bent", "What are you bent toward, when the work is already decided?", FOLK_BENT);
-  return questionOf("folk-line", "What will you not do, or who will you not leave?", FOLK_LINE);
+  if (index === 4) return questionOf("folk-raised", "How were you raised on that land?", FOLK_RAISED);
+  if (index === 5) return questionOf("folk-bent", "What is the bent of your people?", FOLK_BENT);
+  return questionOf("folk-can", "What can you already do with your hands?", FOLK_CAN);
 }
 
 export function questionAt(index: number, prior: Answer[]): Question {

@@ -1,20 +1,8 @@
 export type Price = 1 | 2 | 3 | 4 | 5;
 
-export type EraId = "robert" | "heroes" | "blackfyre" | "dance" | "fivekings";
+export type EraId = "robert" | "conciliator" | "blackfyre" | "dance" | "fivekings";
 
 export type StationId = "knight" | "lesser" | "great" | "trade" | "smallfolk";
-
-export type Flavor =
-  | "north"
-  | "rock"
-  | "reach"
-  | "storm"
-  | "dorne"
-  | "dragon"
-  | "vale"
-  | "sea"
-  | "isles"
-  | "hightower";
 
 export type Option = {
   id: string;

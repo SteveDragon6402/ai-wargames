@@ -3,7 +3,7 @@ import { describe, it } from "node:test";
 import { chipsFor, lifeContext, questionAt, wordCount } from "./path";
 import type { Answer, EraId, Option, Question, StationId } from "./types";
 
-const ERAS: EraId[] = ["robert", "heroes", "blackfyre", "dance", "fivekings"];
+const ERAS: EraId[] = ["robert", "conciliator", "blackfyre", "dance", "fivekings"];
 const STATIONS: StationId[] = ["knight", "lesser", "great", "trade", "smallfolk"];
 
 function pricesOk(question: Question) {
@@ -91,14 +91,16 @@ describe("life path", () => {
     }
   });
 
-  it("does not ask a great house for a castle, a place in the line, or a profession", () => {
-    const banned = /\b(heir|bastard|firstborn|secondborn|spare|profession|castle)\b|what did you become|where do you live|which castle/i;
+  it("asks a great house who they are, and does not ask who holds them", () => {
+    const banned = /who holds you|foster|what did you become|which castle|profession/i;
     for (const era of ERAS) {
       const { questions } = trace(era, "great", (question, index) => pick(question, index, era, "great"));
-      for (const question of questions) {
-        const text = [question.prompt, ...question.options.map((option) => option.label)].join("\n");
-        assert.doesNotMatch(text, banned);
-      }
+      const text = questions
+        .flatMap((question) => [question.prompt, ...question.options.map((option) => option.label)])
+        .join("\n");
+      assert.match(text, /\bheir\b/i);
+      assert.match(text, /\bbastard\b/i);
+      assert.doesNotMatch(text, banned);
     }
   });
 
@@ -111,20 +113,83 @@ describe("life path", () => {
         { questionId: station.id, optionId: "great" },
       ]).options.map((option) => option.id);
     };
+    const points = (era: EraId, id: string) => {
+      const born = questionAt(0, []);
+      const station = questionAt(1, [{ questionId: born.id, optionId: era }]);
+      return questionAt(2, [
+        { questionId: born.id, optionId: era },
+        { questionId: station.id, optionId: "great" },
+      ]).options.find((option) => option.id === id)?.points;
+    };
     assert.ok(blood("fivekings").includes("martell"));
-    assert.ok(!blood("robert").includes("martell"));
+    assert.equal(points("fivekings", "lannister"), 5);
+    assert.equal(points("fivekings", "stark"), 1);
+    assert.equal(points("dance", "targaryen"), 5);
+    assert.equal(points("dance", "velaryon"), 4);
+    assert.equal(points("dance", "hightower"), 3);
+    assert.equal(points("dance", "lannister"), 1);
+    assert.equal(points("blackfyre", "targaryen"), 5);
+    assert.equal(points("blackfyre", "martell"), 4);
+    assert.equal(points("blackfyre", "tyrell"), 2);
+    assert.equal(points("blackfyre", "blackfyre"), 1);
+    assert.equal(points("robert", "baratheon"), 5);
+    assert.equal(points("robert", "targaryen"), 1);
     assert.ok(blood("robert").includes("arryn"));
-    assert.ok(blood("heroes").includes("gardener"));
+    assert.equal(points("conciliator", "targaryen"), 5);
+    assert.ok(!blood("conciliator").includes("gardener"));
   });
 
-  it("prices the opening by danger and room, not by recency or rank", () => {
+  it("prices birth and station by standing", () => {
     const born = questionAt(0, []);
-    assert.equal(born.options.find((option) => option.id === "robert")?.points, 5);
+    assert.equal(born.options.find((option) => option.id === "conciliator")?.points, 5);
+    assert.equal(born.options.find((option) => option.id === "blackfyre")?.points, 4);
+    assert.equal(born.options.find((option) => option.id === "robert")?.points, 3);
+    assert.equal(born.options.find((option) => option.id === "dance")?.points, 2);
     assert.equal(born.options.find((option) => option.id === "fivekings")?.points, 1);
     const station = questionAt(1, [{ questionId: "born", optionId: "fivekings" }]);
-    assert.equal(station.options.find((option) => option.id === "knight")?.points, 5);
+    assert.equal(station.options.find((option) => option.id === "great")?.points, 5);
+    assert.equal(station.options.find((option) => option.id === "lesser")?.points, 4);
+    assert.equal(station.options.find((option) => option.id === "knight")?.points, 3);
+    assert.equal(station.options.find((option) => option.id === "trade")?.points, 2);
     assert.equal(station.options.find((option) => option.id === "smallfolk")?.points, 1);
-    assert.equal(station.options.find((option) => option.id === "great")?.points, 3);
+  });
+
+  it("runs a house bent from the words down to the twist", () => {
+    const born = questionAt(0, []);
+    const station = questionAt(1, [{ questionId: born.id, optionId: "fivekings" }]);
+    const blood = questionAt(2, [
+      { questionId: born.id, optionId: "fivekings" },
+      { questionId: station.id, optionId: "great" },
+    ]);
+    const prior = [
+      { questionId: born.id, optionId: "fivekings" },
+      { questionId: station.id, optionId: "great" },
+      { questionId: blood.id, optionId: "lannister" },
+    ];
+    const who = questionAt(3, prior);
+    const raised = questionAt(4, [...prior, { questionId: who.id, optionId: "heir" }]);
+    const bent = questionAt(5, [
+      ...prior,
+      { questionId: who.id, optionId: "heir" },
+      { questionId: raised.id, optionId: "rule" },
+    ]);
+    assert.equal(bent.options.find((option) => option.points === 5)?.label, "Hear Me Roar");
+    assert.equal(bent.options.find((option) => option.points === 4)?.label, "A Lannister always pays his debts");
+    assert.equal(bent.options.find((option) => option.points === 1)?.label, "Power above all");
+    const starkBlood = [
+      { questionId: born.id, optionId: "fivekings" },
+      { questionId: station.id, optionId: "great" },
+      { questionId: blood.id, optionId: "stark" },
+    ];
+    const starkWho = questionAt(3, starkBlood);
+    const starkRaised = questionAt(4, [...starkBlood, { questionId: starkWho.id, optionId: "heir" }]);
+    const starkBent = questionAt(5, [
+      ...starkBlood,
+      { questionId: starkWho.id, optionId: "heir" },
+      { questionId: starkRaised.id, optionId: "rule" },
+    ]);
+    assert.equal(starkBent.options.find((option) => option.points === 5)?.label, "Winter Is Coming");
+    assert.equal(starkBent.options.find((option) => option.points === 1)?.label, "Unyielding");
   });
 
   it("stays deterministic across random paths", () => {
