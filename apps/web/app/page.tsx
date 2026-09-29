@@ -19,6 +19,11 @@ const GAMES = [
     title: "Secret Test",
     detail: "A closed correspondence campaign.",
   },
+  {
+    href: "/life",
+    title: "One Life",
+    detail: "Seven choices. Then the years.",
+  },
 ] as const;
 
 export default function HomePage() {
