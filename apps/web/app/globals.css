@@ -119,7 +119,9 @@
   }
 
   .merc-page {
-    background: var(--merc-bg);
+    background-color: var(--merc-bg);
+    background-image: radial-gradient(oklch(0.94 0.012 85 / 0.035) 0.6px, transparent 0.7px);
+    background-size: 3px 3px;
     color: var(--merc-text);
     font-family: var(--font-book), Georgia, serif;
     min-height: 100dvh;
@@ -127,6 +129,73 @@
 
   .font-gothic {
     font-family: var(--font-gothic), Georgia, serif;
+  }
+
+  .life-choice {
+    border: 1px solid var(--merc-line);
+    background: var(--merc-field);
+    box-shadow:
+      inset 0 1px 0 0 oklch(1 0 0 / 0.06),
+      0 0 0 1px oklch(0 0 0 / 0.16);
+  }
+
+  .life-book {
+    margin-inline: auto;
+    min-height: 100dvh;
+    max-width: 68rem;
+    padding: 2.5rem 1.5rem 4rem;
+  }
+
+  .life-book-narrow {
+    display: flex;
+    max-width: 36rem;
+    flex-direction: column;
+  }
+
+  .life-name {
+    font-family: var(--font-gothic), Georgia, serif;
+    font-size: clamp(2.75rem, 6vw, 4.5rem);
+    line-height: 0.95;
+    color: var(--merc-text);
+  }
+
+  .life-sitting-spread {
+    display: grid;
+    gap: 2rem;
+  }
+
+  .life-prose {
+    max-width: 66ch;
+    font-size: 1.1875rem;
+    line-height: 1.58;
+    text-wrap: pretty;
+  }
+
+  .life-picture {
+    display: block;
+    width: 100%;
+    object-fit: cover;
+    background: var(--merc-field);
+  }
+
+  .life-picture-figure {
+    aspect-ratio: 4 / 5;
+  }
+
+  .life-picture-place {
+    aspect-ratio: 3 / 2;
+  }
+
+  .life-ledger {
+    padding-top: 0.25rem;
+  }
+
+  @media (min-width: 64rem) {
+    .life-sitting-spread {
+      grid-template-columns: minmax(0, 0.92fr) minmax(0, 1.08fr);
+      align-items: start;
+      gap: 3rem;
+    }
   }
 
   .life-stroke {
@@ -138,6 +207,24 @@
   .life-fill {
     opacity: 0;
     animation: life-rise 1.4s ease forwards;
+  }
+
+  .life-bar {
+    width: 100%;
+    max-width: 24rem;
+    height: 0.5rem;
+    border: 1px solid var(--merc-line);
+    background: var(--merc-field);
+    overflow: hidden;
+  }
+
+  .life-bar-fill {
+    display: block;
+    height: 100%;
+    width: 100%;
+    transform: scaleX(0);
+    transform-origin: 0 50%;
+    background: var(--merc-text);
   }
 
   .life-wait-track,
@@ -200,6 +287,7 @@
 
   @media (hover: hover) and (pointer: fine) {
     .life-choice:hover {
+      border-color: var(--merc-text);
       background: var(--merc-raise);
     }
 

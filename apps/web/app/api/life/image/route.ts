@@ -1,9 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { composeImagePrompt, type PictureFrame } from "../../../life/lib/picture";
 
 export const maxDuration = 60;
-
-const STYLE =
-  "Painterly illustration of a medieval scene in Westeros. No text, no letters, no watermark, no modern objects, no photograph.";
 
 const MODELS = ["gemini-2.5-flash-image", "gemini-3.1-flash-image"];
 
@@ -12,6 +10,12 @@ type GeminiPart = {
   inlineData?: { mimeType?: string; data?: string };
   inline_data?: { mime_type?: string; data?: string };
 };
+
+function frameOf(value: unknown): PictureFrame {
+  if (value === "place" || value === "figure") return value;
+  if (value === 1 || value === "1") return "place";
+  return "figure";
+}
 
 function imageFrom(payload: {
   candidates?: { content?: { parts?: GeminiPart[] } }[];
@@ -34,9 +38,11 @@ export async function POST(req: NextRequest) {
   const key = process.env.GEMINI_API_KEY?.trim() || process.env.GOOGLE_API_KEY?.trim();
   if (!key) return NextResponse.json({ skipped: true });
 
-  const body = (await req.json().catch(() => null)) as { prompt?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { prompt?: unknown; frame?: unknown; index?: unknown } | null;
   const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
   if (!prompt) return NextResponse.json({ error: "The scene is missing." }, { status: 400 });
+  const frame = frameOf(body?.frame ?? body?.index);
+  const full = composeImagePrompt(prompt, frame);
 
   let last = "The picture was not made.";
   for (const model of MODELS) {
@@ -47,8 +53,11 @@ export async function POST(req: NextRequest) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        contents: [{ role: "user", parts: [{ text: `${prompt.slice(0, 1800)} ${STYLE}` }] }],
-        generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
+        contents: [{ role: "user", parts: [{ text: full }] }],
+        generationConfig: {
+          responseModalities: ["TEXT", "IMAGE"],
+          imageConfig: { aspectRatio: frame === "figure" ? "4:5" : "3:2" },
+        },
       }),
     });
     const payload = (await response.json().catch(() => null)) as {

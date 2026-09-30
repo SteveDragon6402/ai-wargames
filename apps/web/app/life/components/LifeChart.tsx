@@ -37,9 +37,9 @@ export function LifeChart({
   const [hover, setHover] = useState<ReturnType<typeof readingAt> | null>(null);
   const tipId = useId();
   if (!last) return null;
-  const width = 640;
-  const height = 220;
-  const pad = { l: 56, r: 16, t: 18, b: 32 };
+  const width = 720;
+  const height = 200;
+  const pad = { l: 52, r: 12, t: 12, b: 28 };
   const innerW = width - pad.l - pad.r;
   const innerH = height - pad.t - pad.b;
   const minYear = Math.min(...points.map((point) => point.year));
@@ -70,42 +70,53 @@ export function LifeChart({
   }
 
   return (
-    <figure className="relative border border-[var(--merc-line)] bg-[var(--merc-field)] px-4 py-4">
-      <figcaption>
-        <div className="font-gothic text-3xl text-[var(--merc-text)]">{chart.title}</div>
-        <p className="mt-1 text-[16px] leading-snug text-[var(--merc-muted)]">{chart.why}</p>
-      </figcaption>
+    <figure className="life-ledger">
+      <div id={tipId} className="min-h-[4.5rem]">
+        <p className="font-gothic text-4xl leading-none tabular-nums text-[var(--merc-text)]">{amountOf(reading.value, chart.unit)}</p>
+        <p className="mt-2 text-[15px] text-[var(--merc-muted)]">{yearPhrase(chart.kind, reading.year)}</p>
+        <p className="mt-1 max-w-prose text-[17px] leading-snug text-[var(--merc-text)]">{reading.note}</p>
+      </div>
       <svg
         viewBox={`0 0 ${width} ${height}`}
         role="img"
         aria-label={chart.title}
-        aria-describedby={reading ? tipId : undefined}
-        className="mt-3 w-full touch-none"
+        aria-describedby={tipId}
+        className="mt-5 w-full touch-none"
         onPointerMove={follow}
         onPointerDown={follow}
         onPointerLeave={() => setHover(null)}
       >
-        <line x1={pad.l} y1={base} x2={width - pad.r} y2={base} stroke="var(--merc-line)" />
         {valueTicks.map((value) => (
           <g key={`v-${value}`}>
-            <line x1={pad.l} y1={yOf(value)} x2={width - pad.r} y2={yOf(value)} stroke="var(--merc-line)" strokeOpacity="0.45" />
-            <text x={pad.l - 8} y={yOf(value) + 4} textAnchor="end" fill="var(--merc-muted)" fontSize="11">
+            <line x1={pad.l} y1={yOf(value)} x2={width - pad.r} y2={yOf(value)} stroke="var(--merc-line)" strokeOpacity="0.35" />
+            <text
+              x={pad.l - 8}
+              y={yOf(value) + 4}
+              textAnchor="end"
+              fill="var(--merc-muted)"
+              fontSize="12"
+              fontFamily="var(--font-book), Georgia, serif"
+            >
               {formatCount(value)}
             </text>
           </g>
         ))}
+        <line x1={pad.l} y1={base} x2={width - pad.r} y2={base} stroke="var(--merc-line)" />
         {yearTicks.map((year) => (
-          <text key={year} x={xOf(year)} y={height - 8} textAnchor="middle" fill="var(--merc-muted)" fontSize="12">
+          <text
+            key={year}
+            x={xOf(year)}
+            y={height - 6}
+            textAnchor="middle"
+            fill="var(--merc-muted)"
+            fontSize="12"
+            fontFamily="var(--font-book), Georgia, serif"
+          >
             {yearLabel(year)}
           </text>
         ))}
         {deathYear !== undefined && deathYear !== null && deathYear >= minYear && deathYear <= maxYear && (
-          <g>
-            <line x1={xOf(deathYear)} y1={pad.t} x2={xOf(deathYear)} y2={base} stroke="var(--merc-red)" strokeDasharray="3 4" />
-            <text x={xOf(deathYear) + 6} y={pad.t + 12} fill="var(--merc-red)" fontSize="12">
-              died
-            </text>
-          </g>
+          <line x1={xOf(deathYear)} y1={pad.t} x2={xOf(deathYear)} y2={base} stroke="var(--merc-red)" strokeDasharray="2 5" />
         )}
         {fill && points.length > 1 && (
           <path
@@ -114,28 +125,37 @@ export function LifeChart({
             fill={fill}
           />
         )}
-        <path className="life-stroke" d={line} fill="none" stroke={ink} strokeWidth="2.25" pathLength={1} />
+        <path className="life-stroke" d={line} fill="none" stroke={ink} strokeWidth="2" pathLength={1} />
         {points.map((point) => (
-          <circle
+          <rect
             key={point.year}
-            cx={xOf(point.year)}
-            cy={yOf(point.value)}
-            r="3.5"
+            x={xOf(point.year) - 3}
+            y={yOf(point.value) - 3}
+            width="6"
+            height="6"
             fill="var(--merc-bg)"
             stroke={ink}
-            strokeWidth="2"
+            strokeWidth="1.75"
             pointerEvents="none"
           />
         ))}
         {reading && (
           <g pointerEvents="none">
-            <line x1={xOf(reading.year)} y1={pad.t} x2={xOf(reading.year)} y2={base} stroke={ink} strokeOpacity="0.55" />
-            <circle cx={xOf(reading.year)} cy={yOf(reading.value)} r="6" fill="var(--merc-bg)" stroke={ink} strokeWidth="2.25" />
+            <line x1={xOf(reading.year)} y1={pad.t} x2={xOf(reading.year)} y2={base} stroke={ink} strokeOpacity="0.45" />
+            <rect
+              x={xOf(reading.year) - 5}
+              y={yOf(reading.value) - 5}
+              width="10"
+              height="10"
+              fill="var(--merc-bg)"
+              stroke={ink}
+              strokeWidth="2"
+            />
           </g>
         )}
         <rect x={pad.l} y={pad.t} width={innerW} height={innerH} fill="transparent" className="cursor-crosshair" />
       </svg>
-      <label className="mt-2 block">
+      <label className="mt-3 block">
         <span className="sr-only">{chart.title}, year</span>
         <input
           type="range"
@@ -147,13 +167,10 @@ export function LifeChart({
           className="w-full accent-[var(--merc-text)]"
         />
       </label>
-      {reading && (
-        <div id={tipId} className="mt-3 min-h-[4.75rem]">
-          <div className="font-gothic text-3xl leading-none text-[var(--merc-text)]">{amountOf(reading.value, chart.unit)}</div>
-          <p className="mt-1 text-[14px] text-[var(--merc-muted)]">{yearPhrase(chart.kind, reading.year)}</p>
-          <p className="mt-1 text-[16px] leading-snug text-[var(--merc-text)]">{reading.note}</p>
-        </div>
-      )}
+      <figcaption className="mt-4">
+        <p className="text-[14px] uppercase tracking-[0.12em] text-[var(--merc-muted)]">{chart.title}</p>
+        <p className="mt-1 max-w-prose text-[16px] leading-snug text-[var(--merc-muted)]">{chart.why}</p>
+      </figcaption>
       <table className="sr-only">
         <caption>
           {chart.title}. {chart.why}

@@ -7,6 +7,7 @@ import { WritingWait } from "./WritingWait";
 import type { Chronicle, LifeStage } from "../lib/chronicle";
 import { lifeContext, questionAt } from "../lib/path";
 import { AGE_STEPS, CHILDHOOD_STEPS, YOUTH_STEPS, stageForCount, type Answer, type Option, type StageId } from "../lib/types";
+import { rememberWriteMs } from "../lib/wait";
 
 type Phase = "choices" | "stage";
 
@@ -79,6 +80,7 @@ export function LifePlay() {
   async function write(stage: StageId, nextAnswers: Answer[]) {
     const token = run.current + 1;
     run.current = token;
+    const started = Date.now();
     setBusy(true);
     setError(null);
     setPhase("stage");
@@ -96,6 +98,7 @@ export function LifePlay() {
       const data = await readJson(response);
       if (token !== run.current) return;
       if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : "The years were not written.");
+      rememberWriteMs(stage, Date.now() - started);
       const written = data as unknown as Chronicle;
       setStages((current) => [...current, written]);
       if (!written.thin) void loadImages(written.stage, token);
@@ -116,13 +119,14 @@ export function LifePlay() {
       for (const key of keys) next[key] = { status: "loading" };
       return next;
     });
+    const started = Date.now();
     const results = await Promise.all(
       stage.imagePrompts.map(async (prompt, index) => {
         if (!prompt) return { key: `${stage.id}-${index}`, ok: true, data: { skipped: true } as Record<string, unknown> };
         const response = await fetch("/api/life/image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt }),
+          body: JSON.stringify({ prompt, frame: index === 0 ? "figure" : "place" }),
         });
         const data = await readJson(response);
         return { key: `${stage.id}-${index}`, ok: response.ok, data };
@@ -138,6 +142,7 @@ export function LifePlay() {
       setImagesNote("Pictures are waiting on a Gemini key.");
       return;
     }
+    rememberWriteMs("picture", Date.now() - started);
     setImages((current) => {
       const next = { ...current };
       for (const result of results) {
@@ -167,11 +172,12 @@ export function LifePlay() {
   if (phase === "stage" && (stages.length > 0 || busy)) {
     if (stages.length === 0) {
       return (
-        <main className="mx-auto min-h-dvh max-w-3xl px-6 py-10">
+        <main className="life-book">
           <div className="flex items-center justify-between gap-4">
             <a href="/" className="text-[15px] text-[var(--merc-muted)] underline decoration-[var(--merc-line)] underline-offset-4">
               All games
             </a>
+            <p className="text-[14px] uppercase tracking-[0.14em] text-[var(--merc-muted)]">One Life</p>
             <button
               type="button"
               onClick={restart}
@@ -180,8 +186,7 @@ export function LifePlay() {
               Another life
             </button>
           </div>
-          <p className="mt-10 text-[14px] uppercase tracking-[0.14em] text-[var(--merc-muted)]">One Life</p>
-          <h1 className="mt-2 font-gothic text-5xl text-[var(--merc-text)]">Childhood</h1>
+          <h1 className="life-name mt-12">Childhood</h1>
           <WritingWait sitting="childhood" />
         </main>
       );

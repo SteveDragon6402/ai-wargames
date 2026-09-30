@@ -44,7 +44,12 @@ const RECORD: Anthropic.Tool = {
       nickname: { type: "string" },
       heading: { type: "string" },
       text: { type: "string" },
-      imagePrompts: { type: "array", items: { type: "string" } },
+      imagePrompts: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Exactly two scenes. First: the person close and in motion. Second: the place, wide, with weather. Describe subject, action, setting, and light. Do not name an art style.",
+      },
       born: { type: "integer" },
       fromYear: { type: "integer" },
       toYear: { type: "integer" },

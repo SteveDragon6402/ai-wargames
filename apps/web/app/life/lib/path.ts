@@ -111,7 +111,7 @@ function greatQuestions(index: number, prior: Answer[], era: EraId): Question {
   const raised = picked(3, prior);
   if (index === 5) return questionOf("great-held", houseHeldPrompt(house.label, raised.id, false), heldRows(HOUSE_HELD, raised.id));
   if (index === 6) return questionOf("great-aim", "What did you decide to pursue?", purposeOf("great", raised.id));
-  return questionOf("great-fear", "What do you fear?", fearOf(picked(6, prior).id));
+  return questionOf("great-fear", "What do you fight?", fearOf(picked(6, prior).id));
 }
 
 function lesserQuestions(index: number, prior: Answer[], era: EraId): Question {
@@ -122,7 +122,7 @@ function lesserQuestions(index: number, prior: Answer[], era: EraId): Question {
   const raised = picked(3, prior);
   if (index === 5) return questionOf("lesser-held", houseHeldPrompt(house.label, raised.id, true), heldRows(HOUSE_HELD, raised.id));
   if (index === 6) return questionOf("lesser-aim", "What did you decide to pursue?", purposeOf("lesser", raised.id));
-  return questionOf("lesser-fear", "What do you fear?", fearOf(picked(6, prior).id));
+  return questionOf("lesser-fear", "What do you fight?", fearOf(picked(6, prior).id));
 }
 
 function knightQuestions(index: number, prior: Answer[], era: EraId): Question {
@@ -141,7 +141,7 @@ function knightQuestions(index: number, prior: Answer[], era: EraId): Question {
     return questionOf("knight-held", knightHeld[raised.id] ?? "What were you given?", heldRows(KNIGHT_HELD, raised.id));
   }
   if (index === 6) return questionOf("knight-aim", "What did you decide to pursue?", purposeOf("knight", raised.id));
-  return questionOf("knight-fear", "What do you fear?", fearOf(picked(6, prior).id));
+  return questionOf("knight-fear", "What do you fight?", fearOf(picked(6, prior).id));
 }
 
 function tradeQuestions(index: number, prior: Answer[]): Question {
@@ -160,7 +160,7 @@ function tradeQuestions(index: number, prior: Answer[]): Question {
     return questionOf("trade-held", tradeHeld[raised.id] ?? "What were you given?", heldRows(TRADE_HELD, raised.id));
   }
   if (index === 6) return questionOf("trade-aim", "What did you decide to pursue?", purposeOf("trade", raised.id));
-  return questionOf("trade-fear", "What do you fear?", fearOf(picked(6, prior).id));
+  return questionOf("trade-fear", "What do you fight?", fearOf(picked(6, prior).id));
 }
 
 function folkQuestions(index: number, prior: Answer[], era: EraId): Question {
@@ -179,7 +179,7 @@ function folkQuestions(index: number, prior: Answer[], era: EraId): Question {
     return questionOf("folk-held", folkHeld[raised.id] ?? "What were you given?", heldRows(FOLK_HELD, raised.id));
   }
   if (index === 6) return questionOf("folk-aim", "What did you decide to pursue?", purposeOf("smallfolk", raised.id));
-  return questionOf("folk-fear", "What do you fear?", fearOf(picked(6, prior).id));
+  return questionOf("folk-fear", "What do you fight?", fearOf(picked(6, prior).id));
 }
 
 export function questionAt(index: number, prior: Answer[]): Question {

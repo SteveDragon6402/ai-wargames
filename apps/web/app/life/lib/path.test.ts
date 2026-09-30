@@ -276,7 +276,7 @@ describe("life path", () => {
     const aim = questionAt(6, answers);
     answers.push({ questionId: aim.id, optionId: "glory" });
     const fear = questionAt(7, answers);
-    assert.equal(fear.prompt, "What do you fear?");
+    assert.equal(fear.prompt, "What do you fight?");
     assert.equal(fear.options.find((option) => option.points === 5)?.label, "A nameless grave");
   });
 
