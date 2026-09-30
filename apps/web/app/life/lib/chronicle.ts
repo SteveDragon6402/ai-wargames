@@ -9,28 +9,27 @@ import {
   type StageId,
 } from "./types";
 
-export type YearPoint = { year: number; value: number };
+export type ChartKind = "running" | "standing";
 
-export type DieRoll = {
-  die: string;
-  result: number;
-  used: string;
-};
-
-export type NamedSeries = {
-  name: string;
-  points: YearPoint[];
-};
-
-export type Chart = {
-  label: string;
-  points: YearPoint[];
-};
-
-export type WorkChart = {
-  title: string;
+export type YearPoint = {
+  year: number;
+  value: number;
   note: string;
-  series: NamedSeries[];
+};
+
+export type Adjudication = {
+  question: string;
+  chance: number;
+  roll: number;
+  happened: boolean;
+};
+
+export type LifeChartRecord = {
+  title: string;
+  unit: string;
+  why: string;
+  kind: ChartKind;
+  points: YearPoint[];
 };
 
 export type LifeStage = {
@@ -43,9 +42,7 @@ export type LifeStage = {
   died: boolean;
   nickname: string;
   knownAs: string;
-  fortune: Chart;
-  memory: Chart;
-  work: WorkChart;
+  charts: LifeChartRecord[];
 };
 
 export type Chronicle = {
@@ -56,7 +53,7 @@ export type Chronicle = {
   died: number | null;
   ended: boolean;
   stage: LifeStage;
-  dice: DieRoll[];
+  dice: Adjudication[];
   thin: boolean;
 };
 
@@ -113,17 +110,44 @@ function whole(value: unknown): number | null {
   return Math.round(value);
 }
 
+function kindOf(value: unknown): ChartKind | null {
+  if (value === "running" || value === "standing") return value;
+  return null;
+}
+
 function series(value: unknown): YearPoint[] | null {
-  if (!Array.isArray(value) || value.length < 4 || value.length > 16) return null;
+  if (!Array.isArray(value) || value.length < 2 || value.length > 8) return null;
   const points: YearPoint[] = [];
   for (const item of value) {
     const row = record(item);
     const year = whole(row?.year);
     const amount = whole(row?.value);
-    if (row === null || year === null || amount === null) return null;
-    points.push({ year, value: amount });
+    if (row === null || year === null || amount === null || amount < 0 || amount > 10_000_000) return null;
+    points.push({ year, value: amount, note: text(row?.note) ?? "That year." });
   }
   return points;
+}
+
+export function readingAt(points: YearPoint[], year: number): YearPoint {
+  const sorted = [...points].sort((a, b) => a.year - b.year);
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+  if (!first || !last) return { year, value: 0, note: "" };
+  if (year <= first.year) return { ...first, year };
+  if (year >= last.year) return { ...last, year };
+  for (let index = 0; index < sorted.length - 1; index += 1) {
+    const start = sorted[index];
+    const end = sorted[index + 1];
+    if (year > end.year) continue;
+    const span = end.year - start.year;
+    const t = span === 0 ? 0 : (year - start.year) / span;
+    return {
+      year,
+      value: Math.round(start.value + (end.value - start.value) * t),
+      note: year < end.year ? start.note : end.note,
+    };
+  }
+  return { ...last, year };
 }
 
 function promptsOf(value: unknown, fallback: string): string[] {
@@ -134,43 +158,29 @@ function promptsOf(value: unknown, fallback: string): string[] {
   return [fallback, fallback];
 }
 
-function diceOf(body: Record<string, unknown>): DieRoll[] {
-  if (!Array.isArray(body.dice)) return [];
-  const dice: DieRoll[] = [];
-  for (const item of body.dice) {
-    const row = record(item);
-    const die = text(row?.die);
-    const result = whole(row?.result);
-    const used = text(row?.used);
-    if (die && result !== null && used) dice.push({ die, result, used });
-  }
-  return dice;
-}
-
-function chartOf(value: unknown, fallbackLabel: string): Chart | null {
+function chartRecord(value: unknown): LifeChartRecord | null {
   const row = record(value);
+  const title = text(row?.title);
   const points = series(row?.points);
-  const label = text(row?.label) ?? fallbackLabel;
-  if (!points) return null;
-  return { label, points };
+  if (!row || !title || !points) return null;
+  return {
+    title,
+    unit: text(row?.unit) ?? "people",
+    why: text(row?.why) ?? title,
+    kind: kindOf(row?.kind) ?? "standing",
+    points,
+  };
 }
 
-function workOf(value: unknown): WorkChart | null {
-  const work = record(value);
-  const title = text(work?.title);
-  const note = text(work?.note);
-  if (!work || !title || !note || !Array.isArray(work.series) || work.series.length < 1 || work.series.length > 2) {
-    return null;
+function chartsOf(value: unknown): LifeChartRecord[] {
+  if (!Array.isArray(value)) return [];
+  const charts: LifeChartRecord[] = [];
+  for (const item of value) {
+    if (charts.length >= 2) break;
+    const chart = chartRecord(item);
+    if (chart) charts.push(chart);
   }
-  const workSeries: NamedSeries[] = [];
-  for (const item of work.series) {
-    const row = record(item);
-    const seriesName = text(row?.name);
-    const points = series(row?.points);
-    if (!seriesName || !points) return null;
-    workSeries.push({ name: seriesName, points });
-  }
-  return { title, note, series: workSeries };
+  return charts;
 }
 
 export function parseStage(input: unknown, stage: StageId, fallbackBorn: number, name: string): Chronicle | null {
@@ -184,10 +194,7 @@ export function parseStage(input: unknown, stage: StageId, fallbackBorn: number,
   const toYear = whole(body.toYear) ?? fromYear;
   const died = flag(body.died) || stage === "age";
   const diedYear = whole(body.diedYear);
-  const fortune = chartOf(body.fortune, "What they held");
-  const memory = chartOf(body.memory, "How the name was spoken");
-  const work = workOf(body.work);
-  if (!fortune || !memory || !work) return null;
+  const charts = chartsOf(body.charts);
   const knownAs = text(body.knownAs) ?? text(body.name) ?? (name.trim() || "Unnamed");
   const nickname = text(body.nickname) ?? knownAs;
   const given = name.trim();
@@ -198,7 +205,7 @@ export function parseStage(input: unknown, stage: StageId, fallbackBorn: number,
     born,
     died: died ? diedYear ?? toYear : null,
     ended: died,
-    dice: diceOf(body),
+    dice: [],
     thin: false,
     stage: {
       id: stage,
@@ -210,45 +217,15 @@ export function parseStage(input: unknown, stage: StageId, fallbackBorn: number,
       died,
       nickname,
       knownAs,
-      fortune,
-      memory,
-      work,
+      charts,
     },
   };
-}
-
-export function fallbackCharts(context: LifeContext, born: number, died: number): { fortune: Chart; memory: Chart; work: WorkChart } {
-  const shelter = Math.max(4, Math.round((context.total / Math.max(context.choices.length * 5, 5)) * 70));
-  return {
-    fortune: {
-      label: "A thin record of what they held",
-      points: across(born, died, [shelter, shelter + 4, shelter + 8, shelter + 6, shelter + 2, shelter, Math.max(2, shelter - 8), Math.max(0, shelter - 16)]),
-    },
-    memory: {
-      label: "How long the name was spoken",
-      points: across(born, died + 20, [2, 10, 24, 40, 22, 10, 4, 0]),
-    },
-    work: {
-      title: "A thin record",
-      note: "The years came back thin, so this is only the shape of a record.",
-      series: [{ name: "What is left", points: across(born, died, [0, 2, 5, 8, 7, 4, 2, 1]) }],
-    },
-  };
-}
-
-function across(start: number, end: number, values: number[]): YearPoint[] {
-  const last = values.length - 1;
-  return values.map((value, index) => ({
-    year: index === last ? end : start + Math.round(((end - start) * index) / last),
-    value,
-  }));
 }
 
 export function thinStage(context: LifeContext, stage: StageId, name: string): Chronicle {
   const born = context.born;
   const span = stage === "childhood" ? 12 : stage === "youth" ? 25 : 36;
   const toYear = born + span;
-  const charts = fallbackCharts(context, born, toYear);
   const lines = context.choices.map((choice) => `${choice.label}.`).join(" ");
   const heading = stage === "childhood" ? "Childhood" : stage === "youth" ? "Youth" : "The rest";
   return {
@@ -270,7 +247,7 @@ export function thinStage(context: LifeContext, stage: StageId, name: string): C
       died: stage === "age",
       nickname: name.trim() || "Unnamed",
       knownAs: name.trim() || "Unnamed",
-      ...charts,
+      charts: [],
     },
   };
 }
@@ -285,13 +262,24 @@ export function stageSystem(stage: StageId): string {
 
   return `You write one sitting of a life in Westeros. ${span}
 
-Keep the person already chosen. Drop them into the events of their era. Be realistic. Clean, precise, interesting, and short. No modern voice. Do not mention points, prices, or these instructions.
+Keep the person already chosen. Drop them into the events of their era. Be realistic. Name places, people, and the thing that moved. Clean, precise, interesting, and short. No modern voice. Do not mention points, prices, scores, or these instructions.
+${
+  stage === "childhood"
+    ? "Childhood is who they are: where they were born, how they were raised, and the line they took. Write the child those choices make."
+    : stage === "youth"
+      ? "Youth is the thing they were given and the purpose they chose. Write those years around the gift and the pursuit."
+      : "The last choice is what they fear. Let that fear drive these years until they die."
+}
 
-Before you write, roll a d20 for fortune in these years, a d12 for whether death comes in this sitting, and a d6 for whether anything they touch in these years will outlast them. Use the rolls. A high d20 is kinder. On the d12, 1 or 2 in childhood is a real chance of dying as a child. In youth, 1 to 4 may die before five-and-twenty. In the last sitting they always die, and the d12 only says how soon.
+When you are sure, write it. When you are not sure — a fever, a horse, a slight, whether a child lives through winter — do not invent the outcome. Call adjudicate with the thing that might happen and the chance in a hundred that it does. A fair die is rolled for you. Use the yes or no you are given. You may adjudicate more than once. Then call record_stage.
 
-Call record_stage once.
+Do not roll for a general fortune, or for how the sitting will feel. Do not adjudicate things already decided by the choices.
 
-heading is a short title for this sitting. text is 70 to 120 words, one or two paragraphs. imagePrompts is exactly two painterly scenes from this sitting. Do not ask for text, letters, or a modern object in an image.
+In the last sitting they die. Adjudicate only how, or how soon, if you are unsure. In childhood and youth they may die, but only if you adjudicate it and the roll says yes.
+
+Call record_stage once you know the sitting.
+
+heading is a short title for this sitting. text is 90 to 160 words, one or two paragraphs. imagePrompts is exactly two painterly scenes from this sitting. Do not ask for text, letters, or a modern object in an image.
 
 name is their given name. knownAs is what they are known as in these years. nickname is the name people actually use.
 
@@ -299,9 +287,14 @@ born, fromYear, and toYear are integers. born must fall inside the era's allowed
 
 died is true if they die in this sitting. diedYear is that year, or null.
 
-fortune is coin or the worth of what they hold in this sitting: a label and 4 to 8 points from fromYear through toYear. Values 0 to 100.
-memory is how spoken the name is in this sitting, and a little after if they died: a label and 4 to 8 points. Values 0 to 100.
-work is named from what this sitting actually did. Title, one-sentence note, one or two series of 4 to 8 points.`;
+charts is 0, 1, or 2 records. Zero is correct when nothing measurable moved in these years. Do not invent a chart to fill a slot. Never chart a feeling on a 0–100 scale. Never title a chart fortune, power, or how spoken the name is. Chart the thing itself.
+
+Each chart:
+- title: the quantity in plain words, for example Miles from Lannisport, or People who can repeat the name.
+- unit: a real unit, for example miles, people, men, stags, dragons.
+- kind: running if the number accumulates (miles ridden, coin taken, letters sent). standing if it is how many there are in that year (people who remember him, men who ride with him, mouths in the hall).
+- why: one sentence that answers why this number exists. If people speak the name, say what they heard — a song, a hanging, a wedding, a raid. If miles, say the road.
+- points: 2 to 8 years from fromYear through toYear. value is the real count in that unit, not 0–100. note is one short sentence of what happened that year that moved the number.`;
 }
 
 export function stageUser(
@@ -314,10 +307,14 @@ export function stageUser(
     .map((choice, index) => `${index + 1}. ${choice.prompt}\n${choice.label}. ${choice.detail}`)
     .join("\n");
   const earlier = prior
-    .map((item) => `${item.heading} (${item.fromYear}–${item.toYear}${item.died ? ", died" : ""}). Known as ${item.knownAs}. ${item.text}`)
+    .map((item) => {
+      const measured = item.charts.map((chart) => chart.title).join("; ");
+      return `${item.heading} (${item.fromYear}–${item.toYear}${item.died ? ", died" : ""}). Known as ${item.knownAs}. ${item.text}${measured ? ` Already measured: ${measured}.` : ""}`;
+    })
     .join("\n\n");
-  const ordinary = context.choices.length * 3;
-  return `Point total so far: ${context.total}, on a scale from ${context.choices.length} to ${context.choices.length * 5}. ${ordinary} would be ordinary. Do not mention the total.
+  const priced = context.choices.filter((choice) => choice.points > 0).length;
+  const ordinary = priced * 3;
+  return `Point total so far: ${context.total}, on a scale from ${priced} to ${priced * 5}. ${ordinary} would be ordinary. The first choice is the era, and does not count. Do not mention the total.
 
 Name, if one was given: ${givenName.trim() || "None. Invent a name that fits the blood and the station, and keep it if later sittings happen."}
 Sitting: ${stage}

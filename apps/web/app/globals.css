@@ -140,7 +140,44 @@
     animation: life-rise 1.4s ease forwards;
   }
 
+  .life-wait-track,
+  .life-wait-arc {
+    fill: none;
+  }
+
+  .life-wait-track {
+    stroke: var(--merc-line);
+    stroke-width: 1.75;
+  }
+
+  .life-wait-arc {
+    stroke: var(--merc-text);
+    stroke-width: 2.5;
+    stroke-linecap: square;
+    stroke-dasharray: 26 74;
+  }
+
+  .life-wait {
+    transform-origin: center;
+  }
+
   @media (prefers-reduced-motion: no-preference) {
+    .life-wait {
+      animation: life-spin 1.05s linear infinite;
+    }
+
+    .life-wait-copy {
+      position: absolute;
+      width: 1px;
+      height: 1px;
+      padding: 0;
+      margin: -1px;
+      overflow: hidden;
+      clip: rect(0, 0, 0, 0);
+      white-space: nowrap;
+      border: 0;
+    }
+
     .life-choice {
       transition: border-color 160ms ease-out, background-color 160ms ease-out;
     }
@@ -169,6 +206,12 @@
     .life-point:hover {
       stroke-width: 3;
     }
+  }
+}
+
+@keyframes life-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 

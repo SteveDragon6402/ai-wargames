@@ -6,12 +6,16 @@ import type { Answer, EraId, Option, Question, StationId } from "./types";
 const ERAS: EraId[] = ["robert", "conciliator", "blackfyre", "dance", "fivekings"];
 const STATIONS: StationId[] = ["knight", "lesser", "great", "trade", "smallfolk"];
 
-function pricesOk(question: Question) {
+function pricesOk(question: Question, priced: boolean) {
+  assert.equal(new Set(question.options.map((option) => option.id)).size, 5);
+  if (!priced) {
+    assert.ok(question.options.every((option) => option.points === 0));
+    return;
+  }
   assert.deepEqual(
     question.options.map((option) => option.points).sort((a, b) => a - b),
     [1, 2, 3, 4, 5],
   );
-  assert.equal(new Set(question.options.map((option) => option.id)).size, 5);
 }
 
 function pick(question: Question, index: number, era: EraId, station: StationId): Option {
@@ -23,9 +27,9 @@ function pick(question: Question, index: number, era: EraId, station: StationId)
 function trace(era: EraId, station: StationId, choose: (question: Question, index: number) => Option) {
   const answers: Answer[] = [];
   const questions: Question[] = [];
-  for (let index = 0; index < 7; index += 1) {
+  for (let index = 0; index < 8; index += 1) {
     const question = questionAt(index, answers);
-    pricesOk(question);
+    pricesOk(question, index !== 0);
     const again = questionAt(index, answers);
     assert.deepEqual(again, question);
     questions.push(question);
@@ -47,22 +51,27 @@ function mulberry32(seed: number) {
 }
 
 describe("life path", () => {
-  it("prices every question on every route", () => {
+  it("prices every question on every route, except the era", () => {
     for (const era of ERAS) {
       for (const station of STATIONS) {
         const { questions } = trace(era, station, (question, index) => pick(question, index, era, station));
         const prompts = new Set(questions.map((question) => question.prompt));
-        assert.equal(prompts.size, 7);
+        assert.equal(prompts.size, 8);
+        assert.equal(questions[0].id, "born");
+        assert.equal(questions[5].id.endsWith("-held"), true);
+        assert.equal(questions[6].id.endsWith("-aim"), true);
+        assert.equal(questions[7].id.endsWith("-fear"), true);
       }
     }
   });
 
-  it("scores seven, twenty-one, or thirty-five from the cheap, middle, and dear choices", () => {
+  it("scores seven, twenty-one, or thirty-five from the cheap, middle, and dear priced choices", () => {
     function total(points: 1 | 3 | 5) {
       const answers: Answer[] = [];
-      for (let index = 0; index < 7; index += 1) {
+      for (let index = 0; index < 8; index += 1) {
         const question = questionAt(index, answers);
-        const option = question.options.find((item) => item.points === points);
+        const option =
+          index === 0 ? question.options[0] : question.options.find((item) => item.points === points);
         assert.ok(option);
         answers.push({ questionId: question.id, optionId: option.id });
       }
@@ -81,28 +90,29 @@ describe("life path", () => {
           trace(era, station, (question, index) => pick(question, index, era, station)).questions,
         ]),
       ) as Record<StationId, Question[]>;
-      for (let index = 3; index < 7; index += 1) {
+      for (let index = 2; index < 8; index += 1) {
         for (let left = 0; left < STATIONS.length; left += 1) {
           for (let right = left + 1; right < STATIONS.length; right += 1) {
             assert.notEqual(byStation[STATIONS[left]][index].id, byStation[STATIONS[right]][index].id);
           }
         }
       }
-      assert.equal(byStation.great[2].prompt, "Who are you?");
-      assert.equal(byStation.great[3].prompt, "What is your background?");
+      assert.equal(byStation.great[2].prompt, "Which house?");
+      assert.match(byStation.great[3].prompt, /how were you raised/i);
+      assert.match(byStation.great[4].prompt, /which line/i);
     }
   });
 
-  it("asks a great house who they are, and does not ask who holds them", () => {
-    const banned = /who holds you|foster|what did you become|which castle|profession/i;
+  it("does not ask who they are in the house, and does not ask who holds them", () => {
+    const banned = /who holds you|foster|who are you\?|what is your background\?/i;
     for (const era of ERAS) {
       const { questions } = trace(era, "great", (question, index) => pick(question, index, era, "great"));
       const text = questions
         .flatMap((question) => [question.prompt, ...question.options.map((option) => option.label)])
         .join("\n");
-      assert.match(text, /\bheir\b/i);
-      assert.match(text, /\bbastard\b/i);
+      assert.doesNotMatch(text, /\bheir\b/i);
       assert.doesNotMatch(text, banned);
+      assert.match(text, /House Targaryen|House Baratheon|House Lannister/);
     }
   });
 
@@ -110,27 +120,17 @@ describe("life path", () => {
     const blood = (era: EraId) => {
       const born = questionAt(0, []);
       const station = questionAt(1, [{ questionId: born.id, optionId: era }]);
-      const who = questionAt(2, [
+      return questionAt(2, [
         { questionId: born.id, optionId: era },
         { questionId: station.id, optionId: "great" },
-      ]);
-      return questionAt(3, [
-        { questionId: born.id, optionId: era },
-        { questionId: station.id, optionId: "great" },
-        { questionId: who.id, optionId: "heir" },
       ]).options.map((option) => option.id);
     };
     const points = (era: EraId, id: string) => {
       const born = questionAt(0, []);
       const station = questionAt(1, [{ questionId: born.id, optionId: era }]);
-      const who = questionAt(2, [
+      return questionAt(2, [
         { questionId: born.id, optionId: era },
         { questionId: station.id, optionId: "great" },
-      ]);
-      return questionAt(3, [
-        { questionId: born.id, optionId: era },
-        { questionId: station.id, optionId: "great" },
-        { questionId: who.id, optionId: "heir" },
       ]).options.find((option) => option.id === id)?.points;
     };
     assert.ok(blood("fivekings").includes("martell"));
@@ -151,13 +151,9 @@ describe("life path", () => {
     assert.ok(!blood("conciliator").includes("gardener"));
   });
 
-  it("prices birth and station by standing", () => {
+  it("prices station by standing, and does not price the era", () => {
     const born = questionAt(0, []);
-    assert.equal(born.options.find((option) => option.id === "conciliator")?.points, 5);
-    assert.equal(born.options.find((option) => option.id === "blackfyre")?.points, 4);
-    assert.equal(born.options.find((option) => option.id === "robert")?.points, 3);
-    assert.equal(born.options.find((option) => option.id === "dance")?.points, 2);
-    assert.equal(born.options.find((option) => option.id === "fivekings")?.points, 1);
+    assert.ok(born.options.every((option) => option.points === 0));
     const station = questionAt(1, [{ questionId: "born", optionId: "fivekings" }]);
     assert.equal(station.options.find((option) => option.id === "great")?.points, 5);
     assert.equal(station.options.find((option) => option.id === "lesser")?.points, 4);
@@ -166,38 +162,27 @@ describe("life path", () => {
     assert.equal(station.options.find((option) => option.id === "smallfolk")?.points, 1);
   });
 
-  it("runs a house bent from the words down to the twist", () => {
+  it("runs a house line from the words down to the twist", () => {
     const born = questionAt(0, []);
     const station = questionAt(1, [{ questionId: born.id, optionId: "fivekings" }]);
-    const who = questionAt(2, [
-      { questionId: born.id, optionId: "fivekings" },
-      { questionId: station.id, optionId: "great" },
-    ]);
     const prior = [
       { questionId: born.id, optionId: "fivekings" },
       { questionId: station.id, optionId: "great" },
-      { questionId: who.id, optionId: "heir" },
     ];
-    const blood = questionAt(3, prior);
-    const raised = questionAt(4, [...prior, { questionId: blood.id, optionId: "lannister" }]);
-    const held = questionAt(5, [
+    const blood = questionAt(2, prior);
+    const raised = questionAt(3, [...prior, { questionId: blood.id, optionId: "lannister" }]);
+    const bent = questionAt(4, [
       ...prior,
       { questionId: blood.id, optionId: "lannister" },
       { questionId: raised.id, optionId: "rule" },
-    ]);
-    const bent = questionAt(6, [
-      ...prior,
-      { questionId: blood.id, optionId: "lannister" },
-      { questionId: raised.id, optionId: "rule" },
-      { questionId: held.id, optionId: held.options[0].id },
     ]);
     assert.equal(bent.options.find((option) => option.points === 5)?.label, "Hear Me Roar");
     assert.equal(bent.options.find((option) => option.points === 4)?.label, "A Lannister always pays his debts");
     assert.equal(bent.options.find((option) => option.points === 1)?.label, "Power above all");
   });
 
-  it("lets the raising decide the thing you own", () => {
-    function held(station: StationId, raisedId: string) {
+  it("lets the raising decide the thing you were given", () => {
+    function given(station: StationId, raisedId: string) {
       const born = questionAt(0, []);
       const stationQuestion = questionAt(1, [{ questionId: born.id, optionId: "fivekings" }]);
       const origin = questionAt(2, [
@@ -209,33 +194,90 @@ describe("life path", () => {
         { questionId: stationQuestion.id, optionId: station },
         { questionId: origin.id, optionId: origin.options[0].id },
       ];
-      const third = questionAt(3, answers);
-      answers.push({ questionId: third.id, optionId: third.options[0].id });
-      const fourth = questionAt(4, answers);
-      const raisedOption = fourth.options.find((option) => option.id === raisedId) ?? fourth.options[0];
-      answers.push({ questionId: fourth.id, optionId: raisedOption.id });
+      const raised = questionAt(3, answers);
+      const raisedOption = raised.options.find((option) => option.id === raisedId) ?? raised.options[0];
+      answers.push({ questionId: raised.id, optionId: raisedOption.id });
+      const line = questionAt(4, answers);
+      answers.push({ questionId: line.id, optionId: line.options[0].id });
       return questionAt(5, answers);
     }
-    const sword = held("great", "sword");
-    assert.match(sword.prompt, /weapon/i);
+    const sword = given("great", "sword");
+    assert.match(sword.prompt, /given/i);
     assert.equal(sword.options.find((option) => option.points === 5)?.label, "A Valyrian steel sword");
     assert.equal(sword.options.find((option) => option.points === 4)?.label, "A very fine sword, and armor to match");
-    const lesserSword = held("lesser", "sword");
+    const lesserSword = given("lesser", "sword");
     assert.equal(lesserSword.options.find((option) => option.points === 5)?.label, "A Valyrian steel sword");
-    const rule = held("great", "rule");
+    const rule = given("great", "rule");
     assert.equal(rule.options.find((option) => option.points === 5)?.label, "Dragon eggs");
-    const coin = held("great", "coin");
-    assert.match(coin.prompt, /rich/i);
-    const study = held("great", "study");
+    const tower = given("knight", "tower");
+    assert.match(tower.options.find((option) => option.points === 5)?.label ?? "", /restored seal/i);
+    const coin = given("great", "coin");
+    assert.match(coin.prompt, /coin/i);
+    const study = given("great", "study");
     assert.match(study.prompt, /study/i);
     assert.equal(study.options.find((option) => option.points === 5)?.label, "A glass candle");
-    const shop = held("trade", "own");
-    assert.doesNotMatch(shop.prompt, /bent/i);
+    const shop = given("trade", "own");
+    assert.doesNotMatch(shop.prompt, /bent|line/i);
     assert.match(shop.prompt, /shop/i);
     for (const station of STATIONS) {
-      const text = held(station, "sword").prompt + held(station, station === "trade" ? "own" : "no-such");
+      const text = given(station, "sword").prompt + given(station, station === "trade" ? "own" : "no-such");
       assert.doesNotMatch(text, /what can you already do/i);
     }
+  });
+
+  it("gives glory to the sword and learning to study", () => {
+    function aim(station: StationId, raisedId: string) {
+      const born = questionAt(0, []);
+      const stationQuestion = questionAt(1, [{ questionId: born.id, optionId: "fivekings" }]);
+      const origin = questionAt(2, [
+        { questionId: born.id, optionId: "fivekings" },
+        { questionId: stationQuestion.id, optionId: station },
+      ]);
+      const answers: Answer[] = [
+        { questionId: born.id, optionId: "fivekings" },
+        { questionId: stationQuestion.id, optionId: station },
+        { questionId: origin.id, optionId: origin.options[0].id },
+      ];
+      const raised = questionAt(3, answers);
+      const raisedOption = raised.options.find((option) => option.id === raisedId) ?? raised.options[0];
+      answers.push({ questionId: raised.id, optionId: raisedOption.id });
+      const line = questionAt(4, answers);
+      answers.push({ questionId: line.id, optionId: line.options[0].id });
+      const held = questionAt(5, answers);
+      answers.push({ questionId: held.id, optionId: held.options[0].id });
+      return questionAt(6, answers);
+    }
+    const sword = aim("great", "sword");
+    assert.equal(sword.prompt, "What did you decide to pursue?");
+    assert.ok(sword.options.some((option) => option.id === "glory"));
+    assert.ok(!sword.options.some((option) => option.id === "learning"));
+    const study = aim("great", "study");
+    assert.ok(study.options.some((option) => option.id === "learning"));
+    assert.ok(!study.options.some((option) => option.id === "glory"));
+    const letters = aim("knight", "letters");
+    assert.ok(letters.options.some((option) => option.id === "learning"));
+  });
+
+  it("lets the purpose decide the fear", () => {
+    const born = questionAt(0, []);
+    const station = questionAt(1, [{ questionId: born.id, optionId: "fivekings" }]);
+    const answers: Answer[] = [
+      { questionId: born.id, optionId: "fivekings" },
+      { questionId: station.id, optionId: "great" },
+    ];
+    const blood = questionAt(2, answers);
+    answers.push({ questionId: blood.id, optionId: "lannister" });
+    const raised = questionAt(3, answers);
+    answers.push({ questionId: raised.id, optionId: "sword" });
+    const line = questionAt(4, answers);
+    answers.push({ questionId: line.id, optionId: line.options[0].id });
+    const held = questionAt(5, answers);
+    answers.push({ questionId: held.id, optionId: held.options[0].id });
+    const aim = questionAt(6, answers);
+    answers.push({ questionId: aim.id, optionId: "glory" });
+    const fear = questionAt(7, answers);
+    assert.equal(fear.prompt, "What do you fear?");
+    assert.equal(fear.options.find((option) => option.points === 5)?.label, "A nameless grave");
   });
 
   it("stays deterministic across random paths", () => {
@@ -249,7 +291,7 @@ describe("life path", () => {
         return question.options[Math.floor(random() * question.options.length)];
       });
       const again = lifeContext(answers);
-      assert.equal(again.choices.length, 7);
+      assert.equal(again.choices.length, 8);
       assert.deepEqual(lifeContext(answers), again);
     }
   });

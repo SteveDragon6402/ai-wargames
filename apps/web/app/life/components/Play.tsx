@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { Choices } from "./Choices";
 import { ChronicleView, type ChapterImage } from "./ChronicleView";
+import { WritingWait } from "./WritingWait";
 import type { Chronicle, LifeStage } from "../lib/chronicle";
 import { lifeContext, questionAt } from "../lib/path";
 import { AGE_STEPS, CHILDHOOD_STEPS, YOUTH_STEPS, stageForCount, type Answer, type Option, type StageId } from "../lib/types";
@@ -167,9 +168,21 @@ export function LifePlay() {
     if (stages.length === 0) {
       return (
         <main className="mx-auto min-h-dvh max-w-3xl px-6 py-10">
-          <p className="text-[14px] uppercase tracking-[0.14em] text-[var(--merc-muted)]">One Life</p>
-          <h1 className="mt-2 font-gothic text-5xl text-[var(--merc-text)]">The years are being written</h1>
-          <p className="mt-4 max-w-xl text-[18px] text-[var(--merc-muted)]">A short sitting, then pictures of those years.</p>
+          <div className="flex items-center justify-between gap-4">
+            <a href="/" className="text-[15px] text-[var(--merc-muted)] underline decoration-[var(--merc-line)] underline-offset-4">
+              All games
+            </a>
+            <button
+              type="button"
+              onClick={restart}
+              className="text-[15px] text-[var(--merc-muted)] underline decoration-[var(--merc-line)] underline-offset-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--merc-red)]"
+            >
+              Another life
+            </button>
+          </div>
+          <p className="mt-10 text-[14px] uppercase tracking-[0.14em] text-[var(--merc-muted)]">One Life</p>
+          <h1 className="mt-2 font-gothic text-5xl text-[var(--merc-text)]">Childhood</h1>
+          <WritingWait sitting="childhood" />
         </main>
       );
     }
@@ -183,7 +196,7 @@ export function LifePlay() {
         onRestart={restart}
         onContinue={ended || nextSitting ? goOn : null}
         continueLabel={continueLabel(ended, nextSitting)}
-        busy={busy}
+        writing={busy ? stageForCount(answers.length) : null}
         error={error}
       />
     );

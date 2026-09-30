@@ -2,7 +2,8 @@ import type { Option, Question } from "../lib/types";
 import { AGE_STEPS, CHILDHOOD_STEPS, ORDINARY_LIFE, YOUTH_STEPS } from "../lib/types";
 
 function sittingOf(step: number): string {
-  if (step <= CHILDHOOD_STEPS) return `Childhood, ${step} of ${CHILDHOOD_STEPS}`;
+  if (step === 1) return "The years";
+  if (step <= CHILDHOOD_STEPS) return `Childhood, ${step - 1} of ${CHILDHOOD_STEPS - 1}`;
   if (step <= YOUTH_STEPS) return `Youth, ${step - CHILDHOOD_STEPS} of ${YOUTH_STEPS - CHILDHOOD_STEPS}`;
   return `The rest, 1 of ${AGE_STEPS - YOUTH_STEPS}`;
 }
@@ -43,7 +44,9 @@ export function Choices({
             >
               <span className="flex items-baseline justify-between gap-4">
                 <span className="font-gothic text-2xl text-[var(--merc-text)]">{option.label}</span>
-                <span className="shrink-0 text-[15px] text-[var(--merc-muted)]">{option.points}</span>
+                {option.points > 0 && (
+                  <span className="shrink-0 text-[15px] tabular-nums text-[var(--merc-muted)]">{option.points}</span>
+                )}
               </span>
               <span className="mt-1 block text-[17px] leading-snug text-[var(--merc-muted)]">{option.detail}</span>
             </button>

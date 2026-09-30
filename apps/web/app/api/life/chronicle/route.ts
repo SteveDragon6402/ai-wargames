@@ -1,15 +1,41 @@
 import { NextRequest, NextResponse } from "next/server";
 import type Anthropic from "@anthropic-ai/sdk";
-import { anthropicClient, createLifeMessage, toolUses } from "../../mercenary/model";
-import { parseStage, requiredCount, stageSystem, stageUser, thinStage, type LifeStage } from "../../../life/lib/chronicle";
+import { rollAdjudication, tellAdjudication } from "../../../life/lib/adjudicate";
+import { parseStage, requiredCount, stageSystem, stageUser, type Adjudication, type LifeStage } from "../../../life/lib/chronicle";
 import { lifeContext } from "../../../life/lib/path";
+import { anthropicClient, createLifeMessage, toolUses } from "../../mercenary/model";
 import type { Answer, StageId } from "../../../life/lib/types";
 
 export const maxDuration = 120;
 
-const TOOL: Anthropic.Tool = {
+const MAX_ROUNDS = 8;
+const MAX_ROLLS = 4;
+
+const ADJUDICATE: Anthropic.Tool = {
+  name: "adjudicate",
+  description:
+    "When you are not sure what happens, set the chance that it does. A fair hundred-sided die is rolled in Python. Do not invent the number.",
+  input_schema: {
+    type: "object",
+    properties: {
+      question: {
+        type: "string",
+        description: "The thing that might happen, in a short phrase. For example: the fever takes her.",
+      },
+      chance: {
+        type: "integer",
+        minimum: 0,
+        maximum: 100,
+        description: "Chance in a hundred that it happens.",
+      },
+    },
+    required: ["question", "chance"],
+  },
+};
+
+const RECORD: Anthropic.Tool = {
   name: "record_stage",
-  description: "Record this sitting of the life, the dice, and the chart numbers.",
+  description: "Record this sitting of the life once you know what happened.",
   input_schema: {
     type: "object",
     properties: {
@@ -24,76 +50,33 @@ const TOOL: Anthropic.Tool = {
       toYear: { type: "integer" },
       died: { type: "boolean" },
       diedYear: { type: ["integer", "null"] },
-      dice: {
+      charts: {
         type: "array",
         items: {
           type: "object",
           properties: {
-            die: { type: "string" },
-            result: { type: "integer" },
-            used: { type: "string" },
-          },
-          required: ["die", "result", "used"],
-        },
-      },
-      fortune: {
-        type: "object",
-        properties: {
-          label: { type: "string" },
-          points: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: { year: { type: "integer" }, value: { type: "integer" } },
-              required: ["year", "value"],
-            },
-          },
-        },
-        required: ["label", "points"],
-      },
-      memory: {
-        type: "object",
-        properties: {
-          label: { type: "string" },
-          points: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: { year: { type: "integer" }, value: { type: "integer" } },
-              required: ["year", "value"],
-            },
-          },
-        },
-        required: ["label", "points"],
-      },
-      work: {
-        type: "object",
-        properties: {
-          title: { type: "string" },
-          note: { type: "string" },
-          series: {
-            type: "array",
-            items: {
-              type: "object",
-              properties: {
-                name: { type: "string" },
-                points: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: { year: { type: "integer" }, value: { type: "integer" } },
-                    required: ["year", "value"],
-                  },
+            title: { type: "string" },
+            unit: { type: "string" },
+            why: { type: "string" },
+            kind: { type: "string", enum: ["running", "standing"] },
+            points: {
+              type: "array",
+              items: {
+                type: "object",
+                properties: {
+                  year: { type: "integer" },
+                  value: { type: "integer" },
+                  note: { type: "string" },
                 },
+                required: ["year", "value", "note"],
               },
-              required: ["name", "points"],
             },
           },
+          required: ["title", "unit", "why", "kind", "points"],
         },
-        required: ["title", "note", "series"],
       },
     },
-    required: ["name", "knownAs", "nickname", "heading", "text", "imagePrompts", "born", "fromYear", "toYear", "died", "dice", "fortune", "memory", "work"],
+    required: ["name", "knownAs", "nickname", "heading", "text", "imagePrompts", "born", "fromYear", "toYear", "died", "charts"],
   },
 };
 
@@ -150,26 +133,89 @@ export async function POST(req: NextRequest) {
 
   const prior = priorOf(body?.prior);
   const user = stageUser(context, stage, prior, givenName);
-  const ask = (content: string) =>
-    createLifeMessage(client, {
-      max_tokens: 6000,
+  const messages: Anthropic.Messages.MessageParam[] = [{ role: "user", content: user }];
+  const dice: Adjudication[] = [];
+  let lastError: string | null = null;
+
+  for (let round = 0; round < MAX_ROUNDS; round += 1) {
+    const mustRecord = dice.length >= MAX_ROLLS || round >= MAX_ROUNDS - 2;
+    const response = await createLifeMessage(client, {
+      max_tokens: 8192,
       system: stageSystem(stage),
-      tools: [TOOL],
-      tool_choice: { type: "tool", name: "record_stage" },
-      messages: [{ role: "user", content }],
+      tools: [ADJUDICATE, RECORD],
+      tool_choice: mustRecord ? { type: "tool", name: "record_stage" } : { type: "any" },
+      messages,
     });
+    if ("error" in response) {
+      lastError = response.error;
+      break;
+    }
 
-  const first = await ask(user);
-  if ("error" in first) return NextResponse.json({ error: first.error }, { status: 500 });
-  const inputs = [toolUses(first).find((item) => item.name === "record_stage")?.input];
-  if (!parseStage(inputs[0], stage, context.born, givenName)) {
-    const second = await ask(`${user}\n\nThe last record was incomplete. Call record_stage once with every required field, including two imagePrompts, fortune, memory, and work.`);
-    if (!("error" in second)) inputs.push(toolUses(second).find((item) => item.name === "record_stage")?.input);
+    const calls = toolUses(response);
+    if (calls.length === 0) {
+      messages.push({ role: "assistant", content: response.content });
+      messages.push({
+        role: "user",
+        content: "Call adjudicate if you are unsure, otherwise call record_stage.",
+      });
+      continue;
+    }
+
+    const rolledThisTurn: Adjudication[] = [];
+    const results: Anthropic.Messages.ToolResultBlockParam[] = [];
+    let recorded: ReturnType<typeof parseStage> = null;
+
+    for (const call of calls) {
+      if (call.name !== "adjudicate") continue;
+      if (mustRecord || dice.length + rolledThisTurn.length >= MAX_ROLLS) {
+        results.push({
+          type: "tool_result",
+          tool_use_id: call.id,
+          content: "No more rolls. Call record_stage with the sitting you now know.",
+        });
+        continue;
+      }
+      const rolled = rollAdjudication(call.input);
+      if ("error" in rolled) {
+        results.push({ type: "tool_result", tool_use_id: call.id, content: rolled.error });
+        continue;
+      }
+      rolledThisTurn.push(rolled);
+      results.push({ type: "tool_result", tool_use_id: call.id, content: tellAdjudication(rolled) });
+    }
+
+    for (const call of calls) {
+      if (call.name === "adjudicate") continue;
+      if (call.name === "record_stage") {
+        if (rolledThisTurn.length > 0) {
+          results.push({
+            type: "tool_result",
+            tool_use_id: call.id,
+            content: "Use the rolls you just received, then call record_stage.",
+          });
+          continue;
+        }
+        recorded = parseStage(call.input, stage, context.born, givenName);
+        results.push({
+          type: "tool_result",
+          tool_use_id: call.id,
+          content: recorded
+            ? "Recorded."
+            : "That record was incomplete. Call record_stage once with every required field, including two imagePrompts and charts (zero to two records).",
+        });
+        continue;
+      }
+      results.push({ type: "tool_result", tool_use_id: call.id, content: "Unknown tool." });
+    }
+
+    dice.push(...rolledThisTurn);
+
+    if (recorded) return NextResponse.json({ ...recorded, dice });
+
+    messages.push({ role: "assistant", content: response.content });
+    messages.push({ role: "user", content: results });
   }
 
-  for (const input of inputs) {
-    const written = parseStage(input, stage, context.born, givenName);
-    if (written) return NextResponse.json(written);
-  }
-  return NextResponse.json(thinStage(context, stage, givenName));
+  if (lastError) return NextResponse.json({ error: lastError }, { status: 500 });
+  return NextResponse.json({ error: "The years were not written." }, { status: 502 });
 }

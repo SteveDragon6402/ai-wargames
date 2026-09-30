@@ -2,12 +2,12 @@ import type { EraId, Price, StationId } from "./types";
 
 export type Row = [id: string, label: string, detail: string, points: Price];
 
-export const ERA_ROWS: Row[] = [
-  ["conciliator", "Jaehaerys's reign", "The age of the Conciliator. A long peace, and the name that sits closest to it.", 5],
-  ["blackfyre", "The Blackfyre Rebellions", "The court still holds. The pretender's wars keep coming back.", 4],
-  ["robert", "Robert's Rebellion", "One war, then a new king, and the dragon pulled down.", 3],
-  ["dance", "The Dance of the Dragons", "Two queens, and dragons burning the useful with the unlucky.", 2],
-  ["fivekings", "The War of the Five Kings", "The realm comes apart. Winter is coming.", 1],
+export const ERA_ROWS: [id: string, label: string, detail: string][] = [
+  ["conciliator", "Jaehaerys's reign", "The age of the Conciliator. A long peace."],
+  ["blackfyre", "The Blackfyre Rebellions", "The court still holds. The pretender's wars keep coming back."],
+  ["robert", "Robert's Rebellion", "One war, then a new king, and the dragon pulled down."],
+  ["dance", "The Dance of the Dragons", "Two queens, and dragons burning the useful with the unlucky."],
+  ["fivekings", "The War of the Five Kings", "The realm comes apart. Winter is coming."],
 ];
 
 export const ERA_CONTEXT: Record<EraId, { years: string; events: string; born: number; war: string }> = {
@@ -57,11 +57,11 @@ const BORN_TO: Row[] = [
 ];
 
 export const STATIONS: Record<EraId, { prompt: string; rows: Row[] }> = {
-  conciliator: { prompt: "Who were you born to?", rows: BORN_TO },
-  blackfyre: { prompt: "Who were you born to?", rows: BORN_TO },
-  robert: { prompt: "Who were you born to?", rows: BORN_TO },
-  dance: { prompt: "Who were you born to?", rows: BORN_TO },
-  fivekings: { prompt: "Who were you born to?", rows: BORN_TO },
+  conciliator: { prompt: "Where were you born?", rows: BORN_TO },
+  blackfyre: { prompt: "Where were you born?", rows: BORN_TO },
+  robert: { prompt: "Where were you born?", rows: BORN_TO },
+  dance: { prompt: "Where were you born?", rows: BORN_TO },
+  fivekings: { prompt: "Where were you born?", rows: BORN_TO },
 };
 
 export const GREAT_BLOOD: Record<EraId, Row[]> = {
@@ -482,7 +482,7 @@ export const KNIGHT_BENT: Row[] = creed(
 
 export const KNIGHT_HELD: Record<string, Row[]> = {
   tower: [
-    ["tower", "A tower and a village in your name", "The holding is yours.", 5],
+    ["tower", "A restored seal, and the tower it names", "The holding is yours, and the wax still bites.", 5],
     ["grant", "A grant of land, written down", "Paper that can become a roof.", 4],
     ["keys", "The keys, while your knight lives", "You hold them. You do not own them.", 3],
     ["room", "Arms, and a room in the tower", "A place to sleep, and a blade.", 2],
@@ -497,7 +497,7 @@ export const KNIGHT_HELD: Record<string, Row[]> = {
     ["unpaid", "Unpaid", "You know what a life is worth. You have not been given it.", 1],
   ],
   letters: [
-    ["war", "A lord's letters, and a book of war", "Writing that can move men.", 5],
+    ["candle", "A glass candle", "Oldtown's rarest thing, and a knight who can keep it.", 5],
     ["maps", "Maps, and written orders you can use", "The country, on paper, is yours to read.", 4],
     ["books", "A few books of your own", "Enough to be a reader, not a maester.", 3],
     ["one", "One book", "Yours, and thin.", 2],
@@ -622,6 +622,14 @@ export function folkLand(war: string): Row[] {
   ];
 }
 
+export const TRADE_BENT: Row[] = creed(
+  ["The work is the name", "The creed of the bench, said straight."],
+  ["A fair weight, and a closed door at night", "The saying a good shop still admires."],
+  ["Custom outlasts a lord", "The working version."],
+  ["We keep what we can count", "The hard version."],
+  ["The shop eats the person", "Coin, and no life besides the door."],
+);
+
 export const FOLK_WORK: Row[] = [
   ["croft", "A croft that feeds the house", "The best living this station gets.", 5],
   ["boat", "A boat", "Fish, and a winter that depends on the water.", 4],
@@ -711,3 +719,193 @@ export const CHIPS: Record<StationId, { want: string[]; hate: string[]; love: st
     love: ["your people", "the land", "a sibling", "a dog", "the first warm day"],
   },
 };
+
+const PURPOSE_HOUSE: Record<string, Row[]> = {
+  rule: [
+    ["glory", "Glory", "To be named in the songs, and feared in the hall.", 5],
+    ["name", "To be remembered", "That the house still says your name when you are gone.", 4],
+    ["duty", "The house", "To keep the seat standing, whatever it costs you.", 3],
+    ["love", "Love", "A person, and a life that is not only the house.", 2],
+    ["ease", "Peace", "To be left alone, and not spent.", 1],
+  ],
+  sword: [
+    ["glory", "Glory", "To be the sword they tell about.", 5],
+    ["name", "To be remembered", "A name men repeat after a fight.", 4],
+    ["duty", "Command", "Men at your back, and a war that is yours to spend them in.", 3],
+    ["love", "Love", "Someone waiting when the yard is dark.", 2],
+    ["blood", "To live", "To come through the next war with your own blood still in you.", 1],
+  ],
+  coin: [
+    ["coin", "Fortune", "To be richer than the house that raised you.", 5],
+    ["name", "To be remembered", "For what you bought, and what you paid.", 4],
+    ["duty", "The ledgers", "To keep the house solvent, and no one else trusted with the numbers.", 3],
+    ["love", "Love", "A person coin cannot replace.", 2],
+    ["ease", "Comfort", "Enough, and no more questions.", 1],
+  ],
+  study: [
+    ["learning", "Learning", "To know what other people do not.", 5],
+    ["name", "To be remembered", "As a mind, not a sword.", 4],
+    ["duty", "Counsel", "To be the one the house asks when it does not know.", 3],
+    ["love", "Love", "A person who will sit with the books.", 2],
+    ["ease", "Quiet", "To be left with the pages, and not called to the yard.", 1],
+  ],
+  indulgent: [
+    ["love", "Love", "To be wanted, not kept.", 5],
+    ["ease", "Pleasure", "Wine, silk, and no work attached.", 4],
+    ["name", "To be seen", "That people know your face, even if they forget why.", 3],
+    ["glory", "A pretty fame", "To be talked about, without having to bleed for it.", 2],
+    ["duty", "To be kept", "That the house still wants you in it.", 1],
+  ],
+};
+
+const PURPOSE_KNIGHT: Record<string, Row[]> = {
+  tower: PURPOSE_HOUSE.rule,
+  sword: PURPOSE_HOUSE.sword,
+  pay: [
+    ["coin", "Ransom enough", "To buy a tower with other men's lives.", 5],
+    ["glory", "Glory", "To be the sword a lord pays extra for.", 4],
+    ["name", "To be remembered", "A name on the road, and in the lists.", 3],
+    ["love", "Love", "Someone who is not a wage.", 2],
+    ["blood", "To live", "Another season, another purse, and still standing.", 1],
+  ],
+  letters: PURPOSE_HOUSE.study,
+  soft: PURPOSE_HOUSE.indulgent,
+};
+
+const PURPOSE_TRADE: Record<string, Row[]> = {
+  own: [
+    ["keep", "The shop", "The door, the name, and the custom, still yours.", 5],
+    ["coin", "Fortune", "To be richer than the street that raised you.", 4],
+    ["name", "To be remembered", "As the shop, and the person who kept it.", 3],
+    ["love", "Love", "A life that is not only the bench.", 2],
+    ["ease", "Quiet custom", "Enough work, and no lord in the door.", 1],
+  ],
+  bench: [
+    ["glory", "The best hands", "Work so good a lord would notice the bench.", 5],
+    ["name", "To be remembered", "For the craft, not the coin.", 4],
+    ["keep", "The work", "To keep doing it until your hands fail.", 3],
+    ["love", "Love", "Someone at the other end of the bench.", 2],
+    ["ease", "A wage", "To be paid, and not asked for more.", 1],
+  ],
+  accounts: PURPOSE_HOUSE.coin,
+  letters: PURPOSE_HOUSE.study,
+  indulgent: PURPOSE_HOUSE.indulgent,
+};
+
+const PURPOSE_FOLK: Record<string, Row[]> = {
+  roof: [
+    ["keep", "The roof", "That it is still yours when winter comes.", 5],
+    ["name", "To be remembered", "By the people under it.", 4],
+    ["duty", "Your own", "To keep them fed, and not sold.", 3],
+    ["love", "Love", "A person the work does not eat.", 2],
+    ["ease", "A full bowl", "And no one calling you to another man's war.", 1],
+  ],
+  work: [
+    ["glory", "To be the one they hire first", "Hands so good the village cannot do without them.", 5],
+    ["keep", "The work", "A full day, and the tools to do it.", 4],
+    ["name", "To be remembered", "As someone who did not break.", 3],
+    ["love", "Love", "Someone waiting when the light goes.", 2],
+    ["blood", "To live", "Through the next winter, and the war on the road.", 1],
+  ],
+  stores: [
+    ["keep", "A winter ahead", "Grain that is yours when others are buying.", 5],
+    ["coin", "Coin buried", "Enough to buy a year if the stores fail.", 4],
+    ["duty", "The stores", "To mind what is left, and not eat it early.", 3],
+    ["love", "Love", "Someone to keep the winter with.", 2],
+    ["ease", "Enough", "And no more counting.", 1],
+  ],
+  prayers: [
+    ["learning", "The gods' truth", "To know what the sept, or the tree, will not say in the yard.", 5],
+    ["name", "To be remembered", "As the one who kept the prayers.", 4],
+    ["duty", "The holy thing", "To keep it, and the people who come to it.", 3],
+    ["love", "Love", "A person the gods did not take.", 2],
+    ["ease", "Quiet faith", "To be left to pray, and not spent.", 1],
+  ],
+  nothing: PURPOSE_HOUSE.indulgent,
+};
+
+const FEAR: Record<string, Row[]> = {
+  glory: [
+    ["forgotten", "A nameless grave", "That the song never had you in it.", 5],
+    ["coward", "Being remembered a coward", "That the fight they tell is the one you ran from.", 4],
+    ["wrong", "Dying on the wrong side", "Glory spent for a banner that loses.", 3],
+    ["late", "Living after the song", "That the years go on, and no one asks.", 2],
+    ["never", "Never riding out", "That the chance never comes.", 1],
+  ],
+  name: [
+    ["forgotten", "Being forgotten", "That no one says the name.", 5],
+    ["wrong", "Being remembered wrongly", "A story you would not own.", 4],
+    ["house", "Outliving the house", "That the name dies, and you do not.", 3],
+    ["grave", "A grave no one tends", "The last true forgetting.", 2],
+    ["unlearned", "That no one learned it", "A life spent, and the word never stuck.", 1],
+  ],
+  duty: [
+    ["fail", "Failing them", "That the house, or the people, fall while you watch.", 5],
+    ["spent", "Being spent", "Used up by the thing you served.", 4],
+    ["oath", "Breaking the oath", "That you are the one who does not keep it.", 3],
+    ["sent", "Being sent away", "Still alive, and no longer wanted.", 2],
+    ["small", "A duty too small", "That you were never asked to matter.", 1],
+  ],
+  love: [
+    ["lose", "Losing them", "That they go, and you do not.", 5],
+    ["never", "Never having them", "The want, and nothing under it.", 4],
+    ["outlive", "Outliving them", "A long life, and the wrong one left.", 3],
+    ["wrong", "The wrong person", "Love spent where it cannot keep you.", 2],
+    ["unloved", "Being unloved", "In a hall, or a house, full of people.", 1],
+  ],
+  ease: [
+    ["end", "The comfort ending", "That the soft years stop.", 5],
+    ["work", "Being made to work", "The thing you were never taught, required of you.", 4],
+    ["old", "Growing old without it", "The pleasure gone, and the years still there.", 3],
+    ["slight", "A slight at table", "That they stop keeping you kindly.", 2],
+    ["bored", "Nothing happening", "A life so easy it does not count.", 1],
+  ],
+  blood: [
+    ["next", "Dying in the next fight", "The one you have not had yet.", 5],
+    ["wound", "A wound that does not heal", "Living, and spent.", 4],
+    ["taken", "Being taken", "A prisoner, or a corpse on someone else's wagon.", 3],
+    ["horse", "The horse going down", "The ordinary death of a sword.", 2],
+    ["hunger", "Hunger on the road", "Not a blade. Just the winter.", 1],
+  ],
+  learning: [
+    ["kills", "A truth that kills you", "Knowing the thing you should not.", 5],
+    ["shut", "Being shut out", "The Citadel, the tower, the books, closed.", 4],
+    ["lie", "A lie you taught", "Learning spent the wrong way.", 3],
+    ["unread", "Dying unread", "The pages, and no one after you.", 2],
+    ["forget", "Forgetting it", "The mind going, and the years still there.", 1],
+  ],
+  coin: [
+    ["all", "Losing it all", "The fortune gone in a season.", 5],
+    ["poorer", "Being poorer than you were born", "The numbers running backward.", 4],
+    ["debt", "A debt you cannot pay", "Paper that owns you.", 3],
+    ["nothing", "Coin that buys nothing you want", "Rich, and empty-handed.", 2],
+    ["cheated", "Being cheated", "The ordinary wound of the box.", 1],
+  ],
+  keep: [
+    ["door", "Losing the door", "The shop, the croft, the roof, gone.", 5],
+    ["fire", "Fire", "The ordinary end of a holding.", 4],
+    ["lord", "A lord taking it", "Paper, or a sword, and it is not yours.", 3],
+    ["season", "A bad season", "Weather, and the stores not enough.", 2],
+    ["next", "Custom going next door", "Still standing, and no longer needed.", 1],
+  ],
+};
+
+export function purposeOf(station: StationId, raisedId: string): Row[] {
+  const table =
+    station === "great" || station === "lesser"
+      ? PURPOSE_HOUSE
+      : station === "knight"
+        ? PURPOSE_KNIGHT
+        : station === "trade"
+          ? PURPOSE_TRADE
+          : PURPOSE_FOLK;
+  const rows = table[raisedId];
+  if (!rows) throw new Error("That raising has no purpose.");
+  return rows;
+}
+
+export function fearOf(purposeId: string): Row[] {
+  const rows = FEAR[purposeId];
+  if (!rows) throw new Error("That purpose has no fear.");
+  return rows;
+}

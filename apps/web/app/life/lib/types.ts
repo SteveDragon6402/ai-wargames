@@ -8,7 +8,7 @@ export type Option = {
   id: string;
   label: string;
   detail: string;
-  points: Price;
+  points: Price | 0;
 };
 
 export type Question = {
@@ -26,7 +26,7 @@ export type LifeChoice = {
   prompt: string;
   label: string;
   detail: string;
-  points: Price;
+  points: Price | 0;
 };
 
 export type StageId = "childhood" | "youth" | "age";
@@ -46,10 +46,10 @@ export type ChipSet = {
   love: string[];
 };
 
-export const STEP_COUNT = 7;
-export const CHILDHOOD_STEPS = 4;
-export const YOUTH_STEPS = 6;
-export const AGE_STEPS = 7;
+export const STEP_COUNT = 8;
+export const CHILDHOOD_STEPS = 5;
+export const YOUTH_STEPS = 7;
+export const AGE_STEPS = 8;
 export const ORDINARY_LIFE = 21;
 export const PORTRAIT_WORDS = 20;
 export const LINE_WORDS = 10;
