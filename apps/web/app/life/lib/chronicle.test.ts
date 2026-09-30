@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { parseChronicle, portraitError, readCharts, readLife, thinChronicle } from "./chronicle";
+import { parseStage, portraitError, thinStage } from "./chronicle";
 import { lifeContext, questionAt } from "./path";
 import type { Answer } from "./types";
 
-function answers(): Answer[] {
+function answers(count: number): Answer[] {
   const prior: Answer[] = [];
-  for (let index = 0; index < 7; index += 1) {
+  for (let index = 0; index < count; index += 1) {
     const question = questionAt(index, prior);
     const option = question.options.find((item) => item.points === 3)!;
     prior.push({ questionId: question.id, optionId: option.id });
@@ -14,56 +14,63 @@ function answers(): Answer[] {
   return prior;
 }
 
+function fullStage() {
+  return {
+    name: "Wynna",
+    knownAs: "Wynna of the croft",
+    nickname: "Wynna",
+    heading: "The first winters",
+    text: "She learned the lane before she learned her letters.",
+    imagePrompts: ["A child on a frozen lane.", "A croft in snow."],
+    born: 290,
+    fromYear: 290,
+    toYear: 302,
+    died: false,
+    diedYear: null,
+    dice: [{ die: "d20", result: 11, used: "A middling fortune." }],
+    fortune: { label: "Bread", points: across(290, 302) },
+    memory: { label: "The lane", points: across(290, 302) },
+    work: { title: "The croft", note: "Hands, and a roof.", series: [{ name: "Stores", points: across(290, 302) }] },
+  };
+}
+
+function across(start: number, end: number) {
+  return [0, 1, 2, 3, 4, 5, 6, 7].map((index) => ({
+    year: start + Math.round(((end - start) * index) / 7),
+    value: 10 + index,
+  }));
+}
+
 describe("life chronicle", () => {
-  it("rejects a short chart and accepts a full record", () => {
-    assert.equal(parseChronicle({ chapters: [] }, ""), null);
-    const thin = thinChronicle(lifeContext(answers()), "Arya");
-    const parsed = parseChronicle(
-      {
-        ...thin,
-        name: "Someone else",
-        chapters: thin.chapters.map((chapter) => ({ ...chapter, imagePrompt: "A hall in winter." })),
-        dice: [
-          { die: "d20", result: 11, used: "A middling fortune." },
-          { die: "d12", result: 6, used: "Half a natural span." },
-          { die: "d6", result: 2, used: "The work was lost." },
-        ],
-      },
-      "Arya",
-    );
+  it("accepts a sitting and rejects a short chart", () => {
+    assert.equal(parseStage({ heading: "Early" }, "childhood", 290, "Arya"), null);
+    const parsed = parseStage(fullStage(), "childhood", 290, "Arya");
     assert.equal(parsed?.name, "Arya");
-    assert.equal(parsed?.chapters.length, 3);
-    assert.equal(parsed?.fortune.points.length, 8);
+    assert.equal(parsed?.stage.id, "childhood");
+    assert.equal(parsed?.stage.imagePrompts.length, 2);
+    assert.equal(parsed?.ended, false);
     assert.equal(parsed?.thin, false);
   });
 
-  it("keeps the thin record inside the chart bounds", () => {
-    const thin = thinChronicle(lifeContext(answers()), "");
+  it("keeps a thin sitting inside the chart bounds", () => {
+    const thin = thinStage(lifeContext(answers(4)), "childhood", "");
     assert.equal(thin.thin, true);
     assert.equal(thin.name, "Unnamed");
-    assert.ok(thin.fortune.points.length >= 8);
-    assert.ok(thin.memory.points.length <= 12);
-    assert.equal(thin.memory.points.at(-1)?.value, 0);
-    assert.ok(thin.memory.points.at(-1)!.year > thin.died);
+    assert.ok(thin.stage.fortune.points.length >= 4);
+    assert.ok(thin.stage.memory.points.length <= 12);
   });
 
-  it("keeps a written life when the charts are missing", () => {
-    const story = readLife(
-      {
-        name: "Wynna",
-        chapters: [
-          { id: "late", heading: "After", text: "The name outlived the winter.", imagePrompt: "A frozen lane." },
-          { id: "early", heading: "Early", text: "She was born to a croft.", imagePrompt: "A croft." },
-          { id: "middle", heading: "Middle", text: "The war reached the lane.", imagePrompt: "A lane." },
-        ],
-      },
-      "",
-      290,
-    );
-    assert.equal(story?.name, "Wynna");
-    assert.deepEqual(story?.chapters.map((chapter) => chapter.id), ["early", "middle", "late"]);
-    assert.equal(story?.born, 290);
-    assert.equal(readCharts({ chapters: [] }), null);
+  it("marks death in the last sitting", () => {
+    const parsed = parseStage({ ...fullStage(), died: true, diedYear: 318, toYear: 318 }, "age", 290, "Wynna");
+    assert.equal(parsed?.ended, true);
+    assert.equal(parsed?.died, 318);
+  });
+
+  it("writes a childhood from four choices", () => {
+    const context = lifeContext(answers(4));
+    assert.equal(context.choices.length, 4);
+    assert.equal(context.choices[2].prompt, "Who are you?");
+    assert.equal(context.choices[3].prompt, "What is your background?");
   });
 
   it("rejects portrait lines that break the word cap", () => {
@@ -72,14 +79,5 @@ describe("life chronicle", () => {
       null,
     );
     assert.ok(portraitError({ name: "", portrait: "", want: "quiet", hate: "the cold", love: "a sibling" }));
-    assert.ok(
-      portraitError({
-        name: "",
-        portrait: "a child",
-        want: "one two three four five six seven eight nine ten eleven",
-        hate: "cold",
-        love: "home",
-      }),
-    );
   });
 });

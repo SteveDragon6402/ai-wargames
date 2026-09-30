@@ -3,14 +3,11 @@
 import { useRef, useState } from "react";
 import { Choices } from "./Choices";
 import { ChronicleView, type ChapterImage } from "./ChronicleView";
-import { Portrait } from "./Portrait";
-import type { Chronicle } from "../lib/chronicle";
-import { chipsFor, lifeContext, questionAt } from "../lib/path";
-import type { Answer, Option } from "../lib/types";
+import type { Chronicle, LifeStage } from "../lib/chronicle";
+import { lifeContext, questionAt } from "../lib/path";
+import { AGE_STEPS, CHILDHOOD_STEPS, YOUTH_STEPS, stageForCount, type Answer, type Option, type StageId } from "../lib/types";
 
-type Phase = "choices" | "portrait" | "chronicle";
-
-type Lines = { name: string; portrait: string; want: string; hate: string; love: string };
+type Phase = "choices" | "stage";
 
 function totalOf(answers: Answer[]): number {
   let total = 0;
@@ -29,26 +26,41 @@ async function readJson(response: Response): Promise<Record<string, unknown>> {
   }
 }
 
+function continueLabel(ended: boolean, next: StageId | null): string {
+  if (ended) return "Another life";
+  if (next === "youth") return "What did they learn";
+  if (next === "age") return "The rest of the life";
+  return "Continue";
+}
+
 export function LifePlay() {
   const [answers, setAnswers] = useState<Answer[]>([]);
   const [phase, setPhase] = useState<Phase>("choices");
-  const [chronicle, setChronicle] = useState<Chronicle | null>(null);
-  const [lines, setLines] = useState<Lines | null>(null);
+  const [stages, setStages] = useState<Chronicle[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [images, setImages] = useState<Partial<Record<string, ChapterImage>>>({});
   const [imagesNote, setImagesNote] = useState<string | null>(null);
   const run = useRef(0);
 
+  const latest = stages[stages.length - 1];
+  const ended = Boolean(latest?.ended);
+  const nextSitting = ended ? null : answers.length === CHILDHOOD_STEPS ? "youth" : answers.length === YOUTH_STEPS ? "age" : null;
+
   function choose(questionId: string, option: Option) {
     const next = [...answers, { questionId, optionId: option.id }];
     setAnswers(next);
-    if (next.length === 7) setPhase("portrait");
+    const sitting = stageForCount(next.length);
+    if (sitting) void write(sitting, next);
   }
 
   function back() {
     setError(null);
-    if (phase === "portrait") setPhase("choices");
+    if (phase === "stage" && !ended) {
+      setPhase("choices");
+      setAnswers((current) => current.slice(0, -1));
+      return;
+    }
     setAnswers((current) => current.slice(0, -1));
   }
 
@@ -56,105 +68,137 @@ export function LifePlay() {
     run.current += 1;
     setAnswers([]);
     setPhase("choices");
-    setChronicle(null);
-    setLines(null);
+    setStages([]);
     setBusy(false);
     setError(null);
     setImages({});
     setImagesNote(null);
   }
 
-  async function write(portrait: Lines) {
+  async function write(stage: StageId, nextAnswers: Answer[]) {
     const token = run.current + 1;
     run.current = token;
     setBusy(true);
     setError(null);
+    setPhase("stage");
     try {
       const response = await fetch("/api/life/chronicle", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answers, ...portrait }),
+        body: JSON.stringify({
+          stage,
+          answers: nextAnswers,
+          name: latest?.name ?? "",
+          prior: stages.map((item) => item.stage),
+        }),
       });
       const data = await readJson(response);
       if (token !== run.current) return;
       if (!response.ok) throw new Error(typeof data.error === "string" ? data.error : "The years were not written.");
       const written = data as unknown as Chronicle;
-      setChronicle(written);
-      setLines(portrait);
-      setPhase("chronicle");
-      if (!written.thin) void loadImages(written, token);
+      setStages((current) => [...current, written]);
+      if (!written.thin) void loadImages(written.stage, token);
     } catch (err) {
       if (token !== run.current) return;
       setError(err instanceof Error ? err.message : "The years were not written.");
+      setPhase("choices");
+      setAnswers((current) => current.slice(0, nextAnswers.length - 1));
     } finally {
       if (token === run.current) setBusy(false);
     }
   }
 
-  async function loadImages(written: Chronicle, token: number) {
-    const loading: Partial<Record<string, ChapterImage>> = {};
-    for (const chapter of written.chapters) loading[chapter.id] = { status: "loading" };
-    setImages(loading);
+  async function loadImages(stage: LifeStage, token: number) {
+    const keys = stage.imagePrompts.map((_, index) => `${stage.id}-${index}`);
+    setImages((current) => {
+      const next = { ...current };
+      for (const key of keys) next[key] = { status: "loading" };
+      return next;
+    });
     const results = await Promise.all(
-      written.chapters.map(async (chapter) => {
+      stage.imagePrompts.map(async (prompt, index) => {
+        if (!prompt) return { key: `${stage.id}-${index}`, ok: true, data: { skipped: true } as Record<string, unknown> };
         const response = await fetch("/api/life/image", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: chapter.imagePrompt }),
+          body: JSON.stringify({ prompt }),
         });
         const data = await readJson(response);
-        return { id: chapter.id, ok: response.ok, data };
+        return { key: `${stage.id}-${index}`, ok: response.ok, data };
       }),
     );
     if (token !== run.current) return;
     if (results.every((result) => result.data.skipped === true)) {
-      setImages({});
-      setImagesNote("Pictures are waiting on an image key.");
+      setImages((current) => {
+        const next = { ...current };
+        for (const key of keys) delete next[key];
+        return next;
+      });
+      setImagesNote("Pictures are waiting on a Gemini key.");
       return;
     }
-    const next: Partial<Record<string, ChapterImage>> = {};
-    for (const result of results) {
-      if (result.ok && typeof result.data.image === "string") {
-        next[result.id] = { status: "ready", src: result.data.image };
-      } else if (result.data.skipped === true) {
-        next[result.id] = { status: "error", message: "Pictures are waiting on an image key." };
-      } else {
-        next[result.id] = {
-          status: "error",
-          message: typeof result.data.error === "string" ? result.data.error : "The picture was not made.",
-        };
+    setImages((current) => {
+      const next = { ...current };
+      for (const result of results) {
+        if (result.ok && typeof result.data.image === "string") {
+          next[result.key] = { status: "ready", src: result.data.image };
+        } else if (result.data.skipped === true) {
+          next[result.key] = { status: "error", message: "Pictures are waiting on a Gemini key." };
+        } else {
+          next[result.key] = {
+            status: "error",
+            message: typeof result.data.error === "string" ? result.data.error : "The picture was not made.",
+          };
+        }
       }
+      return next;
+    });
+  }
+
+  function goOn() {
+    if (ended) {
+      restart();
+      return;
     }
-    setImages(next);
+    setPhase("choices");
   }
 
-  if (phase === "chronicle" && chronicle && lines) {
-    return <ChronicleView chronicle={chronicle} images={images} imagesNote={imagesNote} lines={lines} onRestart={restart} />;
-  }
-
-  if (phase === "portrait") {
-    const context = lifeContext(answers);
+  if (phase === "stage" && (stages.length > 0 || busy)) {
+    if (stages.length === 0) {
+      return (
+        <main className="mx-auto min-h-dvh max-w-3xl px-6 py-10">
+          <p className="text-[14px] uppercase tracking-[0.14em] text-[var(--merc-muted)]">One Life</p>
+          <h1 className="mt-2 font-gothic text-5xl text-[var(--merc-text)]">The years are being written</h1>
+          <p className="mt-4 max-w-xl text-[18px] text-[var(--merc-muted)]">A short sitting, then pictures of those years.</p>
+        </main>
+      );
+    }
     return (
-      <Portrait
-        choices={context.choices}
-        chips={chipsFor(answers)}
-        total={context.total}
+      <ChronicleView
+        stages={stages}
+        images={images}
+        imagesNote={imagesNote}
+        ended={ended}
+        died={latest?.died ?? null}
+        onRestart={restart}
+        onContinue={ended || nextSitting ? goOn : null}
+        continueLabel={continueLabel(ended, nextSitting)}
         busy={busy}
         error={error}
-        onBack={back}
-        onWrite={write}
       />
     );
   }
 
   const question = questionAt(answers.length, answers);
+  const atYouth = answers.length >= CHILDHOOD_STEPS && answers.length < YOUTH_STEPS;
+  const atAge = answers.length >= YOUTH_STEPS && answers.length < AGE_STEPS;
   return (
     <Choices
       question={question}
       step={answers.length + 1}
       total={totalOf(answers)}
       onChoose={(option) => choose(question.id, option)}
-      onBack={answers.length > 0 ? back : null}
+      onBack={answers.length > 0 || atYouth || atAge ? back : null}
     />
   );
 }

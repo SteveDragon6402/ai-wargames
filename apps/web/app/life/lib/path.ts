@@ -95,72 +95,77 @@ function houseHeldPrompt(house: string, raisedId: string, lesser: boolean): stri
 }
 
 function greatQuestions(index: number, prior: Answer[], era: EraId): Question {
-  if (index === 2) return questionOf("great-blood", "Which blood?", GREAT_BLOOD[era]);
-  const house = picked(2, prior);
-  if (index === 3) return questionOf("great-who", `Who are you, in ${house.label}?`, GREAT_PLACE);
-  if (index === 4) return questionOf("great-raised", `How did ${house.label} raise you?`, GREAT_RAISED);
-  if (index === 5) return questionOf("great-bent", `What is the bent of ${house.label}?`, bentOf(house.id));
+  if (index === 2) return questionOf("great-who", "Who are you?", GREAT_PLACE);
+  if (index === 3) return questionOf("great-blood", "What is your background?", GREAT_BLOOD[era]);
+  const house = picked(3, prior);
+  if (index === 4) return questionOf("great-raised", `What did you learn, growing in ${house.label}?`, GREAT_RAISED);
   const raised = picked(4, prior);
-  return questionOf("great-held", houseHeldPrompt(house.label, raised.id, false), heldRows(HOUSE_HELD, raised.id));
+  if (index === 5) return questionOf("great-held", houseHeldPrompt(house.label, raised.id, false), heldRows(HOUSE_HELD, raised.id));
+  return questionOf("great-bent", `What stayed with you, of ${house.label}?`, bentOf(house.id));
 }
 
 function lesserQuestions(index: number, prior: Answer[], era: EraId): Question {
-  if (index === 2) return questionOf("lesser-house", "Which house?", LESSER_HOUSES[era]);
-  const house = picked(2, prior);
-  if (index === 3) return questionOf("lesser-who", `What is your place in ${house.label}?`, GREAT_PLACE);
-  if (index === 4) return questionOf("lesser-raised", `How were you raised in ${house.label}?`, GREAT_RAISED);
-  if (index === 5) return questionOf("lesser-bent", `What do you bend toward in ${house.label}?`, bentOf(house.id));
+  if (index === 2) return questionOf("lesser-who", "Who are you?", GREAT_PLACE);
+  if (index === 3) return questionOf("lesser-house", "What is your background?", LESSER_HOUSES[era]);
+  const house = picked(3, prior);
+  if (index === 4) return questionOf("lesser-raised", `What did you learn, growing in ${house.label}?`, GREAT_RAISED);
   const raised = picked(4, prior);
-  return questionOf("lesser-held", houseHeldPrompt(house.label, raised.id, true), heldRows(HOUSE_HELD, raised.id));
+  if (index === 5) return questionOf("lesser-held", houseHeldPrompt(house.label, raised.id, true), heldRows(HOUSE_HELD, raised.id));
+  return questionOf("lesser-bent", `What stayed with you, of ${house.label}?`, bentOf(house.id));
 }
 
 function knightQuestions(index: number, prior: Answer[], era: EraId): Question {
-  if (index === 2) return questionOf("knight-where", "Where is the sword?", KNIGHT_WHERE[era]);
-  const where = picked(2, prior);
-  if (index === 3) return questionOf("knight-beside", `What knight's life is this, in ${where.label}?`, KNIGHT_BESIDE);
-  if (index === 4) return questionOf("knight-raised", "How were you raised to the sword?", KNIGHT_RAISED);
-  if (index === 5) return questionOf("knight-bent", "What is the bent of that knighthood?", KNIGHT_BENT);
+  if (index === 2) return questionOf("knight-beside", "Who are you?", KNIGHT_BESIDE);
+  if (index === 3) return questionOf("knight-where", "What is your background?", KNIGHT_WHERE[era]);
+  if (index === 4) return questionOf("knight-raised", "What did you learn of the sword?", KNIGHT_RAISED);
   const raised = picked(4, prior);
-  const knightHeld: Record<string, string> = {
-    tower: "What of the tower is yours?",
-    sword: "What weapon is yours?",
-    pay: "What coin from the sword is yours?",
-    letters: "What do you own for your letters?",
-    soft: "What were you given, and not taught?",
-  };
-  return questionOf("knight-held", knightHeld[raised.id] ?? "What do you own?", heldRows(KNIGHT_HELD, raised.id));
+  if (index === 5) {
+    const knightHeld: Record<string, string> = {
+      tower: "What of the tower is yours?",
+      sword: "What weapon is yours?",
+      pay: "What coin from the sword is yours?",
+      letters: "What do you own for your letters?",
+      soft: "What were you given, and not taught?",
+    };
+    return questionOf("knight-held", knightHeld[raised.id] ?? "What do you own?", heldRows(KNIGHT_HELD, raised.id));
+  }
+  return questionOf("knight-bent", "What stayed with you, of that knighthood?", KNIGHT_BENT);
 }
 
 function tradeQuestions(index: number, prior: Answer[], era: EraId): Question {
-  if (index === 2) return questionOf("trade-craft", "What is the craft?", TRADE_CRAFT);
-  if (index === 3) return questionOf("trade-town", "Which town holds the shop?", TRADE_TOWN[era]);
-  if (index === 4) return questionOf("trade-bench", "What is your place at the bench?", TRADE_BENCH);
-  if (index === 5) return questionOf("trade-raised", "How were you raised to the bench?", TRADE_RAISED);
-  const raised = picked(5, prior);
-  const tradeHeld: Record<string, string> = {
-    own: "What of the shop is yours?",
-    bench: "What tools are yours?",
-    accounts: "What coin from the shop is yours?",
-    letters: "What papers are yours?",
-    indulgent: "What were you given away from the work?",
-  };
-  return questionOf("trade-held", tradeHeld[raised.id] ?? "What do you own?", heldRows(TRADE_HELD, raised.id));
+  if (index === 2) return questionOf("trade-bench", "Who are you?", TRADE_BENCH);
+  if (index === 3) return questionOf("trade-craft", "What is your background?", TRADE_CRAFT);
+  if (index === 4) return questionOf("trade-raised", "What did you learn at the bench?", TRADE_RAISED);
+  const raised = picked(4, prior);
+  if (index === 5) {
+    const tradeHeld: Record<string, string> = {
+      own: "What of the shop is yours?",
+      bench: "What tools are yours?",
+      accounts: "What coin from the shop is yours?",
+      letters: "What papers are yours?",
+      indulgent: "What were you given away from the work?",
+    };
+    return questionOf("trade-held", tradeHeld[raised.id] ?? "What do you own?", heldRows(TRADE_HELD, raised.id));
+  }
+  return questionOf("trade-town", "Where did you take the work?", TRADE_TOWN[era]);
 }
 
 function folkQuestions(index: number, prior: Answer[], era: EraId): Question {
-  if (index === 2) return questionOf("folk-land", "Whose land?", folkLand(ERA_CONTEXT[era].war));
-  if (index === 3) return questionOf("folk-work", "What did your people do?", FOLK_WORK);
-  if (index === 4) return questionOf("folk-raised", "How were you raised on that land?", FOLK_RAISED);
-  if (index === 5) return questionOf("folk-bent", "What is the bent of your people?", FOLK_BENT);
+  if (index === 2) return questionOf("folk-work", "Who are you?", FOLK_WORK);
+  if (index === 3) return questionOf("folk-land", "What is your background?", folkLand(ERA_CONTEXT[era].war));
+  if (index === 4) return questionOf("folk-raised", "What did you learn on that land?", FOLK_RAISED);
   const raised = picked(4, prior);
-  const folkHeld: Record<string, string> = {
-    roof: "What of that roof is yours?",
-    work: "What tools of the work are yours?",
-    stores: "What have you stored that is yours?",
-    prayers: "What holy thing is yours?",
-    nothing: "What were you given, with no skill?",
-  };
-  return questionOf("folk-held", folkHeld[raised.id] ?? "What do you own?", heldRows(FOLK_HELD, raised.id));
+  if (index === 5) {
+    const folkHeld: Record<string, string> = {
+      roof: "What of that roof is yours?",
+      work: "What tools of the work are yours?",
+      stores: "What have you stored that is yours?",
+      prayers: "What holy thing is yours?",
+      nothing: "What were you given, with no skill?",
+    };
+    return questionOf("folk-held", folkHeld[raised.id] ?? "What do you own?", heldRows(FOLK_HELD, raised.id));
+  }
+  return questionOf("folk-bent", "What stayed with you, of your people?", FOLK_BENT);
 }
 
 export function questionAt(index: number, prior: Answer[]): Question {
@@ -181,9 +186,9 @@ export function questionAt(index: number, prior: Answer[]): Question {
 }
 
 export function lifeContext(answers: Answer[]): LifeContext {
-  if (answers.length !== 7) throw new Error("Seven choices are required.");
+  if (answers.length < 1 || answers.length > 7) throw new Error("Those choices do not make a life.");
   const choices = [];
-  for (let index = 0; index < 7; index += 1) {
+  for (let index = 0; index < answers.length; index += 1) {
     const question = questionAt(index, answers.slice(0, index));
     const option = requireOption(question, answers[index]);
     choices.push({

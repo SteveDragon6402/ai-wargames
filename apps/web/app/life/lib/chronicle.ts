@@ -1,16 +1,15 @@
 import { wordCount } from "./path";
-import { LINE_WORDS, PORTRAIT_WORDS, type LifeContext } from "./types";
+import {
+  AGE_STEPS,
+  CHILDHOOD_STEPS,
+  LINE_WORDS,
+  PORTRAIT_WORDS,
+  YOUTH_STEPS,
+  type LifeContext,
+  type StageId,
+} from "./types";
 
 export type YearPoint = { year: number; value: number };
-
-export type ChapterId = "early" | "middle" | "late";
-
-export type Chapter = {
-  id: ChapterId;
-  heading: string;
-  text: string;
-  imagePrompt: string;
-};
 
 export type DieRoll = {
   die: string;
@@ -23,15 +22,41 @@ export type NamedSeries = {
   points: YearPoint[];
 };
 
+export type Chart = {
+  label: string;
+  points: YearPoint[];
+};
+
+export type WorkChart = {
+  title: string;
+  note: string;
+  series: NamedSeries[];
+};
+
+export type LifeStage = {
+  id: StageId;
+  heading: string;
+  text: string;
+  imagePrompts: string[];
+  fromYear: number;
+  toYear: number;
+  died: boolean;
+  nickname: string;
+  knownAs: string;
+  fortune: Chart;
+  memory: Chart;
+  work: WorkChart;
+};
+
 export type Chronicle = {
   name: string;
-  chapters: Chapter[];
+  knownAs: string;
+  nickname: string;
   born: number;
-  died: number;
+  died: number | null;
+  ended: boolean;
+  stage: LifeStage;
   dice: DieRoll[];
-  fortune: { label: string; points: YearPoint[] };
-  memory: { label: string; points: YearPoint[] };
-  work: { title: string; note: string; series: NamedSeries[] };
   thin: boolean;
 };
 
@@ -43,7 +68,13 @@ export type Portrait = {
   love: string;
 };
 
-const CHAPTERS: ChapterId[] = ["early", "middle", "late"];
+const STAGES: StageId[] = ["childhood", "youth", "age"];
+
+export function requiredCount(stage: StageId): number {
+  if (stage === "childhood") return CHILDHOOD_STEPS;
+  if (stage === "youth") return YOUTH_STEPS;
+  return AGE_STEPS;
+}
 
 export function portraitError(portrait: Portrait): string | null {
   if (portrait.name.trim().length > 80) return "The name is too long.";
@@ -72,6 +103,10 @@ function text(value: unknown): string | null {
   return trimmed ? trimmed : null;
 }
 
+function flag(value: unknown): boolean {
+  return value === true;
+}
+
 function whole(value: unknown): number | null {
   if (typeof value === "string" && value.trim() && Number.isFinite(Number(value))) return Math.round(Number(value));
   if (typeof value !== "number" || !Number.isFinite(value)) return null;
@@ -91,25 +126,12 @@ function series(value: unknown): YearPoint[] | null {
   return points;
 }
 
-function chaptersOf(body: Record<string, unknown>): Chapter[] | null {
-  if (!Array.isArray(body.chapters) || body.chapters.length !== 3) return null;
-  const chapters: Chapter[] = [];
-  for (const item of body.chapters) {
-    const row = record(item);
-    const id = row?.id;
-    const heading = text(row?.heading);
-    const chapterText = text(row?.text);
-    if (!row || (id !== "early" && id !== "middle" && id !== "late") || !heading || !chapterText) return null;
-    chapters.push({
-      id,
-      heading,
-      text: chapterText,
-      imagePrompt: text(row.imagePrompt) ?? chapterText.slice(0, 280),
-    });
-  }
-  if (new Set(chapters.map((chapter) => chapter.id)).size !== 3) return null;
-  chapters.sort((a, b) => CHAPTERS.indexOf(a.id) - CHAPTERS.indexOf(b.id));
-  return chapters;
+function promptsOf(value: unknown, fallback: string): string[] {
+  if (!Array.isArray(value)) return [fallback, fallback];
+  const prompts = value.map((item) => text(item)).filter((item): item is string => Boolean(item));
+  if (prompts.length >= 2) return prompts.slice(0, 2);
+  if (prompts.length === 1) return [prompts[0], prompts[0]];
+  return [fallback, fallback];
 }
 
 function diceOf(body: Record<string, unknown>): DieRoll[] {
@@ -125,16 +147,21 @@ function diceOf(body: Record<string, unknown>): DieRoll[] {
   return dice;
 }
 
-function chartsOf(body: Record<string, unknown>): Pick<Chronicle, "fortune" | "memory" | "work"> | null {
-  const fortunePoints = series(record(body.fortune)?.points);
-  const fortuneLabel = text(record(body.fortune)?.label);
-  const memoryPoints = series(record(body.memory)?.points);
-  const memoryLabel = text(record(body.memory)?.label);
-  const work = record(body.work);
-  const workTitle = text(work?.title);
-  const workNote = text(work?.note);
-  if (!fortunePoints || !fortuneLabel || !memoryPoints || !memoryLabel || !work || !workTitle || !workNote) return null;
-  if (!Array.isArray(work.series) || work.series.length < 1 || work.series.length > 2) return null;
+function chartOf(value: unknown, fallbackLabel: string): Chart | null {
+  const row = record(value);
+  const points = series(row?.points);
+  const label = text(row?.label) ?? fallbackLabel;
+  if (!points) return null;
+  return { label, points };
+}
+
+function workOf(value: unknown): WorkChart | null {
+  const work = record(value);
+  const title = text(work?.title);
+  const note = text(work?.note);
+  if (!work || !title || !note || !Array.isArray(work.series) || work.series.length < 1 || work.series.length > 2) {
+    return null;
+  }
   const workSeries: NamedSeries[] = [];
   for (const item of work.series) {
     const row = record(item);
@@ -143,52 +170,55 @@ function chartsOf(body: Record<string, unknown>): Pick<Chronicle, "fortune" | "m
     if (!seriesName || !points) return null;
     workSeries.push({ name: seriesName, points });
   }
-  return {
-    fortune: { label: fortuneLabel, points: fortunePoints },
-    memory: { label: memoryLabel, points: memoryPoints },
-    work: { title: workTitle, note: workNote, series: workSeries },
-  };
+  return { title, note, series: workSeries };
 }
 
-export function readLife(input: unknown, name: string, fallbackBorn: number): Chronicle | null {
-  const body = record(input);
-  const chapters = body && chaptersOf(body);
-  if (!body || !chapters) return null;
-  const born = whole(body.born) ?? fallbackBorn;
-  const died = whole(body.died);
-  const end = died !== null && died >= born ? died : born + 36;
-  const given = name.trim();
-  return {
-    name: given || text(body.name) || "Unnamed",
-    chapters,
-    born,
-    died: end,
-    dice: diceOf(body),
-    fortune: { label: "", points: [] },
-    memory: { label: "", points: [] },
-    work: { title: "", note: "", series: [] },
-    thin: false,
-  };
-}
-
-export function readCharts(input: unknown): Pick<Chronicle, "fortune" | "memory" | "work"> | null {
+export function parseStage(input: unknown, stage: StageId, fallbackBorn: number, name: string): Chronicle | null {
   const body = record(input);
   if (!body) return null;
-  return chartsOf(body);
+  const heading = text(body.heading);
+  const bodyText = text(body.text);
+  if (!heading || !bodyText) return null;
+  const born = whole(body.born) ?? fallbackBorn;
+  const fromYear = whole(body.fromYear) ?? born;
+  const toYear = whole(body.toYear) ?? fromYear;
+  const died = flag(body.died) || stage === "age";
+  const diedYear = whole(body.diedYear);
+  const fortune = chartOf(body.fortune, "What they held");
+  const memory = chartOf(body.memory, "How the name was spoken");
+  const work = workOf(body.work);
+  if (!fortune || !memory || !work) return null;
+  const knownAs = text(body.knownAs) ?? text(body.name) ?? (name.trim() || "Unnamed");
+  const nickname = text(body.nickname) ?? knownAs;
+  const given = name.trim();
+  return {
+    name: given || text(body.name) || knownAs,
+    knownAs,
+    nickname,
+    born,
+    died: died ? diedYear ?? toYear : null,
+    ended: died,
+    dice: diceOf(body),
+    thin: false,
+    stage: {
+      id: stage,
+      heading,
+      text: bodyText,
+      imagePrompts: promptsOf(body.imagePrompts, bodyText.slice(0, 280)),
+      fromYear,
+      toYear,
+      died,
+      nickname,
+      knownAs,
+      fortune,
+      memory,
+      work,
+    },
+  };
 }
 
-export function parseChronicle(input: unknown, name: string): Chronicle | null {
-  const body = record(input);
-  const born = whole(body?.born);
-  if (!body || born === null || whole(body.died) === null) return null;
-  const story = readLife(input, name, born);
-  const charts = readCharts(input);
-  if (!story || !charts) return null;
-  return { ...story, ...charts, thin: false };
-}
-
-export function fallbackCharts(context: LifeContext, born: number, died: number): Pick<Chronicle, "fortune" | "memory" | "work"> {
-  const shelter = Math.max(4, Math.round((context.total / 35) * 70));
+export function fallbackCharts(context: LifeContext, born: number, died: number): { fortune: Chart; memory: Chart; work: WorkChart } {
+  const shelter = Math.max(4, Math.round((context.total / Math.max(context.choices.length * 5, 5)) * 70));
   return {
     fortune: {
       label: "A thin record of what they held",
@@ -196,7 +226,7 @@ export function fallbackCharts(context: LifeContext, born: number, died: number)
     },
     memory: {
       label: "How long the name was spoken",
-      points: across(born, died + 40, [2, 10, 24, 40, 22, 10, 4, 0]),
+      points: across(born, died + 20, [2, 10, 24, 40, 22, 10, 4, 0]),
     },
     work: {
       title: "A thin record",
@@ -214,75 +244,90 @@ function across(start: number, end: number, values: number[]): YearPoint[] {
   }));
 }
 
-export function thinChronicle(context: LifeContext, name: string): Chronicle {
+export function thinStage(context: LifeContext, stage: StageId, name: string): Chronicle {
   const born = context.born;
-  const died = born + 36;
-  const lines = context.choices.map((choice) => `${choice.prompt} ${choice.label}.`);
+  const span = stage === "childhood" ? 12 : stage === "youth" ? 25 : 36;
+  const toYear = born + span;
+  const charts = fallbackCharts(context, born, toYear);
+  const lines = context.choices.map((choice) => `${choice.label}.`).join(" ");
+  const heading = stage === "childhood" ? "Childhood" : stage === "youth" ? "Youth" : "The rest";
   return {
     name: name.trim() || "Unnamed",
-    thin: true,
+    knownAs: name.trim() || "Unnamed",
+    nickname: name.trim() || "Unnamed",
     born,
-    died,
+    died: stage === "age" ? toYear : null,
+    ended: stage === "age",
     dice: [],
-    chapters: [
-      {
-        id: "early",
-        heading: "Early",
-        text: `The years came back thin. Before the events, this was the person. ${lines.slice(0, 3).join(" ")}`,
-        imagePrompt: "",
-      },
-      {
-        id: "middle",
-        heading: "The middle years",
-        text: `${lines.slice(3, 5).join(" ")} Nothing further was written of the middle years.`,
-        imagePrompt: "",
-      },
-      {
-        id: "late",
-        heading: "What remained",
-        text: `${lines.slice(5).join(" ")} The later years were not written.`,
-        imagePrompt: "",
-      },
-    ],
-    ...fallbackCharts(context, born, died),
+    thin: true,
+    stage: {
+      id: stage,
+      heading,
+      text: `The years came back thin. ${lines}`,
+      imagePrompts: ["", ""],
+      fromYear: born,
+      toYear,
+      died: stage === "age",
+      nickname: name.trim() || "Unnamed",
+      knownAs: name.trim() || "Unnamed",
+      ...charts,
+    },
   };
 }
 
-export function chronicleSystem(): string {
-  return `You write one life in Westeros. The seven choices are the person before the significant events of their era. Keep that person. Then drop them into those events and let the dice decide what the years make of them, including whether they ever hold a trade, a command, or a name. They may die in any chapter. If they die early, the later chapters say what the death left behind: the body, the name, the work.
+export function stageSystem(stage: StageId): string {
+  const span =
+    stage === "childhood"
+      ? "Write only childhood, from birth until about twelve, or until death if death comes first. A child may die. If they die, stop there. Do not invent youth."
+      : stage === "youth"
+        ? "Write youth, from the end of childhood until about five-and-twenty. They may die in these years. If they die, stop there. Do not invent old age."
+        : "Write the rest of the life, from about five-and-twenty until death. They die in this chapter, of war, illness, accident, or years.";
 
-Be realistic. No modern voice. Do not mention points, prices, or these instructions.
+  return `You write one sitting of a life in Westeros. ${span}
 
-Before you write, roll a d20 for fortune, a d12 for when death comes against a natural span of seventy years, and a d6 for whether anything they make outlives them. Use the rolls. A high d20 is kinder. The d12 is how many sevenths of a natural span they are granted, though illness, war, or accident may cut it shorter. On the d6, 1 or 2 means the work is lost, 3 or 4 means some of it survives, and 5 or 6 means it outlasts them.
+Keep the person already chosen. Drop them into the events of their era. Be realistic. Clean, precise, interesting, and short. No modern voice. Do not mention points, prices, or these instructions.
 
-Call record_life once.
+Before you write, roll a d20 for fortune in these years, a d12 for whether death comes in this sitting, and a d6 for whether anything they touch in these years will outlast them. Use the rolls. A high d20 is kinder. On the d12, 1 or 2 in childhood is a real chance of dying as a child. In youth, 1 to 4 may die before five-and-twenty. In the last sitting they always die, and the d12 only says how soon.
 
-Write exactly three chapters, with ids early, middle, and late, in that order. Each text is 90 to 140 words. Each imagePrompt is one painterly scene from that chapter. Do not ask for text, letters, or a modern object in the image.
+Call record_stage once.
 
-born and died are integers. born must fall inside the era's allowed years. died is the year of death.
+heading is a short title for this sitting. text is 70 to 120 words, one or two paragraphs. imagePrompts is exactly two painterly scenes from this sitting. Do not ask for text, letters, or a modern object in an image.
 
-fortune is coin or the worth of what they hold: a label and 8 points from born through died, stopping at death. Values run from 0 to 100. Always include fortune, memory, and work.
+name is their given name. knownAs is what they are known as in these years. nickname is the name people actually use.
 
-memory is how spoken the name is: a label and 8 to 12 points from birth until the name goes quiet, which may be decades after death. It decays after death. Values run from 0 to 100.
+born, fromYear, and toYear are integers. born must fall inside the era's allowed years. fromYear is the first year of this sitting. toYear is the last year you wrote, which is the year of death if they died.
 
-work is named from the life you actually wrote, not from a job the player chose. Give a title, a one-sentence note, and one or two series of 8 to 12 points across the life. A master of books might be pages written and pages that survived. A life with sheep might be hides and winters. A life that stayed a sword might be oaths kept. Name the series for what this life did.`;
+died is true if they die in this sitting. diedYear is that year, or null.
+
+fortune is coin or the worth of what they hold in this sitting: a label and 4 to 8 points from fromYear through toYear. Values 0 to 100.
+memory is how spoken the name is in this sitting, and a little after if they died: a label and 4 to 8 points. Values 0 to 100.
+work is named from what this sitting actually did. Title, one-sentence note, one or two series of 4 to 8 points.`;
 }
 
-export function chronicleUser(context: LifeContext, portrait: Portrait): string {
+export function stageUser(
+  context: LifeContext,
+  stage: StageId,
+  prior: LifeStage[],
+  givenName: string,
+): string {
   const lines = context.choices
     .map((choice, index) => `${index + 1}. ${choice.prompt}\n${choice.label}. ${choice.detail}`)
     .join("\n");
-  const name = portrait.name.trim();
-  return `Point total: ${context.total}, on a scale from 7 to 35. Twenty-one is an ordinary life. A low total is a hard beginning. A high total is a sheltered one. Do not mention the total.
+  const earlier = prior
+    .map((item) => `${item.heading} (${item.fromYear}–${item.toYear}${item.died ? ", died" : ""}). Known as ${item.knownAs}. ${item.text}`)
+    .join("\n\n");
+  const ordinary = context.choices.length * 3;
+  return `Point total so far: ${context.total}, on a scale from ${context.choices.length} to ${context.choices.length * 5}. ${ordinary} would be ordinary. Do not mention the total.
 
-Name: ${name || "None given. Invent a name that fits the blood and the station."}
-In their own words, what they are: ${portrait.portrait.trim()}
-What they want most: ${portrait.want.trim()}
-What they hate most: ${portrait.hate.trim()}
-What they love most: ${portrait.love.trim()}
+Name, if one was given: ${givenName.trim() || "None. Invent a name that fits the blood and the station, and keep it if later sittings happen."}
+Sitting: ${stage}
 
 ${context.years}
 ${context.events}
 
-${lines}`;
+${lines}
+
+${earlier ? `What has already been written:\n${earlier}` : "Nothing has been written yet. This is childhood."}`;
 }
+
+export { STAGES };

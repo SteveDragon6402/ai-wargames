@@ -78,6 +78,7 @@ pnpm dev
 | `DATABASE_URL` | — | PostgreSQL connection string |
 | `REDIS_URL` | — | Redis connection string |
 | `ANTHROPIC_API_KEY` | — | Required for AI battle adjudication |
+| `GEMINI_API_KEY` | — | One Life pictures. The life is still written without it. |
 | `MODEL_ADJUDICATOR` | `claude-opus-4-5` | Claude model used for battles |
 | `DEFAULT_TURN_DURATION_SECONDS` | `90` | Planning phase timer length |
 | `NEXT_PUBLIC_WS_URL` | `http://localhost:3001` | Socket.IO URL (browser-visible) |

@@ -29,6 +29,8 @@ export type LifeChoice = {
   points: Price;
 };
 
+export type StageId = "childhood" | "youth" | "age";
+
 export type LifeContext = {
   total: number;
   choices: LifeChoice[];
@@ -45,6 +47,16 @@ export type ChipSet = {
 };
 
 export const STEP_COUNT = 7;
+export const CHILDHOOD_STEPS = 4;
+export const YOUTH_STEPS = 6;
+export const AGE_STEPS = 7;
 export const ORDINARY_LIFE = 21;
 export const PORTRAIT_WORDS = 20;
 export const LINE_WORDS = 10;
+
+export function stageForCount(count: number): StageId | null {
+  if (count === CHILDHOOD_STEPS) return "childhood";
+  if (count === YOUTH_STEPS) return "youth";
+  if (count === AGE_STEPS) return "age";
+  return null;
+}

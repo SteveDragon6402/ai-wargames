@@ -139,6 +139,37 @@
     opacity: 0;
     animation: life-rise 1.4s ease forwards;
   }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .life-choice {
+      transition: border-color 160ms ease-out, background-color 160ms ease-out;
+    }
+
+    .life-choice:active {
+      transform: scale(0.99);
+    }
+
+    .life-point {
+      cursor: pointer;
+      transition: stroke-width 160ms ease-out;
+    }
+
+    .life-point:focus-visible {
+      stroke-width: 3;
+      outline: 2px solid var(--merc-red);
+      outline-offset: 2px;
+    }
+  }
+
+  @media (hover: hover) and (pointer: fine) {
+    .life-choice:hover {
+      background: var(--merc-raise);
+    }
+
+    .life-point:hover {
+      stroke-width: 3;
+    }
+  }
 }
 
 @keyframes life-draw {

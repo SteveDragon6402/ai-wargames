@@ -48,6 +48,7 @@ For the **web** service only:
 PORT                  = 3000
 NEXT_PUBLIC_WS_URL    = https://<worker-domain>.up.railway.app
 ANTHROPIC_API_KEY     = <your key>
+GEMINI_API_KEY        = <your Gemini key, for One Life pictures>
 ADMIN_PASSWORD        = <strong password>
 ```
 
@@ -131,7 +132,8 @@ The project uses App Router but needs `pages/_error.tsx`, `pages/_document.tsx`,
 | `PORT` | web (`3000`), worker (`3001`) | Port the service listens on |
 | `NEXT_PUBLIC_WS_URL` | web | Worker's public domain, e.g. `https://worker-xxx.up.railway.app` |
 | `CORS_ORIGIN` | worker | Web service's public domain, e.g. `https://web-xxx.up.railway.app` |
-| `ANTHROPIC_API_KEY` | web, worker | Anthropic API key for AI adjudication |
+| `ANTHROPIC_API_KEY` | web, worker | Anthropic API key for AI adjudication and One Life |
+| `GEMINI_API_KEY` | web | Google Gemini API key for One Life pictures |
 | `ADMIN_PASSWORD` | web | Password for the admin panel (defaults to `"admin"` if unset) |
 | `DEFAULT_TURN_DURATION_SECONDS` | web, worker | Turn length in seconds (default: `90`) |
 | `MODEL_ADJUDICATOR` | web, worker | Anthropic model for adjudication (default: `claude-sonnet-4-6`) |

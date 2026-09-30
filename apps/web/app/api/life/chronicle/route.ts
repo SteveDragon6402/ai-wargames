@@ -1,34 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
 import type Anthropic from "@anthropic-ai/sdk";
-import { anthropicClient, createMessage, toolUses } from "../../mercenary/model";
-import { chronicleSystem, chronicleUser, fallbackCharts, portraitError, readCharts, readLife, thinChronicle, type Portrait } from "../../../life/lib/chronicle";
+import { anthropicClient, createLifeMessage, toolUses } from "../../mercenary/model";
+import { parseStage, requiredCount, stageSystem, stageUser, thinStage, type LifeStage } from "../../../life/lib/chronicle";
 import { lifeContext } from "../../../life/lib/path";
-import type { Answer } from "../../../life/lib/types";
+import type { Answer, StageId } from "../../../life/lib/types";
 
 export const maxDuration = 120;
 
 const TOOL: Anthropic.Tool = {
-  name: "record_life",
-  description: "Record the life, the dice, and the chart numbers.",
+  name: "record_stage",
+  description: "Record this sitting of the life, the dice, and the chart numbers.",
   input_schema: {
     type: "object",
     properties: {
       name: { type: "string" },
-      chapters: {
-        type: "array",
-        items: {
-          type: "object",
-          properties: {
-            id: { type: "string", enum: ["early", "middle", "late"] },
-            heading: { type: "string" },
-            text: { type: "string" },
-            imagePrompt: { type: "string" },
-          },
-          required: ["id", "heading", "text", "imagePrompt"],
-        },
-      },
+      knownAs: { type: "string" },
+      nickname: { type: "string" },
+      heading: { type: "string" },
+      text: { type: "string" },
+      imagePrompts: { type: "array", items: { type: "string" } },
       born: { type: "integer" },
-      died: { type: "integer" },
+      fromYear: { type: "integer" },
+      toYear: { type: "integer" },
+      died: { type: "boolean" },
+      diedYear: { type: ["integer", "null"] },
       dice: {
         type: "array",
         items: {
@@ -45,7 +40,14 @@ const TOOL: Anthropic.Tool = {
         type: "object",
         properties: {
           label: { type: "string" },
-          points: { type: "array", items: { type: "object", properties: { year: { type: "integer" }, value: { type: "integer" } }, required: ["year", "value"] } },
+          points: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: { year: { type: "integer" }, value: { type: "integer" } },
+              required: ["year", "value"],
+            },
+          },
         },
         required: ["label", "points"],
       },
@@ -53,7 +55,14 @@ const TOOL: Anthropic.Tool = {
         type: "object",
         properties: {
           label: { type: "string" },
-          points: { type: "array", items: { type: "object", properties: { year: { type: "integer" }, value: { type: "integer" } }, required: ["year", "value"] } },
+          points: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: { year: { type: "integer" }, value: { type: "integer" } },
+              required: ["year", "value"],
+            },
+          },
         },
         required: ["label", "points"],
       },
@@ -68,7 +77,14 @@ const TOOL: Anthropic.Tool = {
               type: "object",
               properties: {
                 name: { type: "string" },
-                points: { type: "array", items: { type: "object", properties: { year: { type: "integer" }, value: { type: "integer" } }, required: ["year", "value"] } },
+                points: {
+                  type: "array",
+                  items: {
+                    type: "object",
+                    properties: { year: { type: "integer" }, value: { type: "integer" } },
+                    required: ["year", "value"],
+                  },
+                },
               },
               required: ["name", "points"],
             },
@@ -77,12 +93,12 @@ const TOOL: Anthropic.Tool = {
         required: ["title", "note", "series"],
       },
     },
-    required: ["name", "chapters", "born", "died", "dice", "fortune", "memory", "work"],
+    required: ["name", "knownAs", "nickname", "heading", "text", "imagePrompts", "born", "fromYear", "toYear", "died", "dice", "fortune", "memory", "work"],
   },
 };
 
-function answersOf(value: unknown): Answer[] | null {
-  if (!Array.isArray(value) || value.length !== 7) return null;
+function answersOf(value: unknown, count: number): Answer[] | null {
+  if (!Array.isArray(value) || value.length !== count) return null;
   const answers: Answer[] = [];
   for (const item of value) {
     if (typeof item !== "object" || item === null) return null;
@@ -93,42 +109,34 @@ function answersOf(value: unknown): Answer[] | null {
   return answers;
 }
 
-function portraitOf(body: {
-  name?: unknown;
-  portrait?: unknown;
-  want?: unknown;
-  hate?: unknown;
-  love?: unknown;
-}): Portrait | null {
-  if (
-    typeof body.portrait !== "string" ||
-    typeof body.want !== "string" ||
-    typeof body.hate !== "string" ||
-    typeof body.love !== "string"
-  ) {
-    return null;
+function stageOf(value: unknown): StageId | null {
+  if (value === "childhood" || value === "youth" || value === "age") return value;
+  return null;
+}
+
+function priorOf(value: unknown): LifeStage[] {
+  if (!Array.isArray(value)) return [];
+  const prior: LifeStage[] = [];
+  for (const item of value) {
+    if (typeof item !== "object" || item === null) continue;
+    const row = item as LifeStage;
+    if (typeof row.heading === "string" && typeof row.text === "string") prior.push(row);
   }
-  return {
-    name: typeof body.name === "string" ? body.name : "",
-    portrait: body.portrait,
-    want: body.want,
-    hate: body.hate,
-    love: body.love,
-  };
+  return prior;
 }
 
 export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => null)) as {
     answers?: unknown;
+    stage?: unknown;
     name?: unknown;
-    portrait?: unknown;
-    want?: unknown;
-    hate?: unknown;
-    love?: unknown;
+    prior?: unknown;
   } | null;
-  const answers = answersOf(body?.answers);
-  const portrait = body ? portraitOf(body) : null;
-  if (!answers || !portrait) return NextResponse.json({ error: "The life is missing." }, { status: 400 });
+  const stage = stageOf(body?.stage);
+  if (!stage) return NextResponse.json({ error: "That sitting of the life is missing." }, { status: 400 });
+  const answers = answersOf(body?.answers, requiredCount(stage));
+  if (!answers) return NextResponse.json({ error: "The life is missing." }, { status: 400 });
+  const givenName = typeof body?.name === "string" ? body.name : "";
 
   let context;
   try {
@@ -136,42 +144,32 @@ export async function POST(req: NextRequest) {
   } catch {
     return NextResponse.json({ error: "Those choices do not make a life." }, { status: 400 });
   }
-  const problem = portraitError(portrait);
-  if (problem) return NextResponse.json({ error: problem }, { status: 400 });
 
   const client = anthropicClient();
   if ("error" in client) return NextResponse.json({ error: client.error }, { status: 500 });
 
-  const user = chronicleUser(context, portrait);
+  const prior = priorOf(body?.prior);
+  const user = stageUser(context, stage, prior, givenName);
   const ask = (content: string) =>
-    createMessage(client, {
-      max_tokens: 8000,
-      system: chronicleSystem(),
+    createLifeMessage(client, {
+      max_tokens: 6000,
+      system: stageSystem(stage),
       tools: [TOOL],
-      tool_choice: { type: "tool", name: "record_life" },
+      tool_choice: { type: "tool", name: "record_stage" },
       messages: [{ role: "user", content }],
     });
 
   const first = await ask(user);
   if ("error" in first) return NextResponse.json({ error: first.error }, { status: 500 });
-  const inputs = [toolUses(first).find((item) => item.name === "record_life")?.input];
-  const firstStory = readLife(inputs[0], portrait.name, context.born);
-  const firstCharts = readCharts(inputs[0]);
-  if (!(firstStory && firstCharts)) {
-    const second = await ask(`${user}\n\nThe last record was incomplete. Call record_life once with every required field, including fortune, memory, work, and three chapters.`);
-    if (!("error" in second)) inputs.push(toolUses(second).find((item) => item.name === "record_life")?.input);
+  const inputs = [toolUses(first).find((item) => item.name === "record_stage")?.input];
+  if (!parseStage(inputs[0], stage, context.born, givenName)) {
+    const second = await ask(`${user}\n\nThe last record was incomplete. Call record_stage once with every required field, including two imagePrompts, fortune, memory, and work.`);
+    if (!("error" in second)) inputs.push(toolUses(second).find((item) => item.name === "record_stage")?.input);
   }
 
   for (const input of inputs) {
-    const story = readLife(input, portrait.name, context.born);
-    const charts = readCharts(input);
-    if (story && charts) return NextResponse.json({ ...story, ...charts, thin: false });
+    const written = parseStage(input, stage, context.born, givenName);
+    if (written) return NextResponse.json(written);
   }
-  for (const input of inputs) {
-    const story = readLife(input, portrait.name, context.born);
-    if (!story) continue;
-    const charts = inputs.map(readCharts).find((charts) => charts !== null) ?? fallbackCharts(context, story.born, story.died);
-    return NextResponse.json({ ...story, ...charts, thin: false });
-  }
-  return NextResponse.json(thinChronicle(context, portrait.name));
+  return NextResponse.json(thinStage(context, stage, givenName));
 }

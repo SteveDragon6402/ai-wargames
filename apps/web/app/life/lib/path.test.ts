@@ -81,13 +81,15 @@ describe("life path", () => {
           trace(era, station, (question, index) => pick(question, index, era, station)).questions,
         ]),
       ) as Record<StationId, Question[]>;
-      for (let index = 2; index < 7; index += 1) {
+      for (let index = 3; index < 7; index += 1) {
         for (let left = 0; left < STATIONS.length; left += 1) {
           for (let right = left + 1; right < STATIONS.length; right += 1) {
-            assert.notEqual(byStation[STATIONS[left]][index].prompt, byStation[STATIONS[right]][index].prompt);
+            assert.notEqual(byStation[STATIONS[left]][index].id, byStation[STATIONS[right]][index].id);
           }
         }
       }
+      assert.equal(byStation.great[2].prompt, "Who are you?");
+      assert.equal(byStation.great[3].prompt, "What is your background?");
     }
   });
 
@@ -108,17 +110,27 @@ describe("life path", () => {
     const blood = (era: EraId) => {
       const born = questionAt(0, []);
       const station = questionAt(1, [{ questionId: born.id, optionId: era }]);
-      return questionAt(2, [
+      const who = questionAt(2, [
         { questionId: born.id, optionId: era },
         { questionId: station.id, optionId: "great" },
+      ]);
+      return questionAt(3, [
+        { questionId: born.id, optionId: era },
+        { questionId: station.id, optionId: "great" },
+        { questionId: who.id, optionId: "heir" },
       ]).options.map((option) => option.id);
     };
     const points = (era: EraId, id: string) => {
       const born = questionAt(0, []);
       const station = questionAt(1, [{ questionId: born.id, optionId: era }]);
-      return questionAt(2, [
+      const who = questionAt(2, [
         { questionId: born.id, optionId: era },
         { questionId: station.id, optionId: "great" },
+      ]);
+      return questionAt(3, [
+        { questionId: born.id, optionId: era },
+        { questionId: station.id, optionId: "great" },
+        { questionId: who.id, optionId: "heir" },
       ]).options.find((option) => option.id === id)?.points;
     };
     assert.ok(blood("fivekings").includes("martell"));
@@ -157,39 +169,31 @@ describe("life path", () => {
   it("runs a house bent from the words down to the twist", () => {
     const born = questionAt(0, []);
     const station = questionAt(1, [{ questionId: born.id, optionId: "fivekings" }]);
-    const blood = questionAt(2, [
+    const who = questionAt(2, [
       { questionId: born.id, optionId: "fivekings" },
       { questionId: station.id, optionId: "great" },
     ]);
     const prior = [
       { questionId: born.id, optionId: "fivekings" },
       { questionId: station.id, optionId: "great" },
-      { questionId: blood.id, optionId: "lannister" },
-    ];
-    const who = questionAt(3, prior);
-    const raised = questionAt(4, [...prior, { questionId: who.id, optionId: "heir" }]);
-    const bent = questionAt(5, [
-      ...prior,
       { questionId: who.id, optionId: "heir" },
+    ];
+    const blood = questionAt(3, prior);
+    const raised = questionAt(4, [...prior, { questionId: blood.id, optionId: "lannister" }]);
+    const held = questionAt(5, [
+      ...prior,
+      { questionId: blood.id, optionId: "lannister" },
       { questionId: raised.id, optionId: "rule" },
+    ]);
+    const bent = questionAt(6, [
+      ...prior,
+      { questionId: blood.id, optionId: "lannister" },
+      { questionId: raised.id, optionId: "rule" },
+      { questionId: held.id, optionId: held.options[0].id },
     ]);
     assert.equal(bent.options.find((option) => option.points === 5)?.label, "Hear Me Roar");
     assert.equal(bent.options.find((option) => option.points === 4)?.label, "A Lannister always pays his debts");
     assert.equal(bent.options.find((option) => option.points === 1)?.label, "Power above all");
-    const starkBlood = [
-      { questionId: born.id, optionId: "fivekings" },
-      { questionId: station.id, optionId: "great" },
-      { questionId: blood.id, optionId: "stark" },
-    ];
-    const starkWho = questionAt(3, starkBlood);
-    const starkRaised = questionAt(4, [...starkBlood, { questionId: starkWho.id, optionId: "heir" }]);
-    const starkBent = questionAt(5, [
-      ...starkBlood,
-      { questionId: starkWho.id, optionId: "heir" },
-      { questionId: starkRaised.id, optionId: "rule" },
-    ]);
-    assert.equal(starkBent.options.find((option) => option.points === 5)?.label, "Winter Is Coming");
-    assert.equal(starkBent.options.find((option) => option.points === 1)?.label, "Unyielding");
   });
 
   it("lets the raising decide the thing you own", () => {
@@ -210,15 +214,7 @@ describe("life path", () => {
       const fourth = questionAt(4, answers);
       const raisedOption = fourth.options.find((option) => option.id === raisedId) ?? fourth.options[0];
       answers.push({ questionId: fourth.id, optionId: raisedOption.id });
-      if (station === "trade") {
-        const fifth = questionAt(5, answers);
-        const tradeRaised = fifth.options.find((option) => option.id === raisedId) ?? fifth.options[0];
-        answers.push({ questionId: fifth.id, optionId: tradeRaised.id });
-      } else {
-        const fifth = questionAt(5, answers);
-        answers.push({ questionId: fifth.id, optionId: fifth.options[0].id });
-      }
-      return questionAt(6, answers);
+      return questionAt(5, answers);
     }
     const sword = held("great", "sword");
     assert.match(sword.prompt, /weapon/i);

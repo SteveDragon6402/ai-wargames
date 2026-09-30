@@ -1,3 +1,6 @@
+"use client";
+
+import { useId, useState } from "react";
 import type { YearPoint } from "../lib/chronicle";
 
 type Series = {
@@ -6,6 +9,8 @@ type Series = {
   ink: string;
   fill?: string;
 };
+
+type Hover = { x: number; y: number; year: number; value: number; name: string };
 
 function yearLabel(year: number): string {
   if (year < 0) return `${Math.abs(year)} BC`;
@@ -21,7 +26,7 @@ export function LifeChart({
   title: string;
   caption: string;
   series: Series[];
-  deathYear?: number;
+  deathYear?: number | null;
 }) {
   const drawn = series.map((item) => ({
     ...item,
@@ -29,7 +34,7 @@ export function LifeChart({
   }));
   const width = 640;
   const height = 250;
-  const pad = { l: 36, r: 12, t: 16, b: 32 };
+  const pad = { l: 36, r: 16, t: 16, b: 32 };
   const innerW = width - pad.l - pad.r;
   const innerH = height - pad.t - pad.b;
   const years = drawn.flatMap((item) => item.points.map((point) => point.year));
@@ -41,6 +46,8 @@ export function LifeChart({
   const yOf = (value: number) => pad.t + innerH - (Math.max(0, value) / maxValue) * innerH;
   const ticks = [0, 1, 2, 3].map((step) => Math.round(minYear + ((maxYear - minYear) * step) / 3));
   const base = pad.t + innerH;
+  const [hover, setHover] = useState<Hover | null>(null);
+  const tipId = useId();
 
   function line(points: YearPoint[]) {
     return points
@@ -49,7 +56,7 @@ export function LifeChart({
   }
 
   return (
-    <figure className="border border-[var(--merc-line)] bg-[var(--merc-field)] px-4 py-4">
+    <figure className="relative border border-[var(--merc-line)] bg-[var(--merc-field)] px-4 py-4">
       <figcaption>
         <div className="font-gothic text-3xl text-[var(--merc-text)]">{title}</div>
         <p className="mt-1 text-[16px] leading-snug text-[var(--merc-muted)]">{caption}</p>
@@ -64,14 +71,21 @@ export function LifeChart({
           </ul>
         )}
       </figcaption>
-      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title} className="mt-2 w-full">
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        role="img"
+        aria-label={title}
+        aria-describedby={hover ? tipId : undefined}
+        className="mt-2 w-full"
+        onMouseLeave={() => setHover(null)}
+      >
         <line x1={pad.l} y1={base} x2={width - pad.r} y2={base} stroke="var(--merc-line)" />
         {ticks.map((year) => (
           <text key={year} x={xOf(year)} y={height - 8} textAnchor="middle" fill="var(--merc-muted)" fontSize="12">
             {yearLabel(year)}
           </text>
         ))}
-        {deathYear !== undefined && deathYear >= minYear && deathYear <= maxYear && (
+        {deathYear !== undefined && deathYear !== null && deathYear >= minYear && deathYear <= maxYear && (
           <g>
             <line x1={xOf(deathYear)} y1={pad.t} x2={xOf(deathYear)} y2={base} stroke="var(--merc-red)" strokeDasharray="3 4" />
             <text x={xOf(deathYear) + 6} y={pad.t + 12} fill="var(--merc-red)" fontSize="12">
@@ -89,9 +103,59 @@ export function LifeChart({
               />
             )}
             <path className="life-stroke" d={line(item.points)} fill="none" stroke={item.ink} strokeWidth="2.25" pathLength={1} />
+            {item.points.map((point) => (
+              <circle
+                key={`${item.name}-${point.year}`}
+                className="life-point"
+                cx={xOf(point.year)}
+                cy={yOf(point.value)}
+                r={hover?.year === point.year && hover.name === item.name ? 6 : 4}
+                fill="var(--merc-bg)"
+                stroke={item.ink}
+                strokeWidth="2"
+                tabIndex={0}
+                role="img"
+                aria-label={`${item.name}, ${yearLabel(point.year)}: ${point.value}`}
+                onMouseEnter={() =>
+                  setHover({
+                    x: xOf(point.year),
+                    y: yOf(point.value),
+                    year: point.year,
+                    value: point.value,
+                    name: item.name,
+                  })
+                }
+                onFocus={() =>
+                  setHover({
+                    x: xOf(point.year),
+                    y: yOf(point.value),
+                    year: point.year,
+                    value: point.value,
+                    name: item.name,
+                  })
+                }
+                onBlur={() => setHover(null)}
+              />
+            ))}
           </g>
         ))}
       </svg>
+      {hover && (
+        <div
+          id={tipId}
+          role="status"
+          className="pointer-events-none absolute z-10 border border-[var(--merc-line)] bg-[var(--merc-bg)] px-3 py-2 text-[14px] text-[var(--merc-text)]"
+          style={{
+            left: `min(calc(${(hover.x / width) * 100}% + 12px), calc(100% - 10rem))`,
+            top: 96 + hover.y * 0.35,
+          }}
+        >
+          <div className="text-[var(--merc-muted)]">{hover.name}</div>
+          <div>
+            {yearLabel(hover.year)}, {hover.value}
+          </div>
+        </div>
+      )}
       <table className="sr-only">
         <caption>{title}</caption>
         <thead>

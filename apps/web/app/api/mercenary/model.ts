@@ -1,6 +1,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 
 const MODELS = ["claude-sonnet-5", "claude-haiku-4-5"];
+const LIFE_MODELS = ["claude-sonnet-4-6", "claude-sonnet-5", "claude-haiku-4-5"];
 const NO_THINKING = { thinking: { type: "disabled" as const } };
 
 export function anthropicClient(): Anthropic | { error: string } {
@@ -9,12 +10,13 @@ export function anthropicClient(): Anthropic | { error: string } {
   return new Anthropic({ apiKey });
 }
 
-export async function createMessage(
+async function createWith(
   client: Anthropic,
-  body: Omit<Anthropic.Messages.MessageCreateParamsNonStreaming, "model">
+  models: string[],
+  body: Omit<Anthropic.Messages.MessageCreateParamsNonStreaming, "model">,
 ): Promise<Anthropic.Messages.Message | { error: string }> {
   let last = "No model responded.";
-  for (const model of MODELS) {
+  for (const model of models) {
     try {
       const response = await client.messages.create({
         ...body,
@@ -28,6 +30,20 @@ export async function createMessage(
     }
   }
   return { error: last };
+}
+
+export async function createMessage(
+  client: Anthropic,
+  body: Omit<Anthropic.Messages.MessageCreateParamsNonStreaming, "model">,
+): Promise<Anthropic.Messages.Message | { error: string }> {
+  return createWith(client, MODELS, body);
+}
+
+export async function createLifeMessage(
+  client: Anthropic,
+  body: Omit<Anthropic.Messages.MessageCreateParamsNonStreaming, "model">,
+): Promise<Anthropic.Messages.Message | { error: string }> {
+  return createWith(client, LIFE_MODELS, body);
 }
 
 export function textOf(response: Anthropic.Messages.Message): string {

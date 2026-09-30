@@ -22,7 +22,7 @@ const GAMES = [
   {
     href: "/life",
     title: "One Life",
-    detail: "Seven choices. Then the years.",
+    detail: "Four choices. A childhood. Then the years.",
   },
 ] as const;
 
