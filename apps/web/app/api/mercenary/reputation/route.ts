@@ -14,6 +14,7 @@ export async function POST(req: NextRequest) {
     current?: string;
     decisions?: { week: number; text: string }[];
     justHappened?: string;
+    regard?: string;
   } | null;
 
   if (!body?.key || !KEYS.has(body.key) || !body.companyName?.trim() || !body.justHappened?.trim()) {
@@ -29,7 +30,7 @@ A new company is unknown. Later deeds move the standing. Do not invent deeds tha
     messages: [
       {
         role: "user",
-        content: `Company: ${body.companyName}
+        content: `${body.regard?.trim() || `Company: ${body.companyName}`}
 Current standing: ${body.current?.trim() || "None yet. They are a new mercenary company."}
 Significant decisions:
 ${log}

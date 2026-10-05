@@ -1,9 +1,9 @@
 "use client";
 
-import { MercenaryPlay } from "./components/Play";
-import { useMercenary } from "./hooks/useMercenary";
+import HollowmereBoard from "./components/HollowmereBoard";
+import { useHollowmere } from "./hooks/useHollowmere";
 
 export default function MercenaryPage() {
-  const game = useMercenary();
-  return <MercenaryPlay game={game} />;
+  const game = useHollowmere();
+  return <HollowmereBoard game={game} />;
 }
