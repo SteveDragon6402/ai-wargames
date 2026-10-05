@@ -1,10 +1,5 @@
 const GAMES = [
   {
-    href: "/mercenary-v2",
-    title: "Mercenary Game V2",
-    detail: "Twelve weeks in Hollowmere. The kingdom keeps the books.",
-  },
-  {
     href: "/mercenary",
     title: "The Mercenary Band",
     detail: "One company. Fifty-two weeks. You lead them.",
