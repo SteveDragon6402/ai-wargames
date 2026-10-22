@@ -125,50 +125,17 @@ function Week({ game }: { game: Game }) {
   const flagged = people.some((person) => view.flags.includes(person.npcId ?? ""));
 
   let lead = "end";
-  if (world.intentChip) lead = "chip";
-  else if (world.pendingBattle) lead = "fight";
-  else if (!world.tutorialDone && step === "fenn" && offered.length > 0) lead = "accept";
-  else if (!world.tutorialDone && step) lead = step === "speech" && !speaker ? "hale" : step;
-  else if (world.pendingBattle) lead = "fight";
+  if (world.pendingBattle) lead = "fight";
+  else if (speakerHere) lead = "talk";
+  else if (world.intentChip) lead = "chip";
   else if (offered.length > 0) lead = "accept";
   else if (flagged && !speaker) lead = "speak";
   else if (!company.actionUsed && place.kind === "wild") lead = "search";
   else if (!company.actionUsed && place.kind === "village") lead = "work";
   else if (!company.actionUsed) lead = "rest";
 
-  if (!world.tutorialDone && step === "card") {
-    return (
-      <div className="fixed inset-0 z-10 flex flex-col bg-[var(--merc-ground)] text-[var(--merc-text)]">
-        <header className="flex shrink-0 items-end justify-between gap-4 border-b border-[var(--merc-line)] px-4 py-3">
-          <div>
-            <p className="font-gothic text-2xl leading-none">{company.name}</p>
-            <p className="mt-1 text-[15px] tabular-nums text-[var(--merc-muted)]">
-              Week {view.week} of {view.weekMax} · {view.gold} gold · {view.bread} bread
-            </p>
-          </div>
-          <button type="button" onClick={() => window.confirm("Reset this company and start again?") && game.reset()} className={link}>
-            Reset
-          </button>
-        </header>
-        <main className="mx-auto w-full max-w-lg px-6 py-12">
-          <p className="text-[15px] text-[var(--merc-muted)]">The company</p>
-          <ul className="mt-3">
-            {view.units.map((unit) => (
-              <li key={unit.id} className="mt-4">
-                <p className="font-gothic text-4xl">{unit.name}</p>
-                <p className="text-[17px]">{unit.headcount} {unit.trade}</p>
-              </li>
-            ))}
-          </ul>
-          <button type="button" className={`${primary} mt-8`} onClick={game.followTeaching}>
-            Meet Marta Hale
-          </button>
-          <button type="button" className={`${link} mt-4 block`} onClick={game.skipTutorial}>
-            Skip the teaching
-          </button>
-        </main>
-      </div>
-    );
+  if (!world.tutorialDone && step && !world.pendingBattle) {
+    return <Lesson game={game} />;
   }
 
   const spent = company.actionUsed || !!game.busy || !!world.pendingBattle;
@@ -252,75 +219,56 @@ function Week({ game }: { game: Game }) {
             </div>
           )}
           {world.pendingBattle && news[0] && <p className="mt-3 text-[16px]">{news[0].text}</p>}
-          {!(teaching && step === "card") && <ul className="mt-6 space-y-3">
+          <ul className="mt-6 space-y-3">
             {people.map((person) => {
               const id = person.npcId!;
               const named = NAMED[id];
               const wants = view.flags.includes(id);
-              const loud = wants && (lead === "speak" || (id === "hale" && (lead === "hale" || lead === "quest")) || (id === "fenn" && lead === "fenn"));
+              const open = speaker === id;
               return (
-                <li key={person.id} className={loud ? "border border-[var(--merc-text)] px-3 py-3" : "px-3 py-2"}>
-                  <p className={loud ? "font-gothic text-3xl" : "font-gothic text-xl text-[var(--merc-muted)]"}>{named.name}</p>
-                  <p className="text-[15px] text-[var(--merc-muted)]">{loud ? `${named.role}. They want a word.` : named.role}</p>
-                  {id === "hale" && lead === "hale" && (
+                <li key={person.id} className={open || (wants && lead === "speak") ? "border border-[var(--merc-text)] px-3 py-3" : "px-3 py-2"}>
+                  <p className={open || wants ? "font-gothic text-3xl" : "font-gothic text-xl"}>{named.name}</p>
+                  <p className="text-[15px] text-[var(--merc-muted)]">{wants ? `${named.role}. They have something to say.` : named.role}</p>
+                  {!open && !world.pendingBattle && (
                     <button
                       type="button"
-                      className={`${primary} mt-3`}
+                      className={wants && lead === "speak" ? `${primary} mt-3` : `${link} mt-2 block min-h-11 py-2 text-left`}
                       onClick={() => {
                         setSpeaker(id);
-                        if (!world.tutorialDone && step === "hale") game.followTeaching();
+                        setSay("");
                       }}
                     >
                       Speak with {named.name}
                     </button>
                   )}
-                  {id === "hale" && lead === "quest" && (
-                    <button type="button" className={`${primary} mt-3`} onClick={game.followTeaching}>
-                      Put the offer on the table
-                    </button>
-                  )}
-                  {id === "fenn" && lead === "fenn" && (
-                    <button type="button" className={`${primary} mt-3`} onClick={game.followTeaching}>
-                      Take Fenn&apos;s bread
-                    </button>
-                  )}
-                  {loud && speaker !== id && lead === "speak" && (
-                    <button type="button" className={`${primary} mt-3`} onClick={() => setSpeaker(id)}>
-                      Speak with {named.name}
-                    </button>
-                  )}
-                  {world.tutorialDone && !world.pendingBattle && speaker !== id && lead !== "speak" && (
-                    <button type="button" className={`${link} mt-2 block min-h-11 py-2 text-left`} onClick={() => setSpeaker(id)}>
-                      Speak with {named.name}
-                    </button>
+                  {open && (
+                    <form
+                      className="mt-3 border border-[var(--merc-text)] p-3"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        if (!say.trim()) return;
+                        game.talk(say.trim(), id);
+                        setSay("");
+                        setSpeaker(null);
+                      }}
+                    >
+                      <p className="font-gothic text-2xl">Speaking with {named.name}</p>
+                      <label className={`${label} mt-3`} htmlFor="say">
+                        What you say
+                      </label>
+                      <input id="say" name="say" value={say} placeholder="Write the line" onChange={(event) => setSay(event.target.value)} className={field} />
+                      <button type="submit" className={`${primary} mt-3`} disabled={!say.trim()}>
+                        Say it to {named.name}
+                      </button>
+                      <button type="button" className={`${link} mt-3 block`} onClick={() => { setSpeaker(null); setSay(""); }}>
+                        Close
+                      </button>
+                    </form>
                   )}
                 </li>
               );
             })}
-          </ul>}
-          {speakerHere && speaker && !world.pendingBattle && (world.tutorialDone || step === "speech") && (
-            <form
-              className="mt-4"
-              onSubmit={(event) => {
-                event.preventDefault();
-                if (!say.trim()) return;
-                game.talk(say.trim());
-                setSay("");
-              }}
-            >
-              <label className={label} htmlFor="say">
-                Write the line for {NAMED[speaker].name}
-              </label>
-              <input id="say" name="say" value={say} placeholder="The words you will say" onChange={(event) => setSay(event.target.value)} className={field} />
-              {say.trim() ? (
-                <button type="submit" className={`${lead === "speech" ? primary : choice} mt-2`}>
-                  Say it to {NAMED[speaker].name}
-                </button>
-              ) : (
-                <p className="mt-2 text-[15px] text-[var(--merc-muted)]">Write the line, and the send appears.</p>
-              )}
-            </form>
-          )}
+          </ul>
           {world.intentChip && (
             <div className="mt-3 flex flex-col gap-2">
               <button type="button" className={lead === "chip" ? primary : quiet} onClick={game.acceptChip}>
@@ -366,16 +314,18 @@ function Week({ game }: { game: Game }) {
           {showLabours && game.busy && <p className="mt-6 text-[16px]">{game.busy}</p>}
           {showLabours && !company.actionUsed && !game.busy && <div className="mt-6 flex flex-col gap-2">
             <p className="text-[15px] text-[var(--merc-muted)]">
-              {step === "volunteers" && teaching ? "Two spearmen can join." : "One action this week."}
+              {step === "volunteers" && teaching ? "Two spearmen can join." : "One action this week. It is spent when you press it. Marching is separate."}
             </p>
             {!(teaching && step === "volunteers") && place.kind === "village" && (
               <button type="button" className={lead === "work" ? primary : quiet} disabled={spent} onClick={game.work}>
-                Work the fields
+                <span className="block">Work the fields</span>
+                <span className="mt-1 block text-[15px] font-normal leading-snug">The village pays bread for the work.</span>
               </button>
             )}
             {!(teaching && step === "volunteers") && place.kind === "wild" && (
               <button type="button" className={lead === "search" ? primary : quiet} disabled={spent} onClick={() => void game.search()}>
-                {game.busy ?? "Search this ground"}
+                <span className="block">{game.busy ?? "Search this ground"}</span>
+                <span className="mt-1 block text-[15px] font-normal leading-snug">Look for the camp. A miss still finds bread.</span>
               </button>
             )}
             {!(teaching && step === "volunteers") && place.kind === "wild" && (
@@ -385,7 +335,8 @@ function Week({ game }: { game: Game }) {
             )}
             {!(teaching && step === "volunteers") && (
             <button type="button" className={lead === "rest" ? primary : quiet} disabled={spent} onClick={game.rest}>
-              Rest the company
+              <span className="block">Rest the company</span>
+              <span className="mt-1 block text-[15px] font-normal leading-snug">They do no other work this week.</span>
             </button>
             )}
             {peasants && (
@@ -416,20 +367,176 @@ function Week({ game }: { game: Game }) {
               </button>
             ))}
           </div>}
-          {showEnd && (
+          {showEnd && !speakerHere && (
           <button
             type="button"
             className={`${lead === "end" ? primary : quiet} mt-6`}
-            onClick={() => {
-              if (!world.tutorialDone && step === "end") game.followTeaching();
-              else game.endWeek();
-            }}
+            onClick={() => game.endWeek()}
           >
-            End the week
+            <span className="block">End the week</span>
+            <span className="mt-1 block text-[15px] font-normal leading-snug">The company eats. Unpaid men may leave.</span>
           </button>
           )}
         </section>
       </div>
+    </div>
+  );
+}
+
+function Lesson({ game }: { game: Game }) {
+  const world = game.world!;
+  const view = game.view!;
+  const company = world.company!;
+  const step = TUTORIAL_STEPS[world.tutorialStep];
+  const [say, setSay] = useState(step === "speech" ? "We will take the work." : "What work do you have?");
+  useEffect(() => {
+    if (step === "speech") setSay("We will take the work.");
+    if (step === "hale") setSay("What work do you have?");
+  }, [step]);
+  const news = [...world.decisions].reverse().find((item) => !item.text.startsWith("Founded"));
+  const men = company.units.reduce((sum, unit) => sum + unit.headcount, 0);
+  const eat = company.units.reduce((sum, unit) => sum + unit.headcount * unit.wageBreadPerDay * 7, 0);
+  const afterEat = company.bread - eat;
+
+  function send(to: "hale") {
+    if (!say.trim()) return;
+    game.talk(say.trim(), to);
+  }
+
+  return (
+    <div className="fixed inset-0 z-10 flex flex-col overflow-hidden bg-[var(--merc-ground)] text-[var(--merc-text)]">
+      <header className="flex shrink-0 items-end justify-between gap-4 border-b border-[var(--merc-line)] px-4 py-3">
+        <div>
+          <p className="font-gothic text-2xl leading-none">{company.name}</p>
+          <p className="mt-1 text-[15px] tabular-nums text-[var(--merc-muted)]">
+            Week {view.week} of {view.weekMax} · {view.gold} gold · {view.bread} bread
+          </p>
+        </div>
+        <button type="button" onClick={() => window.confirm("Reset this company and start again?") && game.reset()} className={link}>
+          Reset
+        </button>
+      </header>
+      <main className="mx-auto w-full max-w-lg overflow-y-auto px-6 py-10">
+        {news && step !== "card" && <p className="text-[16px]">{news.text}</p>}
+        {step === "card" && (
+          <>
+            <p className="mt-4 text-[15px] text-[var(--merc-muted)]">The company is in Thornwick.</p>
+            <ul className="mt-4">
+              {view.units.map((unit) => (
+                <li key={unit.id} className="mt-4">
+                  <p className="font-gothic text-4xl">{unit.name}</p>
+                  <p className="text-[17px]">{unit.headcount} {unit.trade}</p>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-6 text-[16px]">Marta Hale, the reeve, wants a word.</p>
+            <button type="button" className={`${primary} mt-6`} onClick={game.followTeaching}>
+              Meet Marta Hale
+            </button>
+          </>
+        )}
+        {step === "hale" && (
+          <form
+            className="mt-4 border border-[var(--merc-text)] p-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              send("hale");
+            }}
+          >
+            <p className="font-gothic text-3xl">Marta Hale</p>
+            <p className="mt-1 text-[16px]">Reeve of Thornwick. This is the conversation.</p>
+            <label className={`${label} mt-4`} htmlFor="lesson-say">
+              What you say
+            </label>
+            <input id="lesson-say" value={say} onChange={(event) => setSay(event.target.value)} className={field} />
+            <button type="submit" className={`${primary} mt-3`} disabled={!say.trim()}>
+              Say it to Marta Hale
+            </button>
+          </form>
+        )}
+        {step === "quest" && (
+          <>
+            <p className="mt-4 font-gothic text-3xl">Marta Hale&apos;s offer</p>
+            <p className="mt-3 text-[16px]">She pays 30 gold now if you will face the men in the barn. The gold is yours when you accept.</p>
+            <button type="button" className={`${primary} mt-6`} onClick={game.acceptLessonOffer}>
+              Accept the 30 gold
+            </button>
+            <button type="button" className={`${link} mt-4 block`} onClick={game.refuseLessonOffer}>
+              Turn the gold down
+            </button>
+          </>
+        )}
+        {step === "fenn" && (
+          <>
+            <p className="mt-4 font-gothic text-3xl">Fenn</p>
+            <p className="mt-3 text-[16px]">Fenn is a merchant in Thornwick. He can spare 10 bread from his own sacks. Taking it does not spend the week.</p>
+            <button type="button" className={`${primary} mt-6`} onClick={game.followTeaching}>
+              Take the 10 bread
+            </button>
+          </>
+        )}
+        {step === "speech" && (
+          <form
+            className="mt-4 border border-[var(--merc-text)] p-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              send("hale");
+            }}
+          >
+            <p className="font-gothic text-3xl">Back to Marta Hale</p>
+            <p className="mt-2 text-[16px]">Tell her you will take the work. The line is written. Change it if you want, then send it.</p>
+            <label className={`${label} mt-4`} htmlFor="lesson-say">
+              What you say
+            </label>
+            <input id="lesson-say" value={say} onChange={(event) => setSay(event.target.value)} className={field} />
+            <button type="submit" className={`${primary} mt-3`} disabled={!say.trim()}>
+              Say it to Marta Hale
+            </button>
+          </form>
+        )}
+        {step === "end" && (
+          <>
+            <p className="mt-4 font-gothic text-3xl">End the week</p>
+            <p className="mt-3 text-[16px]">
+              {men} soldiers eat {eat} bread when the week ends. You hold {company.bread}.{" "}
+              {afterEat >= 0 ? `${afterEat} bread would be left. The gold stays.` : "There is not enough, so morale falls and men may leave."}
+            </p>
+            <button type="button" className={`${primary} mt-6`} onClick={game.followTeaching}>
+              End the week
+            </button>
+          </>
+        )}
+        {step === "report" && (
+          <>
+            <p className="mt-4 font-gothic text-3xl">Week {view.week}</p>
+            <p className="mt-3 text-[16px]">You hold {view.gold} gold and {view.bread} bread. That is the company after it ate.</p>
+            <button type="button" className={`${primary} mt-6`} onClick={game.followTeaching}>
+              Go on
+            </button>
+          </>
+        )}
+        {step === "volunteers" && (
+          <>
+            <p className="mt-4 font-gothic text-3xl">Two spearmen</p>
+            <p className="mt-3 text-[16px]">Thornwick can spare two spearmen. Your units are full, so they join as their own unit, The Recruits.</p>
+            <button type="button" className={`${primary} mt-6`} onClick={game.followTeaching}>
+              Call for two spearmen
+            </button>
+          </>
+        )}
+        {step === "barn" && (
+          <>
+            <p className="mt-4 font-gothic text-3xl">The barn</p>
+            <p className="mt-3 text-[16px]">Men are waiting in the barn. Face them, then choose whether they get away or you take one.</p>
+            <button type="button" className={`${primary} mt-6`} onClick={game.followTeaching}>
+              Face the men in the barn
+            </button>
+          </>
+        )}
+        <button type="button" className={`${link} mt-6 block`} onClick={game.skipTutorial}>
+          Skip the teaching
+        </button>
+      </main>
     </div>
   );
 }
@@ -664,7 +771,7 @@ function Founding({ game }: { game: Game }) {
           <input id="unit-b" value={unitNames[1]} onChange={(event) => setUnitNames([unitNames[0], event.target.value])} className={field} />
           {game.error && <p role="alert">{game.error}</p>}
           <button type="submit" className={primary}>
-            March out of Thornwick
+            The company is formed
           </button>
           <button type="button" className={link} onClick={() => setStep("trades")}>
             Back

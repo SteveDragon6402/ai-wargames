@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import type { GroupId, PlaceId, Sigil, Trade, World } from "../data/hollowmere";
-import { neighbors, PLACES } from "../data/hollowmere";
+import { NAMED, neighbors, PLACES, type GroupId, type NpcId, type PlaceId, type Sigil, type Trade, type World } from "../data/hollowmere";
 import { TUTORIAL_STEPS } from "../lib/play";
 import {
   acceptChip,
@@ -39,6 +38,19 @@ function markAction(world: World, text: string): World {
   if (world.company) world.company.actionUsed = true;
   world.decisions.push({ week: world.week, text });
   return world;
+}
+
+function replyTo(world: World, to: NpcId): string {
+  const foughtBarn = world.events.some((event) => event.type === "barn-fight");
+  if (to === "hale" && !foughtBarn) return "Men are waiting in the barn. I will pay 30 gold if you face them.";
+  if (to === "hale") return "The barn is finished. Thornwick still has fields, if your company needs bread.";
+  if (to === "fenn") return "I can spare a little bread from my own sacks.";
+  if (to === "corwin") return "This wood is the Pack's. Search it, if you mean to.";
+  if (to === "ysolde") return "The Lantern keeps its own house. Speak if you have business here.";
+  if (to === "aldous") return "Crownmarket has heard of you. Say what you want of the Steward.";
+  if (to === "varrow") return "The guard is standing. The city is not yours to take.";
+  if (to === "doss") return "The ferry loses bread to the wolves while they live.";
+  return `${NAMED[to].role}. Say what you came to say.`;
 }
 
 function countMen(world: World): number {
@@ -142,9 +154,13 @@ export function useHollowmere() {
     },
     work() {
       if (!world?.company || world.company.actionUsed) return;
+      const before = world.company.bread;
       const result = workFields(world);
       if (!result.ok) setError(result.error);
-      else commit(markAction(result.world, "The company worked the fields."));
+      else {
+        const held = result.world.company?.bread ?? before;
+        commit(markAction(result.world, `The company worked the fields and took ${held - before} bread. You hold ${held}.`));
+      }
     },
     hide() {
       if (!world?.company || world.company.actionUsed) return;
@@ -267,13 +283,50 @@ export function useHollowmere() {
         commit(markAction(result.world, opened ? "Two spearmen joined as The Recruits." : "Two spearmen joined."));
       }
     },
-    talk(text: string) {
+    talk(text: string, to: NpcId) {
       if (!world) return;
-      const chip = /recruit|men/i.test(text) ? { label: "Take that as recruiting?", action: "recruit" } : null;
-      let next = setChip(world, chip);
-      if (!next.tutorialDone && TUTORIAL_STEPS[next.tutorialStep] === "speech") next = advanceTutorial(next);
       const said = text.trim();
-      if (said) next.decisions.push({ week: next.week, text: `You said: ${said}` });
+      if (!said) return;
+      const name = NAMED[to].name;
+      const chip = /recruit|men/i.test(said) ? { label: "Take that as recruiting?", action: "recruit" } : null;
+      let next = setChip(world, chip);
+      const step = TUTORIAL_STEPS[next.tutorialStep];
+      if (!next.tutorialDone && (step === "speech" || step === "hale")) next = advanceTutorial(next);
+      next.decisions.push({ week: next.week, text: `You said to ${name}: ${said}` });
+      next.decisions.push({ week: next.week, text: `${name}: ${replyTo(next, to)}` });
+      commit(next);
+    },
+    acceptLessonOffer() {
+      if (!world?.company) return;
+      let next = world;
+      if (TUTORIAL_STEPS[next.tutorialStep] === "quest") next = advanceTutorial(next);
+      const deal = next.deals.find((item) => item.from === "hale" && (item.status === "offered" || item.status === "countering"));
+      if (!deal) {
+        commit(next);
+        return;
+      }
+      const result = acceptDeal(next, deal.id);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      const gold = result.world.company?.gold ?? 0;
+      result.world.decisions.push({ week: result.world.week, text: `You took ${deal.amount} gold. You hold ${gold}.` });
+      commit(result.world);
+    },
+    refuseLessonOffer() {
+      if (!world) return;
+      let next = TUTORIAL_STEPS[world.tutorialStep] === "quest" ? advanceTutorial(world) : world;
+      const deal = next.deals.find((item) => item.from === "hale" && (item.status === "offered" || item.status === "countering"));
+      if (deal) {
+        const result = declineDeal(next, deal.id);
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        next = result.world;
+      }
+      next.decisions.push({ week: next.week, text: "You turned down Marta Hale's gold." });
       commit(next);
     },
     acceptChip() {

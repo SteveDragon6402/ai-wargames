@@ -190,13 +190,22 @@ export function dismissChip(world: World): World {
   return next;
 }
 
+function saidToThisWeek(world: World, name: string): boolean {
+  return world.decisions.some((item) => item.week === world.week && item.text.startsWith(`You said to ${name}:`));
+}
+
 export function openingFlags(world: World) {
   const empty = world.decisions.length === 0;
   const flags = [
-    { who: "hale", wants: world.company?.location === "thornwick", reason: "The bandit problem stands.", week: world.week },
+    {
+      who: "hale" as const,
+      wants: world.company?.location === "thornwick" && !saidToThisWeek(world, NAMED.hale.name),
+      reason: "The barn is still her business.",
+      week: world.week,
+    },
     ...(["aldous", "varrow", "oskar", "benet", "pell"] as const).map((who) => ({
       who,
-      wants: !empty,
+      wants: !empty && !saidToThisWeek(world, NAMED[who].name),
       reason: empty ? "No reason to stop." : "The company is spoken of.",
       week: world.week,
     })),
