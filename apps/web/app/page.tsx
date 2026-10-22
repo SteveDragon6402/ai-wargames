@@ -24,6 +24,11 @@ const GAMES = [
     title: "One Life",
     detail: "Four choices. A childhood. Then the years.",
   },
+  {
+    href: "/epicerie",
+    title: "L'Épicerie",
+    detail: "A village shop. A list. No English.",
+  },
 ] as const;
 
 export default function HomePage() {
