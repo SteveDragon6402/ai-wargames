@@ -18,6 +18,8 @@ export interface Turn {
   expression?: Expression;
   /** Gérard's hands and face, in English narration. */
   action?: string;
+  /** The line with voice-only delivery tags. Never shown. */
+  audio?: string;
 }
 
 export interface Session {
@@ -45,6 +47,8 @@ export interface Save {
   day: number;
   visits: number;
   notes: string[];
+  /** The player's own notebook, written after a visit. */
+  journal: string;
   carnet: CarnetEntry[];
   session: Session | null;
   voice: boolean;
@@ -190,7 +194,7 @@ export function newSession(day: number): Session {
 }
 
 export function freshSave(): Save {
-  return { version: 1, address: "unknown", day: 0, visits: 0, notes: [], carnet: [], session: null, voice: true };
+  return { version: 1, address: "unknown", day: 0, visits: 0, notes: [], journal: "", carnet: [], session: null, voice: true };
 }
 
 export function addNote(notes: string[], note: string): string[] {
@@ -258,6 +262,7 @@ export function parseSave(raw: string | null): Save {
     day: Number.isInteger(save.day) && (save.day as number) >= 0 ? (save.day as number) : 0,
     visits: Number.isInteger(save.visits) && (save.visits as number) >= 0 ? (save.visits as number) : 0,
     notes: Array.isArray(save.notes) ? save.notes.filter((note): note is string => typeof note === "string").slice(-MAX_NOTES) : [],
+    journal: typeof save.journal === "string" ? save.journal.slice(0, 4000) : "",
     carnet: Array.isArray(save.carnet)
       ? save.carnet.filter(
           (entry): entry is CarnetEntry =>

@@ -79,9 +79,10 @@ interface PayProps {
   purse: number[];
   busy: boolean;
   onHandOver: (coins: number[]) => boolean;
+  title?: string;
 }
 
-export function PaymentTray({ till, purse, busy, onHandOver }: PayProps) {
+export function PaymentTray({ till, purse, busy, onHandOver, title = "He's waiting to be paid" }: PayProps) {
   const [offered, setOffered] = useState<number[]>([]);
   const left = useMemo(() => removeCoins(purse, offered) ?? purse, [purse, offered]);
   const paid = sumCoins(offered);
@@ -91,7 +92,7 @@ export function PaymentTray({ till, purse, busy, onHandOver }: PayProps) {
   return (
     <section className="mt-4 rounded-xl bg-[var(--ep-paper-shade)]/70 p-3 sm:p-4" aria-label="Paying">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="ep-display text-[18px] text-[var(--ep-ink)]">He&apos;s waiting to be paid</h3>
+        <h3 className="ep-display text-[18px] text-[var(--ep-ink)]">{title}</h3>
         <p className="text-[13px] text-[var(--ep-ink-soft)]">Listen for the price. Tap coins to put them down.</p>
       </div>
 

@@ -7,7 +7,11 @@ const NO_THINKING = { thinking: { type: "disabled" as const } };
 export function anthropicClient(): Anthropic | { error: string } {
   const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
   if (!apiKey) return { error: "ANTHROPIC_API_KEY is not set." };
-  return new Anthropic({ apiKey });
+  const workspace = process.env.ANTHROPIC_WORKSPACE_ID?.trim();
+  return new Anthropic({
+    apiKey,
+    ...(workspace ? { defaultHeaders: { "anthropic-workspace-id": workspace } } : {}),
+  });
 }
 
 async function createWith(

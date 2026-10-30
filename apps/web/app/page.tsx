@@ -29,6 +29,11 @@ const GAMES = [
     title: "L'Épicerie",
     detail: "A village shop. A list. No English.",
   },
+  {
+    href: "/sejour",
+    title: "Le Séjour",
+    detail: "A week with Madame Rousseau. Cook, talk, eat, write.",
+  },
 ] as const;
 
 export default function HomePage() {

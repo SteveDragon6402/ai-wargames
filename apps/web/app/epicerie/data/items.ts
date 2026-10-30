@@ -62,9 +62,17 @@ export const ITEMS: ShopItem[] = RAW.flatMap((row, index) =>
   })),
 );
 
-export const ITEM_BY_ID: Record<string, ShopItem> = Object.fromEntries(ITEMS.map((item) => [item.id, item]));
+/** Staples the homestay kitchen needs. They are not on Gérard's usual shelves. */
+export const STAPLES: ShopItem[] = [
+  { id: "butter", fr: "une motte de beurre", word: "le beurre", en: "a pat of butter", price: 180, unitFr: "la motte", keywords: ["beurre"], look: "a pat of butter", unit: "left", shelf: 0, slot: 0 },
+  { id: "oil", fr: "une bouteille d'huile", word: "l'huile", en: "a bottle of oil", price: 320, unitFr: "la bouteille", keywords: ["huile"], look: "a bottle of oil", unit: "left", shelf: 0, slot: 0 },
+  { id: "bay", fr: "une feuille de laurier", word: "le laurier", en: "a bay leaf", price: 40, unitFr: "la feuille", keywords: ["laurier"], look: "a bay leaf", unit: "left", shelf: 0, slot: 0 },
+];
+
+export const ITEM_BY_ID: Record<string, ShopItem> = Object.fromEntries([...ITEMS, ...STAPLES].map((item) => [item.id, item]));
 
 export function itemIcon(id: string): string {
+  if (id === "butter" || id === "oil" || id === "bay") return `/epicerie/items/${id}.svg`;
   return `/epicerie/items/${id}.png`;
 }
 

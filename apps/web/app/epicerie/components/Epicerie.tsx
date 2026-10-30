@@ -10,6 +10,7 @@ import { canSpeak, speakFrench } from "../lib/voice";
 import { Composer } from "./Composer";
 import { Debrief } from "./Debrief";
 import { Dialogue, YouSaid } from "./Dialogue";
+import { HearSelection } from "./HearSelection";
 import { Intro } from "./Intro";
 import { PaymentTray, Purse } from "./Money";
 import { GroceryList } from "./Notebook";
@@ -49,7 +50,7 @@ export function Epicerie() {
   }
 
   if (phase === "debrief" && game.visit) {
-    return <Debrief visit={game.visit} list={listForDay(game.visit.day)} onNext={game.toNextDay} />;
+    return <Debrief visit={game.visit} list={listForDay(game.visit.day)} journal={save.journal} onJournal={game.setJournal} onNext={game.toNextDay} />;
   }
 
   if (!session) return null;
@@ -133,15 +134,18 @@ export function Epicerie() {
               busy={busy}
               problem={game.problem}
               canReplay={voiceAvailable}
-              onReplay={() => gerard.turn && speakFrench(gerard.turn.text)}
+              onReplay={() => gerard.turn && speakFrench(gerard.turn.audio || gerard.turn.text)}
               onDismiss={game.dismissProblem}
             >
               {session.till !== null && !leaving ? <PaymentTray till={session.till} purse={session.purse} busy={busy} onHandOver={game.handOver} /> : null}
               {leaving ? (
                 <div className="mt-3 flex flex-wrap items-center justify-end gap-3 border-t border-[rgb(43_29_20/0.12)] pt-3">
-                  <button type="button" className="ep-button ep-ink-quiet" disabled={busy} onClick={game.stay}>
-                    Wait, one more thing
-                  </button>
+                  {game.shownDoor ? <p className="mr-auto text-[15px]">He wants you out.</p> : null}
+                  {game.shownDoor ? null : (
+                    <button type="button" className="ep-button ep-ink-quiet" disabled={busy} onClick={game.stay}>
+                      Wait, one more thing
+                    </button>
+                  )}
                   <button type="button" className="ep-button ep-primary" disabled={busy || Boolean(game.problem)} onClick={game.finish}>
                     Step outside
                   </button>
@@ -207,7 +211,8 @@ export function Epicerie() {
       <Dialog open={logOpen} onOpenChange={setLogOpen}>
         <DialogContent className="max-h-[85dvh] overflow-y-auto border-[rgb(43_29_20/0.15)] bg-[var(--ep-paper)] text-[var(--ep-ink)]">
           <DialogTitle className="ep-display text-[22px]">Today in the shop</DialogTitle>
-          <DialogDescription className="text-[var(--ep-ink-soft)]">Everything said so far, oldest first.</DialogDescription>
+          <DialogDescription className="text-[var(--ep-ink-soft)]">Highlight any French to hear it. English is refused.</DialogDescription>
+          <HearSelection>
           <ol className="grid gap-2.5">
             {transcript.map((turn, index) => (
               <li key={index} className="text-[15px] leading-relaxed">
@@ -225,6 +230,7 @@ export function Epicerie() {
               </li>
             ))}
           </ol>
+          </HearSelection>
         </DialogContent>
       </Dialog>
     </div>

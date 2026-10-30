@@ -1,8 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import type Anthropic from "@anthropic-ai/sdk";
 import { anthropicClient, createMessage, toolUses, textOf } from "../../mercenary/model";
-import { ITEM_BY_ID } from "@/app/epicerie/data/items";
-import { basketSheet, cleanLine, counterSheet, describeTurn, isGesture, neutralGesture, persona, spokenFromText, type Address } from "@/app/epicerie/lib/gerard";
+import { ITEM_BY_ID, STAPLES } from "@/app/epicerie/data/items";
+import { basketSheet, cleanLine, counterSheet, describeTurn, forSpeech, isGesture, neutralGesture, persona, spokenFromText, type Address } from "@/app/epicerie/lib/gerard";
 import { EXPRESSIONS, addLine, formatEuros, linesTotal, removeLine, type Expression, type Line, type Turn } from "@/app/epicerie/lib/shop";
 
 export const maxDuration = 60;
@@ -19,6 +19,8 @@ interface Body {
   notes?: string[];
   visits?: number;
   address?: string;
+  /** Extra stock and the errand, for a visit that is not the standalone shop. */
+  errand?: string;
 }
 
 const TOOLS: Anthropic.Tool[] = [
@@ -52,6 +54,12 @@ const TOOLS: Anthropic.Tool[] = [
     input_schema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
   },
   {
+    name: "show_the_door",
+    description:
+      "You have had enough. They are leaving after you speak. Use this only if they are rude, or they keep talking English after you already asked them twice to point or to try a French word.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
     name: "speak",
     description: "Say your reply aloud. Call this last.",
     input_schema: {
@@ -60,8 +68,13 @@ const TOOLS: Anthropic.Tool[] = [
         line: { type: "string", description: "What you say, in French. One to three short sentences." },
         expression: { type: "string", enum: EXPRESSIONS },
         gesture: { type: "string", description: "Optional. What you do, in a few words of English narration." },
+        audio: {
+          type: "string",
+          description:
+            "The same French words as line, with ElevenLabs delivery tags such as [pleased] or [short pause] placed before the words they colour.",
+        },
       },
-      required: ["line", "expression"],
+      required: ["line", "expression", "audio"],
     },
   },
 ];
@@ -104,26 +117,31 @@ export async function POST(req: NextRequest) {
   const visits = Number.isInteger(body?.visits) ? Math.max(0, body?.visits as number) : 0;
   const basket = cleanLines(body?.basket);
   const address: Address = body?.address === "monsieur" || body?.address === "madame" ? body.address : "unknown";
+  const errand = typeof body?.errand === "string" ? body.errand.trim().slice(0, 900) : "";
   const written: string[] = [];
 
   const scene = [...history, turn].map(describeTurn).join("\n");
   const messages: Anthropic.Messages.MessageParam[] = [
-    { role: "user", content: `${scene}\n\n(${basketSheet(basket)} ${counterSheet(counter, till)})` },
+    { role: "user", content: `${errand ? `${errand}\n\n` : ""}${scene}\n\n(${basketSheet(basket)} ${counterSheet(counter, till)})` },
   ];
-  const system = persona({ notes, visits, address });
+  const also = errand
+    ? STAPLES.map((item) => `- ${item.id}: ${item.fr}, ${formatEuros(item.price)} ${item.unitFr}.`).join("\n")
+    : "";
+  const system = persona({ notes, visits, address, also });
 
+  let dismissed = false;
   for (let round = 0; round < 5; round++) {
-    const response = await createMessage(client, { max_tokens: 600, system, tools: TOOLS, messages });
+    const response = await createMessage(client, { max_tokens: 900, system, tools: TOOLS, messages });
     if ("error" in response) return NextResponse.json({ error: response.error }, { status: 502 });
 
     const calls = toolUses(response);
     if (!calls.length) {
       const spoken = spokenFromText(textOf(response));
-      if (spoken) return NextResponse.json({ ...spoken, gesture: neutralGesture(spoken.gesture), counter, till, notes: written });
+      if (spoken) return NextResponse.json({ ...spoken, dismissed, audio: forSpeech(spoken.line, ""), gesture: neutralGesture(spoken.gesture), counter, till, notes: written });
       return NextResponse.json({ error: "Gérard said nothing." }, { status: 502 });
     }
 
-    let spoken: { line: string; expression: Expression; gesture: string } | null = null;
+    let spoken: { line: string; expression: Expression; gesture: string; audio: string } | null = null;
     const results: Anthropic.Messages.ToolResultBlockParam[] = [];
     for (const call of calls) {
       const input = (call.input ?? {}) as Record<string, unknown>;
@@ -176,18 +194,24 @@ export async function POST(req: NextRequest) {
         reply(text ? "Written." : "Write something.");
         continue;
       }
+      if (call.name === "show_the_door") {
+        dismissed = true;
+        reply("They are on their way out. Say why, in French, without being sweet about it, then speak.");
+        continue;
+      }
       if (call.name === "speak") {
         const line = cleanLine(String(input.line ?? ""));
         const expression = EXPRESSIONS.includes(input.expression as Expression) ? (input.expression as Expression) : "neutral";
         const gesture = String(input.gesture ?? "").trim().slice(0, 160);
-        if (line || gesture) spoken = { line, expression, gesture };
+        const audio = forSpeech(line, input.audio);
+        if (line || gesture) spoken = { line, expression, gesture, audio };
         reply(line || gesture ? "Said." : "Say something.");
         continue;
       }
       reply("There is no such thing to do.");
     }
 
-    if (spoken) return NextResponse.json({ ...spoken, gesture: neutralGesture(spoken.gesture), counter, till, notes: written });
+    if (spoken) return NextResponse.json({ ...spoken, dismissed, gesture: neutralGesture(spoken.gesture), counter, till, notes: written });
     messages.push({ role: "assistant", content: response.content });
     messages.push({ role: "user", content: results });
   }

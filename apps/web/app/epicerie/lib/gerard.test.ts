@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { basketSheet, cleanLine, counterSheet, describeTurn, neutralGesture, persona, spokenFromText } from "./gerard";
+import { basketSheet, cleanLine, counterSheet, describeTurn, forSpeech, neutralGesture, persona, spokenFromText } from "./gerard";
 
 describe("what Gérard hears", () => {
   it("describes pointing, gestures and silence", () => {
@@ -18,6 +18,13 @@ describe("what Gérard hears", () => {
     assert.equal(neutralGesture("Holds up six fingers, then taps the counter."), "Holds up six fingers, then taps the counter.");
     assert.equal(neutralGesture("Places the baguette on the counter, smiling."), "Places it on the counter, smiling.");
     assert.equal(neutralGesture("holds up the baguette, then one finger"), "holds it up, then one finger");
+  });
+
+  it("keeps ElevenLabs delivery tags and drops anything else", () => {
+    assert.equal(forSpeech("Ah, une baguette !", "[pleased] Ah, une baguette ! [short pause] Et avec ça ?"), "[pleased] Ah, une baguette ! [short pause] Et avec ça ?");
+    assert.equal(forSpeech("Bonjour !", "[whispering secretly] Bonjour !"), "Bonjour !");
+    assert.equal(forSpeech("Bonjour !", ""), "Bonjour !");
+    assert.equal(cleanLine("[pleased] Bonjour !"), "Bonjour !");
     assert.equal(describeTurn({ role: "gerard", text: "Bonjour !" }), "You: Bonjour !");
     assert.equal(describeTurn({ role: "event", text: "The bell rings." }), "[The bell rings.]");
   });
@@ -40,7 +47,10 @@ describe("what Gérard hears", () => {
     assert.doesNotMatch(text, /learn|lesson|game|student|teach/i);
     assert.match(text, /Likes honey/);
     assert.match(text, /as madame/);
+    assert.match(text, /as vous/);
     assert.match(persona({ notes: [], visits: 0, address: "unknown" }), /never seen this customer/);
+    assert.match(text, /show_the_door/);
+    assert.doesNotMatch(text, /how can I help/i);
   });
 });
 

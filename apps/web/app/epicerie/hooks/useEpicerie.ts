@@ -36,9 +36,11 @@ interface Reply {
   line?: string;
   expression?: Expression;
   gesture?: string;
+  audio?: string;
   counter?: Line[];
   till?: number | null;
   notes?: string[];
+  dismissed?: boolean;
   error?: string;
 }
 
@@ -61,6 +63,7 @@ export function useEpicerie() {
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<Problem | null>(null);
   const [visit, setVisit] = useState<Visit | null>(null);
+  const [shownDoor, setShownDoor] = useState(false);
   const saveRef = useRef<Save | null>(null);
   saveRef.current = save;
 
@@ -145,7 +148,8 @@ export function useEpicerie() {
       }
 
       const line = reply.line ?? "";
-      const gerard: Turn = { role: "gerard", text: line, expression: reply.expression ?? "neutral", action: reply.gesture || undefined };
+      const audio = typeof reply.audio === "string" && reply.audio.trim() ? reply.audio : undefined;
+      const gerard: Turn = { role: "gerard", text: line, expression: reply.expression ?? "neutral", action: reply.gesture || undefined, audio };
       setSave((value) => {
         if (!value?.session) return value;
         const notes = (reply.notes ?? []).reduce(addNote, value.notes);
@@ -161,7 +165,11 @@ export function useEpicerie() {
           },
         };
       });
-      if (current.voice && line) speakFrench(line);
+      if (current.voice && (audio || line)) speakFrench(audio || line);
+      if (reply.dismissed) {
+        setShownDoor(true);
+        setPhase("leaving");
+      }
     },
     [setTranscript],
   );
@@ -233,7 +241,10 @@ export function useEpicerie() {
     });
   }, [busy, talk]);
 
-  const stay = useCallback(() => setPhase("shop"), []);
+  const stay = useCallback(() => {
+    setShownDoor(false);
+    setPhase("shop");
+  }, []);
 
   const finish = useCallback(() => {
     const current = saveRef.current;
@@ -249,12 +260,17 @@ export function useEpicerie() {
     });
     setSave({ ...current, day: current.day + 1, visits: current.visits + 1, session: null });
     setProblem(null);
+    setShownDoor(false);
     setPhase("debrief");
   }, []);
 
   const toNextDay = useCallback(() => {
     setVisit(null);
     setPhase("intro");
+  }, []);
+
+  const setJournal = useCallback((journal: string) => {
+    setSave((current) => (current ? { ...current, journal: journal.slice(0, 4000) } : current));
   }, []);
 
   const setVoice = useCallback((voice: boolean) => {
@@ -268,6 +284,7 @@ export function useEpicerie() {
     commit(parseSave(null));
     setVisit(null);
     setProblem(null);
+    setShownDoor(false);
     setPhase("intro");
   }, [commit]);
 
@@ -282,6 +299,7 @@ export function useEpicerie() {
     busy,
     problem,
     visit,
+    shownDoor,
     say,
     enter,
     handOver,
@@ -290,6 +308,7 @@ export function useEpicerie() {
     finish,
     toNextDay,
     setVoice,
+    setJournal,
     resetAll,
     dismissProblem: () => setProblem(null),
   };

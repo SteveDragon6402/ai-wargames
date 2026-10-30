@@ -503,3 +503,26 @@
   background: linear-gradient(135deg, #f0bf7d, #d48a3d);
   color: #3d2207;
 }
+
+.ep-notebook {
+  min-height: 8rem;
+  resize: vertical;
+  border: 0;
+  padding: 0;
+  line-height: 32px;
+  font-family: var(--font-ep-hand), "Bradley Hand", cursive;
+  font-size: 22px;
+}
+
+.ep-notebook:focus-visible {
+  outline: 3px solid var(--ep-brass);
+  outline-offset: 4px;
+}
+
+@supports (field-sizing: content) {
+  .ep-notebook {
+    field-sizing: content;
+    max-height: 20lh;
+    overflow-y: auto;
+  }
+}
