@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GRAMMAR_BY_DAY, GRAMMAR_BY_ID } from "@/app/course/content/grammar";
 import { computeDomainCoverage, computeMilestones, daysBetweenIso } from "@/app/course/engine";
+import { fillGrammarLesson } from "@/app/course/engine/lesson-fill";
 import { planCourseDay } from "@/lib/teacher";
 import { getUserFromRequest } from "@/lib/auth/session";
 import { emptySave, parseSave } from "@/app/sejour/lib/save";
@@ -51,10 +52,12 @@ export async function GET(req: NextRequest) {
   if (dirty) await saveUserBundle(user.id, bundle);
 
   const dayEntry = course.dayPlans[day]!;
-  const lesson = GRAMMAR_BY_ID[dayEntry.plan.lessonId] ?? GRAMMAR_BY_DAY[day] ?? GRAMMAR_BY_DAY[1];
+  const rawLesson = GRAMMAR_BY_ID[dayEntry.plan.lessonId] ?? GRAMMAR_BY_DAY[day] ?? GRAMMAR_BY_DAY[1];
+  const lesson = fillGrammarLesson(rawLesson, bundle.learnerFacts);
   const remediationLessons = dayEntry.plan.remediationLessonIds
     .map((id) => GRAMMAR_BY_ID[id])
-    .filter(Boolean);
+    .filter((item) => Boolean(item))
+    .map((item) => fillGrammarLesson(item!, bundle.learnerFacts));
 
   const todayIso = todayIsoInTz(course.timezone);
   const elapsedDays = Math.max(0, daysBetweenIso(course.startDate, todayIso));

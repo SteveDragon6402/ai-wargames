@@ -58,6 +58,7 @@ export function Sejour() {
   const [lessonsOpen, setLessonsOpen] = useState(false);
   const [lastInvitedOuting, setLastInvitedOuting] = useState<OutingId | null>(null);
   const [friendTurns, setFriendTurns] = useState<TalkTurn[]>([]);
+  const [mentioned, setMentioned] = useState<PlaceId[]>([]);
 
   if (!stay.loaded) return <p className="sj-wrap">The house is waking up.</p>;
 
@@ -70,7 +71,6 @@ export function Sejour() {
   const walletTotal = sumCoins(stay.save.wallet);
 
   const unlockedPlaces: PlaceId[] = PLACES.filter((p) => stay.save.unlocked.includes(p));
-  const offeredUnlockedPlaces: PlaceId[] = stay.save.offered.filter((p) => stay.save.unlocked.includes(p));
   const nextSuggestedRecipe = suggestRecipe(stay.save.cooked);
 
   const arrivalPlayerTurns = hostTurns.filter((t) => t.who === "you").length;
@@ -93,7 +93,7 @@ export function Sejour() {
     : [];
 
   const morningActions: ConversationAction[] = [
-    ...offeredUnlockedPlaces.map((placeId) => {
+    ...mentioned.filter((placeId) => stay.save.unlocked.includes(placeId)).map((placeId) => {
       const info = PLACE_INFO[placeId];
       return {
         id: `place-${placeId}`,
@@ -147,6 +147,9 @@ export function Sejour() {
     stay.observeLiveConversation("host", history, reply.suggestedPlaces);
     if (stay.phase === "morning") {
       stay.noteMorningTurn();
+      if (reply.suggestedPlaces.length) {
+        setMentioned((current) => [...new Set([...current, ...reply.suggestedPlaces])]);
+      }
     }
     if (stay.phase === "arrival" && reply.bedtime && history.filter((t) => t.who === "you").length >= arrivalMinTurns) {
       setHostTurns([]);
@@ -269,7 +272,7 @@ export function Sejour() {
             listening={stay.textHidden("host")}
             placeholder="Say hello (or tell her in English if you don't know any French yet)..."
             hearLabel="Hear her"
-            context="ARRIVAL. First evening at your house in Saint-Aubin, rue des Tilleuls. You are Madame Rousseau. Your first line only: welcome them, say your name, and ask their name. After that, answer the line they just said. If they told you about the journey, react to that and correct one French mistake if there is one. Do not welcome them again. Do not ask a question they already answered. If they know no French, teach one phrase in English. After a few exchanges, wish them bonne nuit and call bedtime."
+            context="ARRIVAL. First evening at your house in Saint-Aubin, rue des Tilleuls. You are Madame Rousseau. Your first line only: welcome them, say your name, and ask their name. After that, answer the line they just said. If they told you about the journey, react to that and correct one French mistake if there is one. Do not welcome them again. Do not ask a question they already answered. If they say they do not understand, or they know no French, switch to English, explain the last line, and teach one short phrase. After a few exchanges, wish them bonne nuit and call bedtime."
             actions={arrivalActions}
             actionPrompt="🌙 Ready to turn in for the night? Press the button to go upstairs:"
             onReply={onHostReply}
@@ -525,6 +528,7 @@ ${
         <Supermarche
           recipe={stay.recipe}
           purse={stay.save.wallet}
+          memory={memoryText(stay.save.memories.elodie)}
           listening={stay.textHidden("supermarche")}
           knownIds={knownIds}
           onMeet={stay.markMet}

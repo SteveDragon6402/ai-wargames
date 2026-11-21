@@ -19,7 +19,7 @@ export const EVENT_SPECS: Record<EventId, EventSpec> = {
     portrait: "/sejour/v2/people/camille.jpg",
     scene: "/sejour/v2/scenes/dining.jpg",
     character: "camille",
-    minDay: 2,
+    minDay: 17,
     intro:
       "There are two voices in the dining room this morning. A young woman in a yellow sweater is sitting at the table with a cup of coffee.",
   },
@@ -30,7 +30,7 @@ export const EVENT_SPECS: Record<EventId, EventSpec> = {
     portrait: "/sejour/v2/people/rousseau-sick.jpg",
     scene: "/sejour/v2/scenes/pharmacie.jpg",
     character: "rousseau",
-    minDay: 4,
+    minDay: 24,
     intro:
       "The kettle is cold this morning. From upstairs, you hear coughing and a hoarse voice calling down the stairwell.",
   },

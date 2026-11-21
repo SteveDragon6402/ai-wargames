@@ -54,6 +54,55 @@ export function transcriptIsLost(lines: readonly { role: string; text: string }[
   return lines.some((line) => line.role === "you" && learnerIsLost(line.text));
 }
 
+const ENGLISH_HELP = new Set([
+  "i", "you", "the", "a", "don't", "dont", "this", "that", "means", "mean", "say", "says",
+  "try", "please", "understand", "slow", "slower", "hello", "what", "lets", "worry",
+  "english", "name", "is", "we", "can", "repeat", "again", "worry", "okay", "ok",
+]);
+
+/** How many plain-English helper words are in a spoken line. */
+export function englishHelpWords(line: string): number {
+  const tokens = line.toLowerCase().split(/[^a-z']+/).filter(Boolean);
+  return tokens.filter((token) => ENGLISH_HELP.has(token)).length;
+}
+
+/** A reply to "I don't understand" still needs a stretch of plain English. */
+export function replyNeedsEnglish(line: string): boolean {
+  return englishHelpWords(line) < 4;
+}
+
+/** Dinner talk that asks how they slept. */
+export function dinnerAsksAboutSleep(line: string): boolean {
+  return /\b(dormi|sommeil|r[eé]veill|slept|sleep well|this morning|ce matin)\b/i.test(line);
+}
+
+/** The shortest A1 line for everyday English. Null when we should not invent one. */
+export function simpleFrenchFor(english: string): string | null {
+  const line = english.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
+  const rules: [RegExp, string][] = [
+    [/don'?t understand|do not understand|not understand|didn'?t understand/, "Je ne comprends pas."],
+    [/go slower|slow down|too fast|say that again|say it again|repeat/, "Plus lentement, s'il vous plaît."],
+    [/what does that mean|what do you mean/, "Qu'est-ce que ça veut dire ?"],
+    [/my name is|i am called|i'?m called/, "Je m'appelle…"],
+    [/how are you/, "Comment allez-vous ?"],
+    [/thank you|thanks/, "Merci."],
+    [/good night/, "Bonne nuit."],
+    [/good evening/, "Bonsoir."],
+    [/good morning|\bhello\b|\bhi\b/, "Bonjour."],
+    [/please/, "S'il vous plaît."],
+    [/i am ready|i'?m ready/, "Je suis prêt."],
+    [/nice to meet you/, "Enchanté."],
+    [/\byes\b|\byeah\b/, "Oui."],
+    [/\bno\b|\bnope\b/, "Non."],
+    [/\bi am\b|\bi'?m\b/, "Je suis…"],
+    [/\bi have\b|\bi'?ve\b/, "J'ai…"],
+  ];
+  for (const [pattern, french] of rules) {
+    if (pattern.test(line)) return french;
+  }
+  return null;
+}
+
 export const STEP_BACK =
   "[PACE — THEY ARE LOST]: Stop the scene. Do not introduce anything new and do not move the story on. Take the last French you said, break it into one short piece, say what it means in English, and ask them to say that piece back. Stay on it until they do.";
 

@@ -11,7 +11,23 @@ interface CoachTurn {
 }
 
 /** A chat under the review. The scene stays in the request, and a line can be quoted. */
-export function Coach({ lines, scene, quotes }: { lines: ReviewLine[]; scene?: string; quotes: string[] }) {
+export function Coach({
+  lines,
+  scene,
+  quotes,
+  canContinue,
+  onContinue,
+  continueLabel,
+  continueDescribedBy,
+}: {
+  lines: ReviewLine[];
+  scene?: string;
+  quotes: string[];
+  canContinue: boolean;
+  onContinue: () => void;
+  continueLabel: string;
+  continueDescribedBy?: string;
+}) {
   const [question, setQuestion] = useState("");
   const [chat, setChat] = useState<CoachTurn[]>([]);
   const [busy, setBusy] = useState(false);
@@ -102,9 +118,20 @@ export function Coach({ lines, scene, quotes }: { lines: ReviewLine[]; scene?: s
             }
           }}
         />
-        <button type="submit" className="ep-button ep-primary self-start" disabled={busy || !question.trim()}>
-          Ask
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button type="submit" className="ep-button ep-primary" disabled={busy || !question.trim()}>
+            Ask
+          </button>
+          <button
+            type="button"
+            className="ep-button ep-primary"
+            disabled={!canContinue}
+            aria-describedby={continueDescribedBy}
+            onClick={onContinue}
+          >
+            {continueLabel}
+          </button>
+        </div>
       </form>
     </div>
   );

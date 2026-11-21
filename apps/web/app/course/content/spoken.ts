@@ -39,10 +39,10 @@ export function recognitionForDay(day: number): { fr: string; en: string }[] {
   return rotate(scene, ((day - 1) * 4) % Math.max(1, scene.length), 6);
 }
 
-export function wordTargetNote(day: number, extra: readonly { fr: string }[] = []): string {
+/** One aside for the character's first line. The next turn does not include it. */
+export function openingWordNudge(day: number, extra: readonly { fr: string }[] = []): string {
   const spoken = spokenForDay(day).map((item) => item.fr);
-  const heard = recognitionForDay(day).map((item) => `${item.fr} (${item.en})`);
   const again = extra.map((item) => item.fr).filter(Boolean);
-  const againLine = again.length ? ` They got lost on: ${again.join("; ")}. Those come before anything new.` : "";
-  return `[WORDS]: By the end of the month they should say about 300 words (the 150 most common, plus about 150 from the places) and recognize 500 to 1000. Today they should SAY: ${spoken.join(", ")}.${againLine} They only need to RECOGNIZE these, each glossed once in English, not quizzed: ${heard.join("; ")}. One new spoken word in a turn. Answering what they just said comes before any of these words.`;
+  const focus = again[0] ? ` They had trouble with « ${again[0]} ». If that one fits, prefer it.` : "";
+  return `Private, for this line only. You are still yourself. This is not a lesson, and you do not mention practice or teaching. If one of these can come up the way you would actually talk, use one, then get on with why they are here. A baker with the weather on the list might ask how the weather is, and then ask what they want. If none of it fits, say what you were going to say.${focus}\n${spoken.join(", ")}`;
 }

@@ -1,16 +1,43 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { GrammarExercise, GrammarLesson } from "@/app/course/types";
-import { hear } from "@/app/sejour/lib/voice";
+import { frenchAnswerIsAlmost, frenchAnswersMatch, shuffleTiles } from "@/app/course/engine/answers";
+import { hear, stopHearing } from "@/app/sejour/lib/voice";
 
-function normalizeAnswer(str: string): string {
-  return str
-    .trim()
-    .toLowerCase()
-    .replace(/[’']/g, "'")
-    .replace(/[.!?]+$/g, "")
-    .replace(/\s+/g, " ");
+type Verdict = { correct: boolean; almost: boolean; explanation: string };
+
+function playSuccess() {
+  const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+  if (!Ctx) return;
+  const ctx = new Ctx();
+  const now = ctx.currentTime;
+  [523.25, 659.25, 783.99].forEach((freq, i) => {
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "sine";
+    osc.frequency.value = freq;
+    const start = now + i * 0.07;
+    gain.gain.setValueAtTime(0.0001, start);
+    gain.gain.exponentialRampToValueAtTime(0.07, start + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.2);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(start);
+    osc.stop(start + 0.22);
+  });
+  window.setTimeout(() => void ctx.close(), 900);
+}
+
+function sentenceToHear(text: string): string | null {
+  const line = text.trim();
+  if (line.split(/\s+/).length < 3) return null;
+  return line;
+}
+
+function promptSentence(prompt: string): string | null {
+  const quoted = prompt.match(/«\s*([^»]+)»/)?.[1]?.trim() ?? "";
+  if (!quoted || quoted.includes("_")) return null;
+  return sentenceToHear(quoted);
 }
 
 export default function GrammarLessonPage() {
@@ -20,14 +47,22 @@ export default function GrammarLessonPage() {
   const [courseDay, setCourseDay] = useState(1);
   const [loading, setLoading] = useState(true);
 
-  const [step, setStep] = useState<"study" | "practice" | "done" | "retry">("practice");
+  const [step, setStep] = useState<"study" | "practice" | "done" | "retry">("study");
   const [exIdx, setExIdx] = useState(0);
   const [userInput, setUserInput] = useState("");
   const [tileWords, setTileWords] = useState<string[]>([]);
-  const [checked, setChecked] = useState<null | { correct: boolean; explanation: string }>(null);
+  const [used, setUsed] = useState<number[]>([]);
+  const [builtFor, setBuiltFor] = useState("");
+  const [checked, setChecked] = useState<Verdict | null>(null);
   const [result, setResult] = useState<null | { passed: boolean; scorePercent: number; correct: number; total: number; passPercent: number }>(null);
   const [finishError, setFinishError] = useState("");
+  const [revealed, setRevealed] = useState(0);
+  const [examplesShown, setExamplesShown] = useState(0);
+  const [teaching, setTeaching] = useState(false);
+  const [taught, setTaught] = useState(false);
+  const [voiceNote, setVoiceNote] = useState("");
   const answersRef = useRef<Record<string, string>>({});
+  const teachRun = useRef(0);
 
   useEffect(() => {
     fetch("/api/course/today")
@@ -48,32 +83,105 @@ export default function GrammarLessonPage() {
         }
       })
       .finally(() => setLoading(false));
+    return () => {
+      teachRun.current += 1;
+      stopHearing();
+    };
   }, []);
 
-  if (loading || !lesson) {
-    return (
-      <main className="min-h-dvh bg-[#f5efe2] text-[#231b12] flex items-center justify-center p-6">
-        <div className="rounded-2xl border border-[#3c2d1e]/20 bg-[#fbf7ee] px-8 py-6 text-center">
-          Loading today&apos;s grammar lesson…
-        </div>
-      </main>
-    );
+  const allExercises: GrammarExercise[] = lesson ? [...lesson.exercises, ...remediation] : [];
+  const currentEx = allExercises[exIdx];
+
+  const bank = useMemo(() => {
+    if (!currentEx?.options) return [] as string[];
+    if (currentEx.kind === "tiles" || currentEx.kind === "mcq" || currentEx.kind === "listen") {
+      return shuffleTiles(currentEx.options, currentEx.id);
+    }
+    return [...currentEx.options];
+  }, [currentEx?.id, currentEx?.kind, currentEx?.options]);
+
+  if (currentEx && builtFor !== currentEx.id) {
+    setBuiltFor(currentEx.id);
+    setTileWords([]);
+    setUsed([]);
   }
 
-  const allExercises: GrammarExercise[] = [...lesson.exercises, ...remediation];
-  const currentEx = allExercises[exIdx];
+  useEffect(() => {
+    if (step !== "practice" || !currentEx) return;
+    const line = currentEx.audioFr || promptSentence(currentEx.prompt);
+    if (!line) return;
+    void hear("rousseau", line);
+  }, [step, currentEx?.id]);
+
+  async function teach() {
+    if (!lesson || teaching) return;
+    const mine = ++teachRun.current;
+    setTeaching(true);
+    setVoiceNote("");
+    setRevealed(0);
+    setExamplesShown(0);
+    const intro = await hear("rousseau", "Voici les formes.");
+    if (mine !== teachRun.current) return;
+    if (intro) {
+      setVoiceNote(intro);
+      setRevealed(lesson.keyPoints.length);
+      setExamplesShown(lesson.examples.length);
+      setTaught(true);
+      setTeaching(false);
+      return;
+    }
+    for (let i = 0; i < lesson.keyPoints.length; i++) {
+      setRevealed(i + 1);
+      const err = await hear("rousseau", lesson.keyPoints[i].fr);
+      if (mine !== teachRun.current) return;
+      if (err) {
+        setVoiceNote(err);
+        setRevealed(lesson.keyPoints.length);
+        setExamplesShown(lesson.examples.length);
+        setTaught(true);
+        setTeaching(false);
+        return;
+      }
+    }
+    for (let i = 0; i < lesson.examples.length; i++) {
+      setExamplesShown(i + 1);
+      const err = await hear("rousseau", lesson.examples[i].fr);
+      if (mine !== teachRun.current) return;
+      if (err) {
+        setVoiceNote(err);
+        setExamplesShown(lesson.examples.length);
+        break;
+      }
+    }
+    setTaught(true);
+    setTeaching(false);
+  }
+
+  function judge(raw: string) {
+    if (!currentEx) return;
+    const accept = currentEx.accept ?? [];
+    const correct = frenchAnswersMatch(raw, currentEx.answer, accept);
+    const almost = !correct && frenchAnswerIsAlmost(raw, currentEx.answer, accept);
+    if (almost) {
+      setChecked({ correct: false, almost: true, explanation: "Almost! One letter is off." });
+      return;
+    }
+    answersRef.current[currentEx.id] = raw;
+    setChecked({
+      correct,
+      almost: false,
+      explanation: currentEx.explanation,
+    });
+    if (correct) playSuccess();
+    const spoken = sentenceToHear(currentEx.answer);
+    if (spoken && spoken !== currentEx.audioFr) void hear("rousseau", spoken);
+  }
 
   function checkCurrentAnswer() {
     if (!currentEx) return;
-    const rawCandidate = currentEx.kind === "tiles" ? tileWords.join(" ") : userInput;
-    const candidate = normalizeAnswer(rawCandidate);
-    const validTargets = [currentEx.answer, ...(currentEx.accept ?? [])].map(normalizeAnswer);
-    answersRef.current[currentEx.id] = rawCandidate;
-    const isCorrect = validTargets.includes(candidate);
-    setChecked({
-      correct: isCorrect,
-      explanation: currentEx.explanation,
-    });
+    const raw = currentEx.kind === "tiles" ? tileWords.join(" ") : userInput;
+    if (!raw.trim()) return;
+    judge(raw);
   }
 
   async function nextExercise() {
@@ -81,6 +189,7 @@ export default function GrammarLessonPage() {
     setChecked(null);
     setUserInput("");
     setTileWords([]);
+    setUsed([]);
     if (exIdx + 1 < allExercises.length) {
       setExIdx((i) => i + 1);
     } else {
@@ -100,6 +209,19 @@ export default function GrammarLessonPage() {
       setStep(data.passed ? "done" : "retry");
     }
   }
+
+  if (loading || !lesson) {
+    return (
+      <main className="min-h-dvh bg-[#f5efe2] text-[#231b12] flex items-center justify-center p-6">
+        <div className="rounded-2xl border border-[#3c2d1e]/20 bg-[#fbf7ee] px-8 py-6 text-center">
+          Loading today&apos;s grammar lesson…
+        </div>
+      </main>
+    );
+  }
+
+  const locked = checked !== null && !checked.almost;
+  const choiceBank = bank.length ? bank : currentEx?.options ?? [];
 
   return (
     <main className="min-h-dvh bg-[#f5efe2] text-[#231b12] pb-16">
@@ -132,26 +254,26 @@ export default function GrammarLessonPage() {
               </div>
             </div>
 
-            {/* Key Points Table */}
+            <button
+              type="button"
+              onClick={() => void teach()}
+              disabled={teaching}
+              className="w-full rounded-xl bg-[#231b12] px-6 py-3.5 text-base font-bold text-[#fbf7ee] hover:bg-[#3a2d1f] disabled:opacity-60"
+            >
+              {teaching ? "Madame is saying the forms…" : taught ? "Hear the forms again" : "Hear the forms"}
+            </button>
+            {voiceNote && <p className="text-sm text-[#6e563a]">{voiceNote}</p>}
+
             <div className="rounded-xl border border-[#3c2d1e]/20 bg-white p-4">
               <h3 className="text-xs font-bold uppercase tracking-wider text-[#8b5e34]">
-                Key Forms &amp; Patterns (Click 🔊 to hear)
+                The forms
               </h3>
               <div className="mt-3 divide-y divide-[#3c2d1e]/10">
-                {lesson.keyPoints.map((kp, i) => (
+                {lesson.keyPoints.slice(0, revealed).map((kp, i) => (
                   <div key={i} className="flex flex-wrap items-center justify-between gap-2 py-2.5">
-                    <div className="flex items-center gap-2.5">
-                      <button
-                        type="button"
-                        onClick={() => hear("rousseau", kp.fr)}
-                        className="rounded-lg border border-[#3c2d1e]/20 bg-[#f4ecdc] px-2.5 py-1 text-xs font-bold hover:bg-[#e5d8c0]"
-                      >
-                        🔊
-                      </button>
-                      <div>
-                        <div className="font-bold text-[#231b12]">{kp.fr}</div>
-                        <div className="text-xs text-[#5c4934]">{kp.en}</div>
-                      </div>
+                    <div>
+                      <div className="font-bold text-[#231b12]">{kp.fr}</div>
+                      <div className="text-xs text-[#5c4934]">{kp.en}</div>
                     </div>
                     {kp.note && (
                       <span className="rounded bg-[#f4ecdc] px-2.5 py-1 text-xs text-[#5c4934]">
@@ -160,44 +282,41 @@ export default function GrammarLessonPage() {
                     )}
                   </div>
                 ))}
+                {revealed === 0 && (
+                  <p className="py-3 text-sm text-[#6e563a]">The forms appear here as Madame says them.</p>
+                )}
               </div>
             </div>
 
-            {/* Spoken Village Examples */}
-            <div className="rounded-xl border border-[#3c2d1e]/20 bg-[#f4ecdc]/70 p-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[#8b5e34]">
-                How You&apos;ll Hear It in Saint-Aubin
-              </h3>
-              <div className="mt-3 space-y-2.5">
-                {lesson.examples.map((ex, i) => (
-                  <div key={i} className="flex items-start gap-2.5 rounded-lg bg-white p-3">
-                    <button
-                      type="button"
-                      onClick={() => hear("rousseau", ex.fr)}
-                      className="mt-0.5 rounded-lg border border-[#3c2d1e]/20 bg-[#efe6d4] px-2.5 py-1 text-xs font-bold hover:bg-[#e2d3b9]"
-                    >
-                      🔊
-                    </button>
-                    <div>
+            {examplesShown > 0 && (
+              <div className="rounded-xl border border-[#3c2d1e]/20 bg-[#f4ecdc]/70 p-4">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-[#8b5e34]">
+                  How you&apos;ll hear it
+                </h3>
+                <div className="mt-3 space-y-2.5">
+                  {lesson.examples.slice(0, examplesShown).map((ex, i) => (
+                    <div key={i} className="rounded-lg bg-white p-3">
                       <div className="text-sm font-bold text-[#231b12]">{ex.fr}</div>
                       <div className="text-xs text-[#5c4934]">{ex.en}</div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
 
             <div className="rounded-xl border border-emerald-800/30 bg-emerald-50 p-4 text-xs text-emerald-950">
-              <strong>Today&apos;s Village Mission:</strong> {lesson.useItPrompt}
+              <strong>Today&apos;s village line:</strong> {lesson.useItPrompt}
             </div>
 
-            <button
-              type="button"
-              onClick={() => setStep("practice")}
-              className="w-full rounded-xl bg-[#231b12] px-6 py-3.5 text-base font-bold text-[#fbf7ee] hover:bg-[#3a2d1f] transition"
-            >
-              Start Interactive Exercises ({allExercises.length} questions) →
-            </button>
+            {taught && (
+              <button
+                type="button"
+                onClick={() => setStep("practice")}
+                className="w-full rounded-xl bg-[#2f6b45] px-6 py-3.5 text-base font-bold text-white hover:bg-[#245636] transition"
+              >
+                Start the exercises ({allExercises.length}) →
+              </button>
+            )}
           </div>
         )}
 
@@ -205,9 +324,9 @@ export default function GrammarLessonPage() {
           <div className="rounded-2xl border-2 border-[#3c2d1e]/25 bg-[#fbf7ee] p-6 shadow-md">
             <div className="flex items-center justify-between text-sm text-[#6e563a]">
               <span className="tabular-nums">{exIdx + 1} of {allExercises.length}</span>
-              {!checked ? (
+              {!locked ? (
                 <button type="button" onClick={() => setStep("study")} className="underline">
-                  How this works
+                  Hear the forms
                 </button>
               ) : (
                 <span />
@@ -228,27 +347,27 @@ export default function GrammarLessonPage() {
                 onClick={() => hear("rousseau", currentEx.audioFr!)}
                 className="mt-3 inline-flex items-center gap-2 rounded-xl border border-[#3c2d1e]/30 bg-[#efe6d4] px-4 py-2 text-sm font-bold text-[#231b12] hover:bg-[#e3d4bb]"
               >
-                Hear it
+                Hear it again
               </button>
             )}
 
-            {/* MCQ or Listen with options */}
-            {(currentEx.kind === "mcq" || currentEx.kind === "listen") && currentEx.options && (
+            {(currentEx.kind === "mcq" || currentEx.kind === "listen") && (
               <div className="mt-4 space-y-3">
-                {currentEx.options.map((opt) => (
+                {choiceBank.map((opt) => (
                   <button
                     key={opt}
                     type="button"
-                    disabled={checked !== null}
-                    onClick={() => setUserInput(opt)}
+                    disabled={locked}
+                    onClick={() => {
+                      setUserInput(opt);
+                      judge(opt);
+                    }}
                     className={`min-h-12 w-full rounded-xl px-4 py-3 text-left text-base font-semibold transition ${
-                      checked
-                        ? userInput === opt
+                      checked && userInput === opt
+                        ? checked.correct
                           ? "border-2 border-[#2f6b45] bg-[#e7f3ec] text-[#1b3825]"
-                          : "border-2 border-transparent bg-transparent font-medium text-[#8a7760]"
-                        : userInput === opt
-                          ? "border-2 border-[#231b12] bg-[#231b12] text-[#fbf7ee]"
-                          : "border-2 border-[#3c2d1e]/20 bg-white text-[#231b12] hover:bg-[#f4ecdc]"
+                          : "border-2 border-red-800 bg-red-50 text-red-950"
+                        : "border-2 border-[#3c2d1e]/20 bg-white text-[#231b12] hover:bg-[#f4ecdc]"
                     }`}
                   >
                     {opt}
@@ -257,18 +376,18 @@ export default function GrammarLessonPage() {
               </div>
             )}
 
-            {/* Gap-fill or Translate */}
             {(currentEx.kind === "gap" || currentEx.kind === "translate") && (
               <div className="mt-4">
                 <input
                   type="text"
-                  disabled={checked !== null}
+                  disabled={locked}
                   value={userInput}
-                  onChange={(e) => setUserInput(e.target.value)}
+                  onChange={(e) => {
+                    setUserInput(e.target.value);
+                    if (checked?.almost) setChecked(null);
+                  }}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !checked && userInput.trim()) {
-                      checkCurrentAnswer();
-                    }
+                    if (e.key === "Enter" && !locked && userInput.trim()) checkCurrentAnswer();
                   }}
                   placeholder="Type your French answer here…"
                   className="w-full rounded-xl border-2 border-[#3c2d1e]/30 bg-white px-4 py-3 text-base text-[#231b12]"
@@ -276,19 +395,22 @@ export default function GrammarLessonPage() {
               </div>
             )}
 
-            {/* Word Tiles */}
-            {currentEx.kind === "tiles" && currentEx.options && (
+            {currentEx.kind === "tiles" && (
               <div className="mt-4 space-y-3">
                 <div className="min-h-[52px] rounded-xl border-2 border-dashed border-[#3c2d1e]/30 bg-white p-3 flex flex-wrap gap-2">
                   {tileWords.length === 0 ? (
-                    <span className="text-xs text-[#7a6248]">Click words below in order…</span>
+                    <span className="text-xs text-[#7a6248]">Click the words in order.</span>
                   ) : (
                     tileWords.map((w, i) => (
                       <button
                         key={`${w}-${i}`}
                         type="button"
-                        disabled={checked !== null}
-                        onClick={() => setTileWords((prev) => prev.filter((_, idx) => idx !== i))}
+                        disabled={locked}
+                        onClick={() => {
+                          setTileWords((prev) => prev.filter((_, idx) => idx !== i));
+                          setUsed((prev) => prev.filter((_, idx) => idx !== i));
+                          if (checked?.almost) setChecked(null);
+                        }}
                         className="rounded-lg bg-[#231b12] px-3 py-1.5 text-sm font-bold text-[#fbf7ee]"
                       >
                         {w}
@@ -297,13 +419,18 @@ export default function GrammarLessonPage() {
                   )}
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  {currentEx.options.map((w, i) => (
+                  {choiceBank.map((w, i) => (
                     <button
                       key={`${w}-opt-${i}`}
                       type="button"
-                      disabled={checked !== null}
-                      onClick={() => setTileWords((prev) => [...prev, w])}
-                      className="rounded-lg border border-[#3c2d1e]/30 bg-[#efe6d4] px-3 py-1.5 text-sm font-bold text-[#231b12] hover:bg-[#e2d3b9]"
+                      disabled={locked || used.includes(i)}
+                      onClick={() => {
+                        if (used.includes(i)) return;
+                        setUsed((prev) => [...prev, i]);
+                        setTileWords((prev) => [...prev, w]);
+                        if (checked?.almost) setChecked(null);
+                      }}
+                      className="rounded-lg border border-[#3c2d1e]/30 bg-[#efe6d4] px-3 py-1.5 text-sm font-bold text-[#231b12] hover:bg-[#e2d3b9] disabled:opacity-30"
                     >
                       {w}
                     </button>
@@ -317,25 +444,29 @@ export default function GrammarLessonPage() {
                 className={`mt-5 rounded-xl border-2 p-4 text-sm ${
                   checked.correct
                     ? "border-emerald-700/40 bg-emerald-50 text-emerald-950"
-                    : "border-amber-800/40 bg-amber-50 text-amber-950"
+                    : checked.almost
+                      ? "border-amber-500 bg-amber-50 text-amber-950"
+                      : "border-red-800/40 bg-red-50 text-red-950"
                 }`}
               >
                 <div className="font-bold">
-                  {checked.correct ? "Correct." : `The answer is « ${currentEx.answer} ».`}
+                  {checked.correct ? "Correct." : checked.almost ? "Almost!" : `The answer is « ${currentEx.answer} ».`}
                 </div>
                 <p className="mt-1 text-xs">{checked.explanation}</p>
               </div>
             )}
 
             <div className="mt-6">
-              {!checked ? (
-                <button
-                  type="button"
-                  onClick={checkCurrentAnswer}
-                  className="w-full rounded-xl bg-[#231b12] px-6 py-4 text-lg font-bold text-[#fbf7ee] hover:bg-[#3a2d1f]"
-                >
-                  Check
-                </button>
+              {!locked ? (
+                currentEx.kind === "mcq" || currentEx.kind === "listen" ? null : (
+                  <button
+                    type="button"
+                    onClick={checkCurrentAnswer}
+                    className="w-full rounded-xl bg-[#231b12] px-6 py-4 text-lg font-bold text-[#fbf7ee] hover:bg-[#3a2d1f]"
+                  >
+                    Check
+                  </button>
+                )
               ) : (
                 <button
                   type="button"
@@ -370,6 +501,7 @@ export default function GrammarLessonPage() {
                 setExIdx(0);
                 setUserInput("");
                 setTileWords([]);
+                setUsed([]);
                 setChecked(null);
                 setResult(null);
                 setFinishError("");

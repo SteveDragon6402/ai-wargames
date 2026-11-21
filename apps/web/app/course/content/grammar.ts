@@ -21,13 +21,14 @@ export const GRAMMAR_LESSONS: GrammarLesson[] = [
       { fr: "je suis", en: "I am", note: "First person singular of être" },
       { fr: "tu es / vous êtes", en: "you are (informal / polite)", note: "Use vous êtes with Madame and shopkeepers" },
       { fr: "il est / elle est", en: "he is / she is", note: "Third person singular of être" },
+      { fr: "je suis {{state}}", en: "I am {{stateEn}}", note: "{{state}} means {{stateEn}}" },
       { fr: "Enchanté(e)", en: "Nice to meet you", note: "Say this right after introductions" }
     ],
     examples: [
-      { fr: "Bonjour Madame, je m'appelle Alex.", en: "Hello Madam, my name is Alex." },
-      { fr: "Je suis américain et je suis étudiant.", en: "I am American and I am a student." },
-      { fr: "Vous êtes Madame Rousseau ? Enchanté !", en: "You are Madame Rousseau? Nice to meet you!" },
-      { fr: "Comment vous appelez-vous ?", en: "What is your name? (polite)" }
+      { fr: "Bonjour Madame, je m'appelle {{name}}.", en: "Hello Madam, my name is {{name}}." },
+      { fr: "Je suis {{state}}.", en: "I am {{stateEn}}." },
+      { fr: "Vous êtes {{host}} ?", en: "You are {{host}}?" },
+      { fr: "Enchanté, Madame !", en: "Nice to meet you, Madam!" }
     ],
     exercises: [
       {
@@ -41,7 +42,7 @@ export const GRAMMAR_LESSONS: GrammarLesson[] = [
       {
         id: "w1d1_ex2",
         kind: "gap",
-        prompt: "Complete the introduction: « Bonjour ! Je ___ Alex. » (My name is Alex.)",
+        prompt: "Complete the introduction: « Bonjour ! Je ___ {{name}}. » (My name is {{name}}.)",
         answer: "m'appelle",
         accept: ["m appelle"],
         explanation: "'Je m'appelle' is the standard French expression for 'My name is'."
@@ -58,8 +59,8 @@ export const GRAMMAR_LESSONS: GrammarLesson[] = [
         id: "w1d1_ex4",
         kind: "tiles",
         prompt: "Arrange the words to greet Madame and introduce yourself:",
-        options: ["Bonjour", "Madame,", "je", "m'appelle", "Sam."],
-        answer: "Bonjour Madame, je m'appelle Sam.",
+        options: ["Bonjour", "Madame,", "je", "m'appelle", "{{name}}."],
+        answer: "Bonjour Madame, je m'appelle {{name}}.",
         explanation: "Start with 'Bonjour Madame,' followed by 'je m'appelle' and your name."
       },
       {
@@ -86,19 +87,18 @@ export const GRAMMAR_LESSONS: GrammarLesson[] = [
       {
         id: "w1d1_ex7",
         kind: "translate",
-        prompt: "Translate into French: 'Hello Madam, I am ready.' (use 'prêt')",
-        answer: "Bonjour Madame, je suis prêt.",
+        prompt: "Say hello to Madame and that you are {{stateEn}}. Hint: {{state}} means {{stateEn}}.",
+        answer: "Bonjour Madame, je suis {{state}}.",
         accept: [
-          "Bonjour Madame, je suis prête.",
-          "Bonjour madame je suis prêt",
-          "Bonjour madame, je suis prêt"
+          "Bonjour Madame, je suis {{state}}",
+          "Bonjour madame, je suis {{state}}"
         ],
         explanation: "'Bonjour Madame' + 'je suis prêt(e)'."
       },
       {
         id: "w1d1_ex8",
         kind: "mcq",
-        prompt: "What do you say right after someone introduces themselves to mean 'Nice to meet you'?",
+        prompt: "Enchanté means nice to meet you. You just heard it. Someone tells you their name. What do you say?",
         options: ["Enchanté", "Au revoir", "Excusez-moi", "À demain"],
         answer: "Enchanté",
         explanation: "'Enchanté(e)' means 'Delighted / Nice to meet you'."
@@ -285,7 +285,7 @@ export const GRAMMAR_LESSONS: GrammarLesson[] = [
       {
         id: "w1d3_ex6",
         kind: "mcq",
-        prompt: "What do you say when leaving a shop during the day to wish the shopkeeper a nice day?",
+        prompt: "Bonne journée means have a nice day. You are leaving the shop in the daytime. What do you say?",
         options: ["Bonne journée !", "Bon appétit !", "Enchanté !", "De rien !"],
         answer: "Bonne journée !",
         explanation: "'Bonne journée !' means 'Have a good day!'."
@@ -1056,7 +1056,7 @@ export const GRAMMAR_LESSONS: GrammarLesson[] = [
       {
         id: "w2d10_ex8",
         kind: "translate",
-        prompt: "Translate into French: 'I speak a little French.' (use 'un peu')",
+        prompt: "Say that you speak a little French. Hint: un peu means a little.",
         answer: "Je parle un peu français.",
         accept: [
           "Je parle un peu français",
@@ -1469,15 +1469,15 @@ export const GRAMMAR_LESSONS: GrammarLesson[] = [
       {
         id: "w2d14_ex6",
         kind: "mcq",
-        prompt: "Which number is 'soixante-quinze'?",
+        prompt: "Which number is soixante-quinze?",
         options: ["75", "65", "85", "95"],
         answer: "75",
-        explanation: "Soixante (60) + quinze (15) = 75."
+        explanation: "Soixante is 60 and quinze is 15, so soixante-quinze is 60 + 15, which is 75."
       },
       {
         id: "w2d14_ex7",
         kind: "translate",
-        prompt: "Translate into French: 'I am looking for fresh tomatoes.' (use 'fraîches')",
+        prompt: "Say you are looking for fresh tomatoes. Hint: fraîches means fresh, after tomates.",
         answer: "Je cherche des tomates fraîches.",
         accept: [
           "Je cherche des tomates fraîches",
@@ -1761,7 +1761,7 @@ export const GRAMMAR_LESSONS: GrammarLesson[] = [
       {
         id: "w3d17_ex6",
         kind: "translate",
-        prompt: "Translate into French: 'How much does it cost?' (use 'ça coûte')",
+        prompt: "Ask how much it costs. Hint: ça coûte means it costs.",
         answer: "Combien ça coûte ?",
         accept: [
           "Combien ça coûte",
@@ -2060,12 +2060,12 @@ export const GRAMMAR_LESSONS: GrammarLesson[] = [
       { fr: "aller au / à la / à l' / chez", en: "going to places & people's homes", note: "je vais, tu vas, il/elle/on va, nous allons, vous allez" },
       { fr: "faire du vélo / jouer au tennis / il fait beau", en: "activities & weather", note: "je fais, tu fais, il fait, vous faites" },
       { fr: "Où / Quand / Pourquoi / Qu'est-ce que", en: "core question words", note: "Pair with 'est-ce que' for effortless word order" },
-      { fr: "mon, ma, mes / ton, ta, tes / votre, vos", en: "possessive adjectives", note: "Matches the gender/number of the noun possessed" },
+      { fr: "mon frère / ma sœur / mes parents", en: "my brother / my sister / my parents", note: "mon for one masculine noun, ma for one feminine noun, mes for more than one. Before a vowel: mon amie." },
       { fr: "je veux / je peux / je dois + infinitive", en: "want / can / must + verb", note: "Accept plans with 'Oui, avec plaisir !'" }
     ],
     examples: [
       { fr: "Demain matin, il fait beau : tu veux aller au parc avec moi à dix heures ?", en: "Tomorrow morning the weather is nice: do you want to go to the park with me at 10:00?" },
-      { fr: "Ma sœur aime faire du vélo et mon frère joue au foot.", en: "My sister likes cycling and my brother plays soccer." },
+      { fr: "Ma sœur aime faire du vélo, mon frère joue au foot, et mes parents habitent ici.", en: "My sister likes cycling, my brother plays soccer, and my parents live here." },
       { fr: "À quelle heure est-ce que tu te lèves le dimanche ?", en: "What time do you get up on Sundays?" },
       { fr: "Je dois aller chez le pharmacien avant midi.", en: "I have to go to the pharmacist's before noon." }
     ],
@@ -2085,10 +2085,16 @@ export const GRAMMAR_LESSONS: GrammarLesson[] = [
       },
       {
         id: "w3d21_ex2",
-        kind: "gap",
-        prompt: "Fill in the possessive for 'my (female) friend': « Je prends un café avec ___ amie Chloé. »",
-        answer: "mon",
-        explanation: "Before feminine singular 'amie' (starts with a vowel), use 'mon'."
+        kind: "mcq",
+        prompt: "Which line says my brother, my sister, and my parents?",
+        options: [
+          "Mon frère, ma sœur et mes parents.",
+          "Ma frère, mon sœur et mon parents.",
+          "Mes frère, ma sœur et mon parents.",
+          "Mon frère, mes sœur et ma parents."
+        ],
+        answer: "Mon frère, ma sœur et mes parents.",
+        explanation: "Mon for frère, ma for sœur, mes for parents: one masculine, one feminine, and a plural."
       },
       {
         id: "w3d21_ex3",
@@ -2223,7 +2229,7 @@ export const GRAMMAR_LESSONS: GrammarLesson[] = [
       {
         id: "w4d22_ex6",
         kind: "translate",
-        prompt: "Translate into French: 'I am going to take a coffee.' (use 'prendre')",
+        prompt: "Say you are going to take a coffee. Hint: prendre means to take.",
         answer: "Je vais prendre un café.",
         accept: [
           "Je vais prendre un café",
@@ -2788,7 +2794,7 @@ export const GRAMMAR_LESSONS: GrammarLesson[] = [
       {
         id: "w4d28_ex6",
         kind: "translate",
-        prompt: "Translate into French: 'I learned a lot.' (use 'J'ai beaucoup appris')",
+        prompt: "Say that you learned a lot. Hint: J'ai beaucoup appris means I learned a lot.",
         answer: "J'ai beaucoup appris.",
         accept: [
           "J'ai beaucoup appris",

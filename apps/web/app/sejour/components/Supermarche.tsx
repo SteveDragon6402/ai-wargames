@@ -12,6 +12,7 @@ import { Conversation, type PaymentEvent } from "./Conversation";
 interface SupermarcheProps {
   recipe: Recipe;
   purse: number[];
+  memory?: string;
   listening: boolean;
   knownIds?: readonly string[];
   onMeet?: (id: string) => void;
@@ -69,6 +70,7 @@ const ALL_SUPERMARCHE_ITEMS: ShopItem[] = [...ITEMS, ...STAPLES];
 export function Supermarche({
   recipe,
   purse: initialPurse,
+  memory = "",
   listening,
   knownIds = [],
   onMeet,
@@ -431,7 +433,7 @@ export function Supermarche({
               knownIds={knownIds}
               onMeet={onMeet}
               speakFirst
-              memory=""
+              memory={memory}
               listening={listening}
               context={buildCheckoutContext(paid)}
               paymentEvent={paymentEvent}

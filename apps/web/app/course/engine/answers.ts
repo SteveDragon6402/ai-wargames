@@ -21,6 +21,69 @@ export function frenchAnswersMatch(given: string, answer: string, accept: readon
   return [answer, ...accept].some((target) => normalizeFrenchAnswer(target) === candidate);
 }
 
+function editDistance(a: string, b: string): number {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const dp = Array.from({ length: rows }, () => new Array<number>(cols).fill(0));
+  for (let i = 0; i < rows; i++) dp[i][0] = i;
+  for (let j = 0; j < cols; j++) dp[0][j] = j;
+  for (let i = 1; i < rows; i++) {
+    for (let j = 1; j < cols; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
+    }
+  }
+  return dp[a.length][b.length];
+}
+
+function closeEnough(candidate: string, goal: string): boolean {
+  const limit = Math.min(2, Math.max(1, Math.round(goal.length * 0.2)));
+  const whole = editDistance(candidate, goal);
+  if (whole > 0 && whole <= limit) return true;
+  if (goal.length < 4 || candidate.length <= goal.length || candidate.length > goal.length + 16) return false;
+  const shortest = Math.max(3, goal.length - 2);
+  const longest = goal.length + 1;
+  for (let len = shortest; len <= longest; len++) {
+    for (let i = 0; i + len <= candidate.length; i++) {
+      const distance = editDistance(candidate.slice(i, i + len), goal);
+      if (distance > 0 && distance <= limit) return true;
+    }
+  }
+  return false;
+}
+
+/** Close, but not the same once accents and punctuation are ignored. "je m'apele" is almost "je m'appelle". */
+export function frenchAnswerIsAlmost(given: string, answer: string, accept: readonly string[] = []): boolean {
+  if (frenchAnswersMatch(given, answer, accept)) return false;
+  const candidate = normalizeFrenchAnswer(given);
+  if (candidate.length < 3) return false;
+  return [answer, ...accept].some((target) => {
+    const goal = normalizeFrenchAnswer(target);
+    return Boolean(goal) && closeEnough(candidate, goal);
+  });
+}
+
+/** Stable jumble. The original order is not returned when there is more than one word. */
+export function shuffleTiles(words: readonly string[], seed: string): string[] {
+  const copy = [...words];
+  let n = 2166136261;
+  for (const ch of seed) n = Math.imul(n ^ ch.charCodeAt(0), 16777619);
+  for (let i = copy.length - 1; i > 0; i--) {
+    n = Math.imul(n, 1664525) + 1013904223;
+    const j = (n >>> 0) % (i + 1);
+    const swap = copy[i];
+    copy[i] = copy[j];
+    copy[j] = swap;
+  }
+  const same = copy.every((word, index) => word === words[index]);
+  if (same && copy.length > 1) {
+    const swap = copy[0];
+    copy[0] = copy[1];
+    copy[1] = swap;
+  }
+  return copy;
+}
+
 /** Whole-word / whole-phrase match. "pain" does not hit inside "copain". */
 export function containsFrenchPhrase(haystack: string, phrase: string): boolean {
   const text = normalizeFrenchAnswer(haystack);

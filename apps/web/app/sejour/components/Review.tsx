@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Coach } from "./Coach";
 import { Wait } from "./Wait";
 import { bindReviewAsk } from "./SelectionMenu";
@@ -24,6 +24,93 @@ interface ReviewData {
   ratings?: Ratings;
   error?: string;
   repeat?: { fr: string; en: string }[];
+  practice?: { topic: string; said: string; correct: string }[];
+  englishFixes?: { fr: string; en: string }[];
+}
+
+function sameFrench(typed: string, target: string): boolean {
+  const norm = (value: string) =>
+    value
+      .normalize("NFD")
+      .replace(/\p{M}/gu, "")
+      .toLowerCase()
+      .replace(/[’']/g, "'")
+      .replace(/[^a-z0-9' ]/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  return norm(typed) === norm(target);
+}
+
+function PracticeCards({ items }: { items: { topic: string; said: string; correct: string }[] }) {
+  const [index, setIndex] = useState(0);
+  const [typed, setTyped] = useState("");
+  const [missed, setMissed] = useState(false);
+  const [ok, setOk] = useState(false);
+  const [finished, setFinished] = useState(false);
+  const card = items[index];
+
+  if (finished || !card) {
+    return <p className="mt-2 text-[15px]">You have the line.</p>;
+  }
+
+  function advance() {
+    if (index + 1 >= items.length) setFinished(true);
+    else {
+      setIndex((n) => n + 1);
+      setTyped("");
+      setMissed(false);
+      setOk(false);
+    }
+  }
+
+  return (
+    <div className="mt-3 rounded-xl border border-[rgb(43_29_20/0.2)] bg-white/80 p-4">
+      <p className="text-[12px] font-semibold uppercase tracking-wider text-[var(--ep-ink-soft)]">
+        Practice {index + 1} of {items.length}
+        {card.topic ? ` · ${card.topic}` : ""}
+      </p>
+      <p className="mt-2 text-[15px]">You said: {card.said}</p>
+      <p className="mt-2 text-[16px]">
+        In French: <strong>{card.correct}</strong>
+        <button
+          type="button"
+          className="ml-2 rounded border border-black/15 bg-white px-2 py-0.5 text-[12px]"
+          onClick={() => void hear("rousseau", card.correct, "any")}
+        >
+          Hear it
+        </button>
+      </p>
+      <p className="mt-1 text-[15px]">Type that line.</p>
+      {ok ? (
+        <p className="mt-3 text-[16px] text-emerald-950">Yes. That&apos;s the line.</p>
+      ) : null}
+      {missed && !ok ? <p className="mt-2 text-[15px] text-amber-950">Look at the line and type it again.</p> : null}
+      {ok ? (
+        <button type="button" className="ep-button ep-primary mt-3" onClick={advance}>
+          Next
+        </button>
+      ) : (
+        <form
+          className="mt-3 flex flex-wrap gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (sameFrench(typed, card.correct)) setOk(true);
+            else setMissed(true);
+          }}
+        >
+          <input
+            className="min-w-[16rem] flex-1 rounded-md border border-[rgb(43_29_20/0.28)] bg-white px-3 py-2 text-[16px]"
+            value={typed}
+            aria-label="Type the French"
+            onChange={(event) => setTyped(event.target.value)}
+          />
+          <button type="submit" className="ep-button ep-primary">
+            Check
+          </button>
+        </form>
+      )}
+    </div>
+  );
 }
 
 export function Review({
@@ -47,6 +134,8 @@ export function Review({
 }) {
   const [data, setData] = useState<ReviewData | null>(null);
   const [quotes, setQuotes] = useState<string[]>([]);
+  const [sawBottom, setSawBottom] = useState(false);
+  const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bindReviewAsk((text) => setQuotes((current) => (current.includes(text) ? current : [...current, text].slice(-2))));
@@ -78,7 +167,8 @@ export function Review({
                 },
           );
           onStudy?.(body.gaps ?? [], body.mastered ?? [], body.ratings ?? {});
-          if (body.repeat?.length) onDrill?.(body.repeat);
+          const drill = [...(body.englishFixes ?? []), ...(body.phrases ?? []), ...(body.repeat ?? [])];
+          if (drill.length) onDrill?.(drill);
         }
       } catch {
         if (!cancelled) setData({ glosses: [], yours: [], analysis: "", phrases: [], tip: "", error: "No connection." });
@@ -91,6 +181,22 @@ export function Review({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    if (!data) return;
+    const node = endRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) setSawBottom(true);
+      },
+      { threshold: 0 },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [data]);
+
+  const canContinue = data !== null && sawBottom;
+
   const glossBy = new Map(data?.glosses.map((gloss) => [gloss.index, gloss.en]));
   const noteBy = new Map(data?.yours.map((item) => [item.index, item]));
   const ratingEntries = Object.entries(data?.ratings ?? {}) as [Skill, number][];
@@ -99,9 +205,22 @@ export function Review({
     <section aria-label="Review">
       <div className="flex items-center justify-between gap-3">
         <h2 className="ep-display text-[28px]">After the conversation</h2>
-        <button type="button" className="ep-button ep-primary" onClick={onContinue}>
-          {continueLabel}
-        </button>
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {data && !sawBottom ? (
+            <p id="review-scroll-hint" className="text-sm text-[var(--ep-ink-soft)]">
+              Scroll to the bottom.
+            </p>
+          ) : null}
+          <button
+            type="button"
+            className="ep-button ep-primary"
+            disabled={!canContinue}
+            aria-describedby={data && !sawBottom ? "review-scroll-hint" : undefined}
+            onClick={onContinue}
+          >
+            {continueLabel}
+          </button>
+        </div>
       </div>
       {!data ? <Wait>Reading what you said.</Wait> : null}
       {data?.error ? <p className="sj-error mt-2">{data.error}</p> : null}
@@ -147,7 +266,23 @@ export function Review({
       ) : null}
 
       {data?.analysis ? <p className="mt-3 text-[16px] leading-relaxed">{data.analysis}</p> : null}
+      {data?.englishFixes?.length ? (
+        <div className="mt-3 rounded-lg bg-white/70 p-3">
+          <p className="text-[13px] font-semibold uppercase tracking-wide">Say this in French next time</p>
+          <ul className="mt-2 space-y-2 text-[15px]">
+            {data.englishFixes.map((fix) => (
+              <li key={fix.fr}>
+                <span>You said “{fix.en}”.</span>{" "}
+                <button type="button" className="font-semibold hover:underline" onClick={() => void hear("rousseau", fix.fr, "any")}>
+                  {fix.fr}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {data?.tip ? <p className="mt-2 text-[15px] italic">{data.tip}</p> : null}
+      {data?.practice?.length ? <PracticeCards items={data.practice} /> : null}
 
       {data?.phrases?.length ? (
         <div className="mt-3 rounded-lg bg-white/60 p-3">
@@ -223,7 +358,12 @@ export function Review({
         lines={lines}
         scene={scene ?? "host"}
         quotes={quotes}
+        canContinue={canContinue}
+        onContinue={onContinue}
+        continueLabel={continueLabel}
+        continueDescribedBy={data && !sawBottom ? "review-scroll-hint" : undefined}
       />
+      <div ref={endRef} className="h-px w-full" aria-hidden="true" />
     </section>
   );
 }

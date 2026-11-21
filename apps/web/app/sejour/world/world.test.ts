@@ -81,12 +81,16 @@ describe("unlock gates", () => {
     assert.ok(res.unlocked.includes("invite_sport"));
     assert.ok(res.unlocked.includes("bistro"));
     assert.ok(res.unlocked.includes("supermarche"));
-    assert.ok(res.unlocked.includes("event_family"));
-    // Sick event needs family event done first
-    assert.ok(!res.unlocked.includes("event_sick"));
-    // Events do not trigger on day 1 even when unlocked; they wait until later days
-    assert.equal(pendingEvent(res.unlocked, [], 1), null);
-    assert.equal(pendingEvent(res.unlocked, [], 3), "family");
+    assert.ok(!res.unlocked.includes("event_family"));
+    const weekThree: Progress = {
+      ...p,
+      assessments: p.assessments.map((item) => ({ ...item, day: 18 })),
+    };
+    const familyOpen = evaluate(weekThree);
+    assert.ok(familyOpen.unlocked.includes("event_family"));
+    assert.ok(!familyOpen.unlocked.includes("event_sick"));
+    assert.equal(pendingEvent(familyOpen.unlocked, [], 3), null);
+    assert.equal(pendingEvent(familyOpen.unlocked, [], 17), "family");
   });
 });
 

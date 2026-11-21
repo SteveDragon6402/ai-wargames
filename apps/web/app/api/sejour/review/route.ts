@@ -3,14 +3,14 @@ import type Anthropic from "@anthropic-ai/sdk";
 import { anthropicClient, createMessage, toolUses } from "@/lib/anthropic";
 import { ITEM_BY_ID } from "@/app/epicerie/data/items";
 import { GESTURES, isGesture } from "@/app/epicerie/lib/gerard";
-import { labelForLine, phrasesBuriedIn, reviewProse } from "@/app/epicerie/lib/french";
+import { labelForLine, looksFrench, phrasesBuriedIn, reviewProse } from "@/app/epicerie/lib/french";
 import { HANDOUT_IDS } from "@/app/sejour/data/handouts";
 import { isScene, type SceneId } from "@/app/sejour/world/places";
 import { baselineRatingsFromLines, capListening, cleanRatings, rubricText, SKILLS, type Ratings } from "@/app/sejour/world/skills";
 import { getUserFromRequest } from "@/lib/auth/session";
 import { getUserBundle, saveUserBundle } from "@/lib/db";
 import { computeDomainCoverage, detectVocabUsedInLines, satisfiedProbeIds, updateVocabSrs } from "@/app/course/engine";
-import { phrasesBeforeConfusion, transcriptIsLost } from "@/app/course/engine/pace";
+import { phrasesBeforeConfusion, simpleFrenchFor, transcriptIsLost } from "@/app/course/engine/pace";
 import { compileTeacherBrief } from "@/lib/teacher";
 
 export const maxDuration = 60;
@@ -50,8 +50,9 @@ const TOOL: Anthropic.Tool = {
               enum: [...SAID],
               description: "Understood if the French moved the conversation along. French if the words are French. Close if almost French. English if English. Unclear if unclear.",
             },
-            note: { type: "string", description: "One or two sentences. Quote the fuller French they could say next time." },
+            note: { type: "string", description: "One or two sentences. Quote the short French they could say next time." },
             en: { type: "string", description: "Plain English translation of this player line." },
+            french: { type: "string", description: "The shortest A1 French for this line when they spoke English. Five words or fewer. Example: I don't understand → Je ne comprends pas." },
           },
           required: ["index", "said", "note", "en"],
         },
@@ -103,7 +104,7 @@ const TOOL: Anthropic.Tool = {
               description: "Short topic tag, e.g. 'articles', 'partitives', 'tu_vs_vous', 'etre_avoir', 'negation', 'gender_agreement', 'numbers', 'venir_de', 'aller_au', 'passe_compose'",
             },
             said: { type: "string", description: "What the student actually said" },
-            correct: { type: "string", description: "The corrected French phrasing" },
+            correct: { type: "string", description: "The shortest A1 French they should type. Do not add new words. I don't understand → Je ne comprends pas." },
           },
           required: ["topic", "said", "correct"],
         },
@@ -196,7 +197,7 @@ export async function POST(req: NextRequest) {
   const repeats = phrasesBeforeConfusion(lines.map((line) => ({ role: line.role === "you" ? "you" : "them", text: line.text })));
   const baseline = baselineRatingsFromLines(scene, playerTexts, {});
 
-  if (!lines.some((line) => line.role === "gerard")) {
+  if (!lines.length) {
     return NextResponse.json({
       glosses: [],
       yours: [],
@@ -206,6 +207,7 @@ export async function POST(req: NextRequest) {
       gaps: [],
       mastered: [],
       ratings: baseline,
+      englishFixes: [],
     });
   }
 
@@ -236,13 +238,14 @@ Cover both sides of the conversation using the actual words spoken.
 Call debrief with:
 - glosses: for every ${who} line, the index and a natural English translation.
 - yours: for every "You" line, the index, a said label, a 1-2 sentence coaching note quoting a fuller French line they could say next time, and an English translation of what they said.
-- analysis: three to five sentences of plain prose about what they managed and what to try next.
-- phrases: three to five short reusable French phrases from this scene with English.
+- analysis: three to five sentences of plain prose. Always say what they managed. If they spoke English, name that line and the French to use next time. Never leave this empty. Never return ratings without this prose.
+- yours.french: when a You line is English, the shortest A1 sentence for it. Five words or fewer on a first week. "I don't understand" is "Je ne comprends pas." Do not add a second clause or a new word.
+- phrases: three to five short reusable French phrases from this scene with English. Include every English line's French from yours.french.
 - tip: one concrete sentence for next time.
 - gaps / mastered: lesson ids from [${HANDOUT_IDS.join(", ")}].
 - ratings: integer 0–4 for each skill exercised in this conversation using this A1 rubric (2 = broken French that still gets the point across):
 ${rubricText()}
-- errors: up to 4 specific grammar/vocab mistakes made by the student (topic, said, correct).
+- errors: up to 3 things to type again. said is what they typed. correct is the shortest A1 line for that meaning, not a fancier sentence. On day ${bundle?.course.currentDay ?? 1}, "I don't understand" stays "Je ne comprends pas." Do not ask them to add vocabulary they have not used.
 - facts: any personal facts the student revealed about themselves (name, hometown, country, hobby, diet, job, family).
 - scribe: 1-2 sentences of internal Teacher notes for planning tomorrow's lesson and conversation probes. If they said they did not understand, or asked you to go slower, say so and name the French line that caused it. Do not treat that as failing the scene.
 
@@ -253,15 +256,27 @@ Vous is for Madame Rousseau, Gérard, Martine, the pharmacist, Serge at L'Auberg
   });
 
   if ("error" in response) {
+    const englishFixes = lines
+      .filter((line) => line.role === "you" && line.text.trim() && !looksFrench(line.text))
+      .map((line) => {
+        const fr = simpleFrenchFor(line.text);
+        return fr ? { fr, en: line.text.trim().slice(0, 160) } : null;
+      })
+      .filter((item): item is { fr: string; en: string } => Boolean(item))
+      .slice(0, 6);
+    const analysis = englishFixes.length
+      ? englishFixes.map((fix) => `You said “${fix.en}” in English. Next time, say “${fix.fr}”.`).join(" ")
+      : "The review didn't come back. The scores above are only a first pass.";
     return NextResponse.json({
       glosses: [],
       yours: [],
-      phrases: [],
+      phrases: englishFixes,
       tip: "",
-      analysis: "",
+      analysis,
       gaps: [],
       mastered: [],
       ratings: baseline,
+      englishFixes,
       error: response.error,
     });
   }
@@ -283,23 +298,60 @@ Vous is for Madame Rousseau, Gérard, Martine, the pharmacist, Serge at L'Auberg
   }
   const ratings = capListening(mergedRatings, body?.readingAssist === true);
 
-  const cleanAnalysis = reviewProse(rawAnalysis).slice(0, 1200);
   const cleanTip = typeof input.tip === "string" ? reviewProse(input.tip) : "";
+  const courseDay = bundle?.course.currentDay ?? 1;
+  const modelFrench = asArray<{ index?: number; french?: unknown }>(input.yours);
+  const englishFixes = lines
+    .filter((line) => line.role === "you" && line.text.trim() && !looksFrench(line.text))
+    .map((line) => {
+      const simple = simpleFrenchFor(line.text);
+      const fromModel = modelFrench.find((item) => item.index === line.index);
+      const modelLine = typeof fromModel?.french === "string" ? fromModel.french.trim() : "";
+      const french = simple || (courseDay <= 7 && modelLine.split(/\s+/).length > 6 ? modelLine.split(/\s+/).slice(0, 5).join(" ") : modelLine);
+      if (!french) return null;
+      return { fr: french.slice(0, 80), en: line.text.trim().slice(0, 160) };
+    })
+    .filter((item): item is { fr: string; en: string } => Boolean(item))
+    .slice(0, 6);
+  const practice = asArray<{ topic?: unknown; said?: unknown; correct?: unknown }>(input.errors)
+    .filter((item) => typeof item.said === "string" && typeof item.correct === "string" && item.correct.trim())
+    .slice(0, 3)
+    .map((item) => {
+      const said = String(item.said).slice(0, 200);
+      const simple = simpleFrenchFor(said);
+      let correct = String(item.correct).slice(0, 200);
+      if (simple && (courseDay <= 7 || correct.split(/\s+/).length > 6)) correct = simple;
+      else if (courseDay <= 7 && correct.split(/\s+/).length > 6) correct = correct.split(/\s+/).slice(0, 5).join(" ");
+      return {
+        topic: typeof item.topic === "string" ? item.topic.slice(0, 60) : "",
+        said,
+        correct,
+      };
+    });
+  let cleanAnalysis = reviewProse(rawAnalysis).slice(0, 1200);
+  if (!cleanAnalysis) {
+    cleanAnalysis = englishFixes.length
+      ? englishFixes.map((fix) => `You said “${fix.en}” in English. Next time, say “${fix.fr}”.`).join(" ")
+      : "You kept the conversation going. Next time, try one short French line from below.";
+  } else {
+    for (const fix of englishFixes) {
+      const needle = fix.fr.toLowerCase().replace(/[.…]/g, "").slice(0, 16);
+      if (needle && !cleanAnalysis.toLowerCase().includes(needle)) {
+        cleanAnalysis += ` You said “${fix.en}” in English. Say “${fix.fr}” next time.`;
+      }
+    }
+  }
+  cleanAnalysis = cleanAnalysis.slice(0, 1200);
 
   if (user && bundle) {
     const now = new Date();
     const nowIso = now.toISOString();
-    const courseDay = bundle.course.currentDay;
-    const rawErrors = asArray<{ topic?: unknown; said?: unknown; correct?: unknown }>(input.errors);
-    const parsedErrors = rawErrors
-      .filter((e) => typeof e.topic === "string" && typeof e.said === "string" && typeof e.correct === "string")
-      .slice(0, 4)
-      .map((e, idx) => ({
+    const parsedErrors = practice.map((item, idx) => ({
         id: `err_${Date.now()}_${idx}`,
         day: courseDay,
-        topic: String(e.topic).slice(0, 60),
-        said: String(e.said).slice(0, 200),
-        correct: String(e.correct).slice(0, 200),
+        topic: item.topic,
+        said: item.said,
+        correct: item.correct,
         source: scene,
         createdAt: nowIso,
       }));
@@ -408,5 +460,7 @@ Vous is for Madame Rousseau, Gérard, Martine, the pharmacist, Serge at L'Auberg
       .slice(0, 9),
     ratings,
     repeat: repeats,
+    practice,
+    englishFixes,
   });
 }

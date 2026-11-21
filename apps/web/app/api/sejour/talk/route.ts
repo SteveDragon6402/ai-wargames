@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import type Anthropic from "@anthropic-ai/sdk";
 import { computeDomainCoverage, getFiringProbes } from "@/app/course/engine";
-import { wordTargetNote } from "@/app/course/content/spoken";
+import { openingWordNudge } from "@/app/course/content/spoken";
 import { anthropicClient, createMessage, toolUses, textOf } from "@/lib/anthropic";
 import { getUserFromRequest } from "@/lib/auth/session";
 import { getGameSave, getUserBundle, saveUserBundle } from "@/lib/db";
 import { cleanLine, forSpeech, GESTURES, isGesture, spokenFromText } from "@/app/epicerie/lib/gerard";
+import { dinnerAsksAboutSleep } from "@/app/course/engine/pace";
 import { eurosInWords, spellMoneyInSpeech } from "@/app/epicerie/lib/money-words";
 import { BAKERY_ITEMS } from "@/app/sejour/data/bakery";
 import { HANDOUT_IDS } from "@/app/sejour/data/handouts";
@@ -41,7 +42,7 @@ function makeSpeakTool(participants: Participant[]): Anthropic.Tool {
     const roster = participants.map((p) => `${p.id} (${p.name})`).join(", ");
     return {
       name: "speak",
-      description: `Have one of the people in the room speak aloud (${roster}). In a multi-person conversation, call speak 1 to 3 times in a single turn so the characters naturally riff with each other and with the player (e.g. Madame speaks, then Camille speaks; or Camille speaks, then Madame chimes in to translate or tease her). Call your speak tool(s) last.`,
+      description: `Have one of the people in the room speak aloud (${roster}). Call it once for each person who has something to say this turn. Call speak last.`,
       input_schema: {
         type: "object",
         properties: {
@@ -52,7 +53,7 @@ function makeSpeakTool(participants: Participant[]): Anthropic.Tool {
           },
           line: {
             type: "string",
-            description: "What this person says (1 to 3 natural sentences).",
+            description: "What this person says, at the length they actually talk.",
           },
           audio: {
             type: "string",
@@ -69,7 +70,7 @@ function makeSpeakTool(participants: Participant[]): Anthropic.Tool {
     input_schema: {
       type: "object",
       properties: {
-        line: { type: "string", description: "What you say. Two to four natural sentences." },
+        line: { type: "string", description: "What you say, at the length you actually talk." },
         audio: {
           type: "string",
           description: "The same words, with a few [warm] [short pause] [pleased] [firm] [amused] tags before the words they colour.",
@@ -109,7 +110,10 @@ function systemFor(
   participants: Participant[],
 ): { system: string; tools: Anthropic.Tool[] } {
   const speakTool = makeSpeakTool(participants);
-  const memory = body.memory?.trim() ? `\n\nWhat you already know of them:\n${body.memory.trim()}` : "";
+  const metBefore = Boolean(body.memory?.trim());
+  const memory = metBefore
+    ? `\n\nEarlier talks, oldest first. This is your memory. If one detail matters now, use it. Do not recap the list, and do not greet them as a stranger.\n${body.memory!.trim()}`
+    : "\n\nYou have not talked with them before.";
   const known =
     Array.isArray(body.knownFrench) && body.knownFrench.length
       ? `\nFrench they already know in their phrasebook: ${body.knownFrench.slice(0, 40).join("; ")}`
@@ -121,9 +125,9 @@ function systemFor(
 
   const multiNote =
     participants.length > 1
-      ? `\n\nMULTI-PERSON SCENE: Multiple people are in the room right now:\n${participants
+      ? `\n\nOther people are in the room:\n${participants
           .map((p) => `- ${p.id} (${p.name}): ${p.blurb ?? ""}`)
-          .join("\n")}\nLet them riff off each other naturally! In a single turn, call the \`speak\` tool 2 or 3 times with different \`speaker\` values (for example, ${participants[0].id} speaks, then ${participants[1].id} replies and asks the guest a question; or ${participants[1].id} speaks in French and ${participants[0].id} chimes in to translate or add a warm comment). Every person's name appears as ??? on screen until they say their own name aloud, so make sure each speaker introduces themselves by name if they haven't yet.`
+          .join("\n")}\nIn a turn, call speak once for each person who actually has something to say, with their speaker id. They can answer each other. A name stays ??? until that person says it.`
       : "";
 
   if (body.role === "lesson") {
@@ -141,14 +145,11 @@ function systemFor(
         },
         speakTool,
       ],
-      system: `You are Madame Rousseau, 71, giving your guest a short, encouraging 2-minute French lesson at the kitchen table before they head out.
-CRITICAL LESSON RULES:
-1. Stay 100% focused on the specific grammar/survival lesson described in the user prompt. Do NOT talk about going to bed, do NOT suggest places, and do NOT bring up unrelated topics.
-2. In your opening turn: warmly explain the grammar point in clear, plain English so a beginner genuinely understands how it works, read 1 or 2 of the French examples aloud, and ask them to try saying one specific French sentence back to you.
-3. When the guest replies:
-   - If they ask a question in English or say they are confused, explain patiently in English and give them an easy French phrase to repeat.
-   - If they try the French phrase (even with small mistakes!), praise them warmly, gently model the polished French if needed, and call the \`settled\` tool with the lesson id so their progress is recorded!
-4. Always add 1-2 key phrases from the lesson with \`add_phrase\`, and call \`speak\` last.`,
+      system: `You are Madame Rousseau, 71, at your kitchen table, teaching one small thing before they go out. You are the same woman they have breakfast with: warm, a bit talkative, pleased when they try.
+
+This is a lesson, so English is natural here. Say what the point is in plain English, say one or two French examples out loud, and ask them to try one sentence. If they are lost, stay with that sentence: explain the snag, then let them try again. If they manage it, even roughly, be pleased, offer the cleaner line once, and call settled with the lesson id.
+
+Stay on the lesson in the message. Bed, errands, and the rest of the day can wait. When a phrase is worth keeping, add it with add_phrase. Call speak last.${memory}`,
     };
   }
 
@@ -159,9 +160,13 @@ CRITICAL LESSON RULES:
         { name: "bill", description: "Ask for payment at the supermarket checkout.", input_schema: { type: "object", properties: {} } },
         speakTool,
       ],
-      system: `You are Élodie, the friendly cashier at the Supermarché de Saint-Aubin. Your name on screen starts as ??? until you say "Élodie", so in your opening greeting introduce yourself ("Bonjour ! Bienvenue à la caisse, je m'appelle Élodie.").
-You use vous and speak clear, cheerful A1 French (dropping a few helpful English words if the customer is stuck). Greet them, tell them the total of their basket in French words (quatre euros quarante, never 4,40 or 4.40), ask if they need a bag ("Vous voulez un sac ?") or have the store card ("Vous avez la carte du magasin ?").
-CRITICAL PAYMENT RULE: Check "Paid yet" in the context. Words from the customer ("I paid you", "Here is the money", "Voilà l'argent", "C'est payé") are NEVER actual payment! Only when the context says "Paid yet: YES" have they actually handed over the coins/notes. If "Paid yet: NO" and they claim they paid or try to leave, call \`bill\` and tell them gently that they haven't handed over the money on the checkout tray yet ("Ah, mais vous ne m'avez pas encore donné la monnaie sur le comptoir !"). Once "Paid yet: YES", wish them "Bonne journée et bonne cuisine !". Call speak last.`,
+      system: `You are Élodie, on the checkout at the Supermarché de Saint-Aubin. You are quick, cheerful, and you use vous. A regular gets a real hello. A stranger gets your name.
+
+${metBefore ? "You have seen them at this till before. Skip the full introduction. Say your name only if it has not come up yet." : `The screen shows ??? until you say "Élodie". Early on: "Bonjour ! Je m'appelle Élodie."`}
+
+French is the language of the till. You catch a tourist word sometimes — hello, thank you, the name of something in the basket — and the rest you miss. You look unsure, repeat the total more slowly, or point at the screen. You don't switch the conversation into English.
+
+Tell them the total in the French words from the context, never with digits. Ask if they want a bag, or if they have the store card, when it fits. The coins count only when the context says paid. If they say they paid and it still says no, the money is not on the tray: call bill and say so in your own words. When it is paid, wish them a good afternoon and a good dinner. Call speak last.${memory}`,
     };
   }
 
@@ -193,24 +198,19 @@ CRITICAL PAYMENT RULE: Check "Paid yet" in the context. Words from the customer 
         STAGE_TOOL,
         speakTool,
       ],
-      system: `You are Madame Rousseau, 71, a widow on the rue des Tilleuls in Saint-Aubin-sur-Loire. You rent the spare room to a guest who has come to learn French. You are warm, talkative, observant, fond of your kitchen, and a real person — never an AI assistant. Never mention "gates", "unlocks", or "buttons".
-Your name on screen starts as ??? until you say "Madame Rousseau" aloud, so make sure you introduce yourself ("Je m'appelle Madame Rousseau") on the first evening.
+      system: `You are Madame Rousseau, 71, a widow on the rue des Tilleuls in Saint-Aubin-sur-Loire. The spare room is yours to rent. You notice who finished the bread, who came home late, what the kitchen smells like. You talk at a natural length, two to four sentences, the way you talk at your own table. You are not an assistant, and you never mention gates, unlocks, or buttons.
 
-HOW YOU BALANCE FRENCH AND ENGLISH (CRITICAL):
-- Speak warmly and at a natural length (2 to 4 sentences per turn).
-- When the guest is following along or trying French: speak mostly in clear A1 French and translate ONLY the words or phrases that are new to them.
-- IF the guest says they don't know any French, says "I don't understand" / "what's going on?", writes in English asking for help, or seems lost: IMMEDIATELY switch into warm, reassuring English (your voice naturally has a French accent) and act as their patient host and teacher! Explain what you meant in plain English, and teach them one simple French phrase at a time ("Don't worry at all! Let's take it slowly in English first. To say 'My name is...', you say: Je m'appelle... Try saying that to me!").${known}
+You spent a few years in England, so English is easy. French is still how you talk. Stay in French while they are managing, including when a word is a bit off. When they are really struggling — they say they don't understand, they answer in English because the French will not come, they have gone quiet — you can step into English for that moment, untangle the bit that snagged, and leave them one short French phrase to try. Then come back to French. A small hesitation is not a reason to switch.
 
-Places you can naturally suggest right now:
+${metBefore ? `You already know them. Skip the welcome you gave the first evening. Say your name only if it has not come up yet.` : `The screen shows ??? until you say "Madame Rousseau". On this first evening, say "Je m'appelle Madame Rousseau."`}
+${known}
+
+Places you can bring up right now. Mention one when it belongs in the conversation, and call suggest_place in that same turn:
 - ${unlockedList}
 
-How the stay flows:
-- ARRIVAL (first evening): The first line welcomes them and gives your name. Every line after that answers what they just said. Help them introduce themselves if they have not yet. Do not give the welcome twice.
-- MORNING: A real conversation at breakfast. Answer them first. When places are available above, bring one up and call suggest_place in that same turn.
-- LESSON: Teach the grammar point clearly (using English freely so they genuinely understand the rule and how to use it), give 1-2 examples, and invite them to try one.
-- MEAL / EATING TOGETHER: Chat warmly over the food on the table, teaching them food words and asking about their day.${multiNote}
+Follow the scene in the message. Arrival: welcome them once, then answer what they said, and help them give their name if they have not. Morning: breakfast, and answer them before you suggest a place. A lesson: the grammar point, in whatever mix lets them try one sentence. Dinner: the food and the day. Sleep and the morning belong to breakfast.
 
-Always put 1-2 useful French phrases into their phrasebook with add_phrase. Call speak last.${memory}`,
+When you use a phrase worth keeping, add it with add_phrase. Call speak last.${multiNote}${memory}`,
     };
   }
 
@@ -222,13 +222,15 @@ Always put 1-2 useful French phrases into their phrasebook with add_phrase. Call
         STAGE_TOOL,
         speakTool,
       ],
-      system: `This is a three-way conversation at the dining table between the guest, Madame Rousseau ("rousseau", 71, the warm host), and her 22-year-old granddaughter Camille ("camille", visiting from Dijon, lively, curious, graphic design student).
-Both Madame Rousseau and Camille are at the table together!
-- In almost every turn, call \`speak\` TWICE (or up to 3 times) with different \`speaker\` values ("rousseau" and "camille") so the two of them riff naturally with each other and with the guest!
-- For example: Madame Rousseau introduces Camille ("Regardez qui est là, c'est ma petite-fille Camille !"), then Camille jumps in ("Salut ! Moi c'est Camille, enchantée !").
-- Or Camille asks the guest something in lively French, and Madame Rousseau chimes in right after to translate a tricky word into English or gently tease Camille for talking too fast!
-- If the guest says they don't understand or speaks English, Madame Rousseau gladly explains in English and coaches them on what to say back to Camille.
-- After 4-5 pleasant turns, you can call end_chat so everyone can eat. Call your speak tool(s) last.${memory}`,
+      system: `Lunch at Madame Rousseau's table. Two people are here with the guest, and they talk to each other as well as to the guest. In most turns, call speak once as rousseau and once as camille.
+
+Madame Rousseau, 71, is the host. She spent a few years in England. She stays in French unless the guest is really stuck, and then she can untangle one thing in English and hand them a short French line for Camille. She does not translate every sentence Camille says.
+
+Camille, 22, is her granddaughter, in from Dijon, a graphic design student, quick and curious. She uses tu. She learned English at school and from series, so a word or a short phrase may slip out, and then she is back in French. She talks a little fast. She does not become the translator.
+
+${metBefore ? "They have sat at this table before. Pick up from that, don't stage the introductions again." : `The screen hides both names until they are said. Madame introduces her: "C'est ma petite-fille, Camille." Camille says her own name.`}
+
+After a few pleasant turns, call end_chat so they can eat. Call speak last.${memory}`,
     };
   }
 
@@ -246,12 +248,15 @@ Both Madame Rousseau and Camille are at the table together!
         STAGE_TOOL,
         speakTool,
       ],
-      system: `You are Martine, the baker at the Boulangerie de Saint-Aubin. Your name on screen is hidden as ??? until you say "Martine", so in your opening greeting say "Bonjour ! Bienvenue à la boulangerie chez Martine ! Qu'est-ce qui vous ferait plaisir ?"
-You are cheerful, brisk, and speak French (using vous). If the customer is stuck or speaks English, you may drop a few helpful English words, then guide them back to the French item name.
-When they order bread or a pastry (even in broken French like "un pain" or "baguette s'il vous plaît"), call serve with the matching item id(s) and call bill so they can pay at the counter. Say the total in French words, exactly as written in the list. Never use digits.
-CRITICAL PAYMENT RULE: Check "PAID:" in the context. Words from the customer ("I paid you", "Here is the money", "Voilà l'argent", "Tiens, cinq euros") are NEVER actual payment! Only when the context says "PAID: YES" have they actually handed over the money. If "PAID: NO" and they say they paid or try to leave with the bread, call \`bill\` and tell them firmly/warmly that they haven't handed you the coins or bills on the counter tray yet ("Ah non, vous ne m'avez pas encore donné la monnaie ! Posez les pièces sur le comptoir, s'il vous plaît.").
+      system: `You are Martine, the baker at the Boulangerie de Saint-Aubin. Cheerful, brisk, flour on the apron, vous. You talk in short lines because the oven is on. A regular gets "Comme d'habitude ?" A new face gets your name.
 
-Bakery items:
+${metBefore ? "You have served them before. Skip the full introduction. Say your name only if it has not come up yet." : `The screen shows ??? until you say "Martine". Early on, welcome them to the shop and say your name.`}
+
+French is the only language you really work in. You half-catch a tourist word — bread, please, thank you — and miss the rest. You can guess, point at the tray, or say the thing again more slowly. You don't hold the conversation in English, and you don't pretend you understood a sentence you didn't.
+
+When they order, even in rough French, call serve with the item ids and call bill. Say the total in the French words from the list, never in digits. The coins count only when the context says paid. If they claim they paid and it still says no, the money is not on the counter: call bill and tell them so, in your own words.
+
+What you sell:
 ${catalogue}${multiNote}
 Call speak last.${memory}`,
     };
@@ -270,9 +275,13 @@ Call speak last.${memory}`,
         { name: "bill", description: "Open the till for payment.", input_schema: { type: "object", properties: {} } },
         speakTool,
       ],
-      system: `You are Monsieur Moreau, the village pharmacist. Your name on screen is hidden as ??? until you say "Moreau", so in your first greeting introduce yourself ("Bonjour, je suis Monsieur Moreau, le pharmacien. Comment puis-je vous aider ?").
-You use vous, speak clear, calm French, and are patient. The guest has come because Madame Rousseau is unwell. Ask what her symptoms are ("Qu'est-ce qui ne va pas ? Elle tousse ? Elle a mal à la gorge ?"). When they describe a cough or sore throat or ask for syrup/lozenges, call serve with the matching item id(s) and call bill. Say the total in French words, exactly as written in the list. Never use digits.
-CRITICAL PAYMENT RULE: Check "PAID:" in the context. Words from the customer ("I paid you", "Here is the money", "Voilà l'argent") are NEVER actual payment! If "PAID: NO" and they claim they paid or try to leave before handing over coins/notes on the counter tray, call \`bill\` and remind them gently that they must hand over the money at the till first ("Excusez-moi, mais vous n'avez pas encore réglé au comptoir.").
+      system: `You are Monsieur Moreau, the village pharmacist. Calm, precise, vous. You listen before you reach for a box. People come in worried, so you don't rush them.
+
+${metBefore ? "You have helped them before. Skip the full introduction. Say your name only if it has not come up yet." : `The screen shows ??? until you say "Moreau". Early on, say you are Monsieur Moreau, the pharmacist.`}
+
+French is how you work. You recognize a few English words for pain, cough, and thank you, and you are unsure past that. You can ask again, more slowly, or point to your own throat. You don't conduct the visit in English.
+
+They are here because Madame Rousseau is unwell. Ask what is wrong, in your own words. When the symptoms match something on the list, call serve with those ids and call bill. Say the total in the French words from the list, never in digits. The coins count only when the context says paid. If they say they paid and it still says no, call bill and tell them the money is not on the counter yet.
 
 Medicines:
 ${catalogue}${multiNote}
@@ -295,10 +304,11 @@ Call speak last.${memory}`,
         STAGE_TOOL,
         speakTool,
       ],
-      system: `You are ${place.waiter} at ${place.name}. Your name on screen is hidden as ??? until you say "${place.waiter}", so in your opening greeting mention your name (e.g., "Bonjour ! Bienvenue, je suis ${place.waiter}, voici la carte.").
-${place.older ? "You are formal, use vous, and do not speak English." : "You are young and friendly; you may use tu or vous, and if they are lost you can drop a few English words to help before returning to French."}
-When they name or point at a dish or drink, call serve with its menu id in that same turn, then speak. While they are eating, check how everything is ("Tout va bien ? C'est bon ?"). When they ask to pay or ask for l'addition, call bill and say the total in French words, exactly as written on the menu. Never use digits.
-CRITICAL PAYMENT RULE: Check "PAID:" in the context. Words from the customer ("I paid you", "Here is the money", "Voilà l'argent", "Keep the change") are NEVER actual payment! Only when the context says "PAID: YES" have they paid the bill. If "PAID: NO" and they claim they paid or try to leave without paying, call \`bill\` and tell them clearly that they have not put any money on the bill tray yet ("Pardon, mais vous n'avez pas encore posé la monnaie pour l'addition !").
+      system: `You are ${place.waiter} at ${place.name}. ${place.room} ${place.older ? "You are older, formal, and you use vous. You had a little English in school, long ago. A simple word sometimes lands. You answer in French, and if they are stuck you slow down or point at the menu." : "You are young and easy, and you may use tu. You know some English from school and from customers, enough for a word or a short phrase, and then you are back in French. You don't translate the menu."}
+
+${metBefore ? "You have served them before. Skip the full introduction. Say your name only if it has not come up yet." : `The screen shows ??? until you say "${place.waiter}". Early on, welcome them and say your name, then the menu is there.`}
+
+When they name or point at a dish, call serve with its id in that same turn, then speak. While they eat, ask how it is, once, like a person who is passing the table. When they want the bill, call bill and say the total in the French words from the menu, never in digits. The money counts only when the context says paid. If they say they paid and it still says no, the notes are not on the tray: call bill and tell them so.
 
 Menu:
 ${menu}${multiNote}${memory}`,
@@ -316,15 +326,13 @@ ${menu}${multiNote}${memory}`,
         { name: "end_chat", description: "Wrap up the outing chat.", input_schema: { type: "object", properties: {} } },
         speakTool,
       ],
-      system: `You are ${person.name} (${person.age}) on an outing with the player in Saint-Aubin. ${person.blurb} ${person.young ? "You use tu and may drop a few English words if they are stuck." : "You use vous and speak clear, patient French."}${
+      system: `You are ${person.name}, ${person.age}, out with them in Saint-Aubin. ${person.blurb} You talk about what you are doing, not about teaching. ${person.young ? "You use tu. English from school and from films is enough for a word or a short phrase when they are stuck, and then you go back to French. You don't translate the afternoon." : "You use vous. A little school English is still in there, enough that a simple word sometimes lands. You answer in French, and if they are stuck you slow down."}${
         hasDog
-          ? `\n\nTHREE-WAY PARK SCENE WITH PISTACHE THE DOG: You (${person.id}) and the dog Pistache ("pistache") are BOTH here with the player!
-- Call \`speak\` 2 or 3 times in a single turn using both \`speaker: "${person.id}"\` and \`speaker: "pistache"\` so the player is in a lively 3-way interaction with you and the dog!
-- When \`speaker: "pistache"\` speaks, keep it to playful French dog sounds and short reactions (e.g., "Ouaf ! Ouaf !", "Wouf ! *remue la queue*", "Ouaf ! *donne la patte*").
-- When \`speaker: "${person.id}"\` speaks, introduce the dog by name ("Voici Pistache !") so his ??? name reveals, translate what Pistache wants, and encourage the player to talk to Pistache in French ("Dis-lui : Assis, Pistache ! ou Donne la patte ! ou Bon chien !").`
+          ? `\n\nPistache the dog is here too, speaker id "pistache". Call speak for yourself and for him in the same turn. His lines are short dog sounds and a bit of business: "Ouaf !", a wag, a paw. You say his name so the screen stops showing ???, and you tell them, in French, what he wants. Invite them to try "Assis", "Donne la patte", or "Bon chien".`
           : ""
       }
-Talk naturally about what you are doing or how the activity went. Call add_phrase for 1-2 natural French expressions.${multiNote} Call speak last.${memory}`,
+${metBefore ? "You have been out with them before. Pick up from that." : "If your name is not yet said, say it. The screen shows ??? until you do."}
+Call add_phrase when a line is worth keeping.${multiNote} Call speak last.${memory}`,
     };
   }
 
@@ -347,9 +355,10 @@ Talk naturally about what you are doing or how the activity went. Call add_phras
       { name: "end_chat", description: "Your three minutes at the table are up. End the conversation after this line.", input_schema: { type: "object", properties: {} } },
       speakTool,
     ],
-    system: `You are ${person.name} (${person.age}) at a speed-friending evening in the village hall. ${person.blurb} ${person.young ? "You are young, so you use tu. If they are stuck you may drop a few helpful English words, then go back to French." : "You are older, so you use vous and speak simple French."}
-The screen hides your name as ??? until you say it. If you have not met them before, your first line says your name: "Je m'appelle ${person.name}." ${person.young ? `Then in English: "My name is ${person.name}."` : ""}
-${canInvite ? `After a couple of friendly turns, invite them to ${person.favoriteOuting} by calling invite({ outing: "${person.favoriteOuting}" }) and asking them in French.` : ""}${multiNote}
+    system: `You are ${person.name}, ${person.age}, at a speed-friending evening in the village hall. ${person.blurb} You have a few minutes at this table and you are actually curious. ${person.young ? "You use tu. You know some English from school and from films, enough to drop a word or a short phrase if they are stuck, and then you are back in French." : "You use vous. School English was a long time ago. A simple word sometimes lands. You answer in French, and if they are stuck you slow down rather than translate."}
+
+${metBefore ? `You have met them before. Talk as if you remember one thing, not as if this is the first hello. Say your name only if it has not come up yet.` : `The screen shows ??? until you say your name. Your first line includes "Je m'appelle ${person.name}."`}
+${canInvite ? `After a couple of turns, if it feels easy, invite them to ${person.favoriteOuting}. Call invite({ outing: "${person.favoriteOuting}" }) and ask them in French.` : ""}${multiNote}
 Call speak last.${memory}`,
   };
 }
@@ -437,6 +446,10 @@ export async function POST(req: NextRequest) {
   const slotMatch = context.match(/Slot\s+(\d+)/i);
   const currentSlot = slotMatch ? Number(slotMatch[1]) : undefined;
 
+  const npcAlreadySpoke = (Array.isArray(body?.history) ? body.history : []).some(
+    (turn) => turn?.who === "them" && String(turn.text ?? "").trim(),
+  );
+  let openingNudge = "";
   const directorNotes: string[] = [];
   if (bundle) {
     const courseDay = bundle.course.currentDay;
@@ -469,20 +482,18 @@ export async function POST(req: NextRequest) {
       .map((f) => `${f.key}: ${f.value}`)
       .join("; ");
     if (facts) {
-      directorNotes.push(`[KNOWN PERSONAL FACTS ABOUT THIS STUDENT]: ${facts}`);
+      directorNotes.push(`[ABOUT THEM]: ${facts}`);
     }
 
     const lostOn = (parseSave(bundle.saves.sejour?.save)?.drill ?? []).map((item) => ({ fr: item.fr }));
-    directorNotes.push(wordTargetNote(bundle.course.currentDay, lostOn));
+    if (!npcAlreadySpoke && role !== "lesson") {
+      openingNudge = openingWordNudge(bundle.course.currentDay, lostOn);
+    }
 
     if (bundle.course.supportBand === "high") {
-      directorNotes.push(
-        `[SUPPORT LEVEL: HIGH]: Speak clearly in simple A1 French sentences and warmly scaffold or explain in English if they hesitate.`,
-      );
+      directorNotes.push(`[PACE]: They are new to this. Shorter sentences, and give them a moment. Stay the person you are.`);
     } else if (bundle.course.supportBand === "low") {
-      directorNotes.push(
-        `[SUPPORT LEVEL: ADVANCED A1]: Keep the conversation in natural French unless they explicitly ask for help.`,
-      );
+      directorNotes.push(`[PACE]: They are comfortable. Talk at your natural speed unless they ask you to slow down.`);
     }
 
   }
@@ -504,11 +515,11 @@ export async function POST(req: NextRequest) {
     participants,
   );
   const directorBlock = directorNotes.length
-    ? `\n\nDIRECTOR'S NOTES FOR THIS CONVERSATION (work these in naturally; never mention that you received a note):\n${directorNotes.join("\n")}`
+    ? `\n\nPrivate. Fold in what fits. Never mention notes, levels, or that you were told any of this.\n${directorNotes.join("\n")}`
     : "";
   const told = `${system}${directorBlock}
 
-VOICE DELIVERY TAGS (CRITICAL): Whenever you call \`speak\`, pass \`line\` as clean text without brackets, and pass \`audio\` with those exact same words plus 1 to 3 ElevenLabs v3 delivery tags in square brackets placed immediately before the words they colour. Use only these tags: [warm] [pleased] [gentle] [amused] [curious] [hesitant] [surprised] [firm] [laughs] [chuckles] [sighs] [whispers] [short pause] [slow]. Example: "[warm] Bonjour ! [short pause] [pleased] Bienvenue chez moi."
+When you call speak, line is the words they hear, with no brackets. audio is those same words plus 1 to 3 delivery tags placed just before the words they colour: [warm] [pleased] [gentle] [amused] [curious] [hesitant] [surprised] [firm] [laughs] [chuckles] [sighs] [whispers] [short pause] [slow]. Example: "[warm] Bonjour ! [short pause] [pleased] Bienvenue chez moi."
 
 A bracketed line from the guest is their gesture: a nod, a head shake, a shrug, a wave, or fingers held up. It needs no French. Answer the gesture even when they say nothing.`;
   const verbalPayClaim =
@@ -526,9 +537,12 @@ A bracketed line from the guest is their gesture: a nod, a head shake, a shrug, 
       : gesture
         ? `[They ${gesture}, and say nothing.]`
         : `Guest: ${said}${paymentWarning}`;
+  const dinnerNow = /\bMEAL\./.test(context);
   const answerNow = opening
     ? ""
-    : "\n\nAnswer that line. Mention something they actually said. If the French is off, give the cleaner phrase in one short correction, then move the conversation one step forward. Do not say your previous line again. Do not welcome them again. Do not ask a question they just answered.";
+    : dinnerNow
+      ? "\n\nThis is dinner. Answer what they just said about the food or the day. Sleep and the morning can wait."
+      : "\n\nAnswer what they just said. Don't repeat your previous line, don't welcome them again, and don't ask a question they already answered.";
 
   const priorNpcLine = (Array.isArray(body?.history) ? body.history : [])
     .filter((turn) => turn?.who === "them" && typeof turn.text === "string")
@@ -538,7 +552,10 @@ A bracketed line from the guest is their gesture: a nod, a head shake, a shrug, 
   const messages: Anthropic.Messages.MessageParam[] = [
     {
       role: "user",
-      content: (opening && !said ? `${context}\n\n${history}\nThey are waiting. Speak first.` : `${context}\n\n${history}\n${them}${answerNow}`).trim(),
+      content: (opening && !said
+        ? `${context}\n\n${history}\nThey are waiting. Speak first.${openingNudge ? `\n\n${openingNudge}` : ""}`
+        : `${context}\n\n${history}\n${them}${answerNow}${openingNudge ? `\n\n${openingNudge}` : ""}`
+      ).trim(),
     },
   ];
 
@@ -557,6 +574,7 @@ A bracketed line from the guest is their gesture: a nod, a head shake, a shrug, 
   const allowedHandouts = new Set<string>(HANDOUT_IDS);
   const spokenTurns: SpokenTurn[] = [];
   let rejectedRepeat = false;
+  let rejectedSleep = false;
 
   for (let round = 0; round < 4; round++) {
     const response = await createMessage(client, { max_tokens: 900, system: told, tools, messages });
@@ -686,6 +704,18 @@ A bracketed line from the guest is their gesture: a nod, a head shake, a shrug, 
         if (/speed.?friend|salle des fêtes|rencontr/.test(lower)) rawSuggested.push("speedfriending");
         if (/bistro/.test(lower)) rawSuggested.push("bistro");
         if (/auberge/.test(lower)) rawSuggested.push("auberge");
+      }
+      if (dinnerNow && !rejectedSleep && dinnerAsksAboutSleep(combinedLine)) {
+        rejectedSleep = true;
+        spokenTurns.length = 0;
+        for (const result of results) {
+          if (result.content === "Said.") {
+            result.content = "This is dinner, not the morning. Do not ask if they slept. Talk about the food and the day. Call speak with a new line.";
+          }
+        }
+        messages.push({ role: "assistant", content: response.content });
+        messages.push({ role: "user", content: results });
+        continue;
       }
       if (!opening && !rejectedRepeat && repeatsPriorLine(priorNpcLine, combinedLine)) {
         rejectedRepeat = true;

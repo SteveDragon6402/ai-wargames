@@ -15,10 +15,13 @@ import {
   updateVocabSrs,
   weightedExamPercent,
 } from "./index";
-import { learnerIsLost, phrasesBeforeConfusion } from "./pace";
+import { dinnerAsksAboutSleep, englishHelpWords, learnerIsLost, phrasesBeforeConfusion, replyNeedsEnglish, simpleFrenchFor } from "./pace";
+import { buildPracticeDeck } from "../../sejour/lib/practice-deck";
 import { PROBES } from "../content/probes";
 import { PLACEMENT_QUESTIONS } from "../content/placement";
-import { GRAMMAR_LESSONS } from "../content/grammar";
+import { GRAMMAR_BY_ID, GRAMMAR_LESSONS } from "../content/grammar";
+import { frenchAnswerIsAlmost, frenchAnswersMatch, shuffleTiles } from "./answers";
+import { fillGrammarLesson } from "./lesson-fill";
 import { VOCAB_ITEMS } from "../content/vocab";
 import { EXAM_BANK } from "../content/exam-bank";
 import type { VocabProgressRecord } from "../types";
@@ -171,5 +174,68 @@ describe("deterministic conversation probes & SRS vocabulary tracking", () => {
       { role: "you", text: "I don't understand" },
     ]);
     assert.equal(phrases[0]?.fr.includes("ça va"), true);
+  });
+
+  it("keeps day-1 English on a short French line and notices a French-only reply", () => {
+    assert.equal(simpleFrenchFor("I don't understand all that"), "Je ne comprends pas.");
+    assert.equal(simpleFrenchFor("Bonjour madame"), null);
+    assert.equal(replyNeedsEnglish("Vous avez bien dormi ? Le lit est confortable."), true);
+    assert.equal(replyNeedsEnglish("Don't worry. That means hello. Say: bonjour."), false);
+    assert.equal(englishHelpWords("Bonjour ! Qu'est-ce qui vous ferait plaisir ?"), 0);
+    assert.equal(englishHelpWords("You want the baguette?"), 2);
+    assert.equal(dinnerAsksAboutSleep("Vous avez bien dormi ?"), true);
+    assert.equal(dinnerAsksAboutSleep("Le pain est chaud. Comment était la journée ?"), false);
+  });
+});
+
+describe("daily practice deck", () => {
+  it("starts with more French-to-English and puts review lines into say-it-in-French", () => {
+    const deck = buildPracticeDeck(1, [{ fr: "Je ne comprends pas.", en: "I don't understand" }]);
+    const from = deck.filter((card) => card.direction === "from").length;
+    const to = deck.filter((card) => card.direction === "to").length;
+    assert.ok(from >= to);
+    const drilled = deck.find((card) => card.fr === "Je ne comprends pas.");
+    assert.equal(drilled?.direction, "to");
+    const later = buildPracticeDeck(21, []);
+    const laterTo = later.filter((card) => card.direction === "to").length;
+    const laterFrom = later.filter((card) => card.direction === "from").length;
+    assert.ok(laterTo >= laterFrom);
+  });
+});
+
+describe("grammar answers", () => {
+  it("treats a missing accent as the right answer", () => {
+    assert.equal(
+      frenchAnswersMatch("Bonjour Madame, je suis pret", "Bonjour Madame, je suis prêt."),
+      true,
+    );
+    assert.equal(
+      frenchAnswerIsAlmost("Bonjour Madame, je suis pret", "Bonjour Madame, je suis prêt."),
+      false,
+    );
+  });
+
+  it("calls a one-letter miss Almost", () => {
+    assert.equal(frenchAnswerIsAlmost("je m'apele", "je m'appelle"), true);
+    assert.equal(frenchAnswerIsAlmost("m'apele", "m'appelle"), true);
+    assert.equal(frenchAnswerIsAlmost("je m'apele", "m'appelle"), true);
+    assert.equal(frenchAnswersMatch("je m'apele", "je m'appelle"), false);
+    assert.equal(frenchAnswerIsAlmost("au revoir", "Enchanté"), false);
+  });
+
+  it("jumbles tile order and fills être from the learner's name", () => {
+    const lesson = fillGrammarLesson(GRAMMAR_BY_ID.w1d1_greetings_etre, {
+      name: { key: "name", value: "Aryan", updatedAt: "2026-01-01T00:00:00.000Z" },
+    });
+    const tiles = lesson.exercises.find((exercise) => exercise.kind === "tiles");
+    assert.ok(tiles);
+    assert.equal(tiles.answer.includes("Aryan"), true);
+    assert.equal(JSON.stringify(lesson).includes("{{"), false);
+    const shown = shuffleTiles(tiles.options ?? [], tiles.id);
+    assert.notDeepEqual(shown, tiles.options);
+    assert.deepEqual([...shown].sort(), [...(tiles.options ?? [])].sort());
+    const ready = lesson.exercises.find((exercise) => exercise.id === "w1d1_ex7");
+    assert.equal(ready?.prompt.includes("ready"), true);
+    assert.equal(ready?.prompt.toLowerCase().includes("prêt"), true);
   });
 });

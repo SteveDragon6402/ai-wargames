@@ -45,6 +45,11 @@ export function eventDone(id: EventId): Rule {
   return (progress) => progress.eventsDone.includes(id);
 }
 
+/** The stay has reached this on-screen day. One evening does not count as a week of visits. */
+export function reachedDay(day: number): Rule {
+  return (progress) => progress.assessments.some((item) => item.day >= day);
+}
+
 export function all(...rules: Rule[]): Rule {
   return (progress) => rules.every((rule) => rule(progress));
 }
@@ -65,8 +70,8 @@ export const GATES: Gate[] = [
   { id: "formal", label: "Your manners are ready for L'Auberge", when: all(visits("bistro", T.formal.visits), rated(T.formal.skill, T.formal.min, T.formal.times)), unlocks: ["auberge"] },
   { id: "supermarche", label: "You are ready for the big supermarket", when: all(visits("epicerie", T.supermarche.epicerieVisits), convos(T.supermarche.convos)), unlocks: ["supermarche"] },
   { id: "friends", label: "You can make friends in French", when: rated(T.friends.skill, T.friends.min, T.friends.times, T.friends.scene), unlocks: ["invite_parc", "invite_cinema", "invite_sport"] },
-  { id: "ev_family", label: "Madame's family is visiting", when: all(convos(T.family.convos), average(T.family.average)), unlocks: ["event_family"] },
-  { id: "ev_sick", label: "Madame needs you", when: all(convos(T.sick.convos), average(T.sick.average), eventDone("family")), unlocks: ["event_sick"] },
+  { id: "ev_family", label: "Madame's family is visiting", when: all(convos(T.family.convos), average(T.family.average), reachedDay(18)), unlocks: ["event_family"] },
+  { id: "ev_sick", label: "Madame needs you", when: all(convos(T.sick.convos), average(T.sick.average), eventDone("family"), reachedDay(25)), unlocks: ["event_sick"] },
 ];
 
 export const GATE_BY_ID: Record<string, Gate> = Object.fromEntries(GATES.map((gate) => [gate.id, gate]));

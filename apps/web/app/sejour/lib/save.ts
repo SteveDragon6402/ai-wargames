@@ -117,7 +117,7 @@ export function emptySave(): Save {
     assessments: [],
     gatesPassed: [],
     unlocked: ["boulangerie"],
-    offered: ["boulangerie"],
+    offered: [],
     visits: {},
     lessonsDone: [],
     lessonsSkipped: [],
@@ -275,10 +275,9 @@ export function parseSave(raw: unknown): Save | null {
   if (!teacherUnlocked.includes("boulangerie")) teacherUnlocked.unshift("boulangerie");
 
   const evaluated = evaluate({ assessments, visits, eventsDone, teacherUnlocked });
-  const rawOffered = Array.isArray(value.offered)
+  const offered = Array.isArray(value.offered)
     ? value.offered.filter((id): id is PlaceId => isPlace(id) && evaluated.unlocked.includes(id))
     : [];
-  const offered: PlaceId[] = rawOffered.includes("boulangerie") ? rawOffered : ["boulangerie", ...rawOffered];
 
   const lessonsDone = Array.isArray(value.lessonsDone)
     ? value.lessonsDone.filter((id): id is string => typeof id === "string" && /^[a-z0-9_]+$/.test(id)).slice(0, 60)
@@ -341,7 +340,15 @@ export function parseSave(raw: unknown): Save | null {
 
 /** Record an assessment and recompute unlocked gates & places. */
 export function recordAssessment(save: Save, assessment: Assessment): Save {
-  const assessments = [...save.assessments, assessment].slice(-80);
+  const last = save.assessments[save.assessments.length - 1];
+  const merged =
+    last && last.scene === assessment.scene
+      ? { ...assessment, ratings: { ...last.ratings, ...assessment.ratings } }
+      : assessment;
+  const assessments = (last && last.scene === assessment.scene
+    ? [...save.assessments.slice(0, -1), merged]
+    : [...save.assessments, assessment]
+  ).slice(-80);
   const { gates, unlocked } = evaluate({
     assessments,
     visits: save.visits,

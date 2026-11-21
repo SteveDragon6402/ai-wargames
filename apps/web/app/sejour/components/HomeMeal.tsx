@@ -67,17 +67,14 @@ export function HomeMeal({
     setTurns(history);
     if (reply.phrases.length) onPhrase(reply.phrases, "Madame Rousseau");
     if (reply.settled.length) onSettled(reply.settled);
-    if (reply.bedtime) setReadyForBed(true);
+    const playerTurnsNow = history.filter((turn) => turn.who === "you").length;
+    if (reply.bedtime && playerTurnsNow >= 3) setReadyForBed(true);
   }
 
   const finishedPlate = bitesLeft === 0;
   const playerTurns = turns.filter((t) => t.who === "you").length;
-  const minTurnsRequired = 2;
-  const engagedEnough = playerTurns >= minTurnsRequired || (readyForBed && playerTurns >= 3);
-  const canLeaveTable = finishedPlate && engagedEnough;
-  const blockedReason = !finishedPlate
-    ? `Finish eating your ${dishFr} (${bitesLeft} bite${bitesLeft === 1 ? "" : "s"} left on your plate) and chat with Madame Rousseau (${Math.min(playerTurns, minTurnsRequired)}/${minTurnsRequired} turns) before going upstairs to bed.`
-    : `Chat a little longer in French with Madame Rousseau about your day (${playerTurns}/${minTurnsRequired} turns completed) before excusing yourself for bed.`;
+  const minTurnsRequired = 3;
+  const canLeaveTable = readyForBed && playerTurns >= minTurnsRequired;
 
   return (
     <section aria-label="Eating together">
@@ -93,15 +90,6 @@ export function HomeMeal({
             <span className="rounded-full border border-amber-900/25 bg-amber-50 px-3 py-1 text-[12px] font-semibold text-amber-950">
               🍽️ {totalBites - bitesLeft}/{totalBites} bites · 💬 {Math.min(playerTurns, minTurnsRequired)}/{minTurnsRequired} turns
             </span>
-            {canLeaveTable ? (
-              <button
-                type="button"
-                className="ep-button ep-primary"
-                onClick={() => onDone(turns)}
-              >
-                🌙 Excuse yourself &amp; go to bed
-              </button>
-            ) : null}
           </div>
         </div>
 
@@ -130,7 +118,7 @@ export function HomeMeal({
               </p>
               <p className="mt-0.5 text-[14px] text-[var(--ep-ink-soft)]">
                 {finishedPlate
-                  ? "You can keep chatting at the table or excuse yourself to go upstairs to bed."
+                  ? "Stay at the table until Madame says the meal is finished."
                   : "Click your plate to take a bite while talking about the food."}
               </p>
               {!finishedPlate ? (
@@ -174,9 +162,8 @@ export function HomeMeal({
             unlocked={unlocked}
             knownFrench={knownFrench}
             memory={memory}
-            context={`MEAL. Day ${day}. A short dinner, two bites and a couple of turns. Eating ${dishFr} (${dishEn}). Use these words in the conversation and have them say one back: ${words.map((w) => w.fr).join(", ")}. Ask how the day went. Only call bedtime after at least ${minTurnsRequired} back-and-forth turns.`}
+            context={`MEAL. Day ${day}. This is DINNER at the table, not breakfast. Eating ${dishFr} (${dishEn}). Use these words and have them say one back: ${words.map((w) => w.fr).join(", ")}. Ask how the day went and how the food is. Do not ask if they slept well, how the night was, or anything about the morning. Keep the meal going for three or four exchanges. Only call bedtime once you have said the meal is finished, and only after at least ${minTurnsRequired} replies from the guest.`}
             canEnd={canLeaveTable}
-            blockedEndReason={blockedReason}
             endLabel="Finish dinner"
             actionPrompt="✅ You've finished your dinner and chatted with Madame Rousseau! Ready to head upstairs for the night:"
             onReply={onReply}

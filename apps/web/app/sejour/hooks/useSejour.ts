@@ -29,7 +29,7 @@ import { GRAMMAR_BY_DAY, GRAMMAR_BY_ID, GRAMMAR_LESSONS } from "@/app/course/con
 import type { GrammarLesson } from "@/app/course/types";
 import { hideNpcText, type ListeningMode } from "@/app/course/engine/answers";
 import { subscribeReadingAssist } from "../lib/reading";
-import { isOuting, isPlace, PLACE_INFO, PLACES, type EventId, type OutingId, type PlaceId, type SceneId } from "../world/places";
+import { isOuting, isPlace, PLACE_INFO, type EventId, type OutingId, type PlaceId, type SceneId } from "../world/places";
 import { basketCovers, suggestRecipe, type Recipe } from "../world/recipes";
 import { baselineRatingsFromLines, type Ratings } from "../world/skills";
 import type { StageCall } from "../world/stage";
@@ -77,11 +77,11 @@ function loadFromLocalStorage(): Save {
   }
 }
 
-/** Auto-offer any unlocked place so unlocked places appear as clickable chips without waiting many turns. */
+/** Drop offers for places that are no longer open. A place appears only after Madame suggests it. */
 function syncOfferedWithUnlocked(save: Save): Save {
-  const unlockedPlaces = PLACES.filter((p) => save.unlocked.includes(p));
-  if (!unlockedPlaces.length) return save;
-  return offerPlaces(save, unlockedPlaces);
+  const offered = save.offered.filter((id) => save.unlocked.includes(id));
+  if (offered.length === save.offered.length) return save;
+  return { ...save, offered };
 }
 
 export function useSejour() {
@@ -555,6 +555,10 @@ export function useSejour() {
         // Also count a supermarket trip toward grocery experience
         if (placeId === "supermarche") {
           next = recordVisit(next, "epicerie");
+          const cashierTurns = turns
+            .filter((turn) => turn.role === "you" || turn.role === "gerard")
+            .map((turn) => ({ who: turn.role === "you" ? ("you" as const) : ("them" as const), text: turn.text }));
+          next = remember(next, "elodie", cashierTurns);
         }
         next = {
           ...next,

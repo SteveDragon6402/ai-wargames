@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { GRAMMAR_BY_DAY, GRAMMAR_BY_ID } from "@/app/course/content/grammar";
 import { GRAMMAR_PASS_PERCENT, scoreGrammarAnswers } from "@/app/course/engine";
+import { fillGrammarLesson } from "@/app/course/engine/lesson-fill";
 import { planCourseDay } from "@/lib/teacher";
 import { getUserFromRequest } from "@/lib/auth/session";
 import { getUserBundle, saveUserBundle } from "@/lib/db";
@@ -37,10 +38,12 @@ export async function POST(req: NextRequest) {
   const now = new Date().toISOString();
   const entry = bundle.course.dayPlans[day]!;
   const lessonId = body.lessonId || entry.plan.lessonId || GRAMMAR_BY_DAY[day]?.id || "w1d1_greetings_etre";
-  const lesson = GRAMMAR_BY_ID[lessonId] ?? GRAMMAR_BY_DAY[day];
+  const rawLesson = GRAMMAR_BY_ID[lessonId] ?? GRAMMAR_BY_DAY[day];
+  const lesson = rawLesson ? fillGrammarLesson(rawLesson, bundle.learnerFacts) : rawLesson;
   const remediation = entry.plan.remediationLessonIds
     .map((id) => GRAMMAR_BY_ID[id])
     .filter((item): item is NonNullable<typeof item> => Boolean(item))
+    .map((item) => fillGrammarLesson(item, bundle.learnerFacts))
     .flatMap((item) => item.exercises.slice(0, 2));
   const exercises = [...(lesson?.exercises ?? []), ...remediation];
   const answers = body.answers && typeof body.answers === "object" ? body.answers : {};
