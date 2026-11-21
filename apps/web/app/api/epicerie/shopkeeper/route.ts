@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import type Anthropic from "@anthropic-ai/sdk";
-import { anthropicClient, createMessage, toolUses, textOf } from "../../mercenary/model";
+import { anthropicClient, createMessage, toolUses, textOf } from "@/lib/anthropic";
 import { ITEM_BY_ID, STAPLES } from "@/app/epicerie/data/items";
-import { basketSheet, cleanLine, counterSheet, describeTurn, forSpeech, isGesture, neutralGesture, persona, spokenFromText, type Address } from "@/app/epicerie/lib/gerard";
-import { EXPRESSIONS, addLine, formatEuros, linesTotal, removeLine, type Expression, type Line, type Turn } from "@/app/epicerie/lib/shop";
+import { basketSheet, cleanLine, counterSheet, describeTurn, forSpeech, isGesture, mentionedItem, neutralGesture, persona, asksToSettle, readyToPay, refuseHandOver, refuseRingUp, spokenFromText, type Address } from "@/app/epicerie/lib/gerard";
+import { eurosInWords, spellMoneyInSpeech } from "@/app/epicerie/lib/money-words";
+import { EXPRESSIONS, addLine, linesTotal, removeLine, type Expression, type Line, type Turn } from "@/app/epicerie/lib/shop";
 
 export const maxDuration = 60;
 
@@ -121,27 +122,55 @@ export async function POST(req: NextRequest) {
   const written: string[] = [];
 
   const scene = [...history, turn].map(describeTurn).join("\n");
+  const verbalPayClaim =
+    turn.role === "you" &&
+    counter.length > 0 &&
+    /\b(i paid|i've paid|i have paid|already paid|here is the money|here's the money|take the money|keep the change|c'est payé|j'ai payé|voilà l'argent|voici l'argent|tiens l'argent)\b/i.test(
+      turn.text,
+    );
+  const payNote = verbalPayClaim
+    ? "\n[NOTE: The customer just claimed in words that they paid, but the items on the counter are NOT paid for yet — no coins or notes were handed over! Call ring_up if the till is not rung up yet, and tell them firmly in French that your hand is empty and they must put the money on the counter!]"
+    : "";
   const messages: Anthropic.Messages.MessageParam[] = [
-    { role: "user", content: `${errand ? `${errand}\n\n` : ""}${scene}\n\n(${basketSheet(basket)} ${counterSheet(counter, till)})` },
+    { role: "user", content: `${errand ? `${errand}\n\n` : ""}${scene}\n\n(${basketSheet(basket)} ${counterSheet(counter, till)})${payNote}` },
   ];
   const also = errand
-    ? STAPLES.map((item) => `- ${item.id}: ${item.fr}, ${formatEuros(item.price)} ${item.unitFr}.`).join("\n")
+    ? STAPLES.map((item) => `- ${item.id}: ${item.fr}, ${eurosInWords(item.price)} ${item.unitFr}.`).join("\n")
     : "";
   const system = persona({ notes, visits, address, also });
 
   let dismissed = false;
+  const customer = [...history, turn];
+  const asked = Object.keys(ITEM_BY_ID).some((id) => mentionedItem(id, customer));
+  const holdTheBill = "They have not ordered. Greet them, and say your name if you have not met. Do not name a price, do not ask them to pay, and do not put anything on the counter.";
   for (let round = 0; round < 5; round++) {
     const response = await createMessage(client, { max_tokens: 900, system, tools: TOOLS, messages });
     if ("error" in response) return NextResponse.json({ error: response.error }, { status: 502 });
 
     const calls = toolUses(response);
     if (!calls.length) {
-      const spoken = spokenFromText(textOf(response));
-      if (spoken) return NextResponse.json({ ...spoken, dismissed, audio: forSpeech(spoken.line, ""), gesture: neutralGesture(spoken.gesture), counter, till, notes: written });
-      return NextResponse.json({ error: "Gérard said nothing." }, { status: 502 });
+      const draft = spokenFromText(textOf(response));
+      if (!draft) return NextResponse.json({ error: "Gérard said nothing." }, { status: 502 });
+      const line = spellMoneyInSpeech(draft.line);
+      if (asksToSettle(line) && !readyToPay(customer) && !asked) {
+        messages.push({ role: "assistant", content: response.content });
+        messages.push({ role: "user", content: holdTheBill });
+        continue;
+      }
+      return NextResponse.json({
+        ...draft,
+        line,
+        dismissed,
+        audio: spellMoneyInSpeech(forSpeech(line, "")),
+        gesture: neutralGesture(draft.gesture),
+        counter,
+        till,
+        notes: written,
+      });
     }
 
     let spoken: { line: string; expression: Expression; gesture: string; audio: string } | null = null;
+    let jumped = false;
     const results: Anthropic.Messages.ToolResultBlockParam[] = [];
     for (const call of calls) {
       const input = (call.input ?? {}) as Record<string, unknown>;
@@ -150,10 +179,14 @@ export async function POST(req: NextRequest) {
       if (call.name === "hand_over") {
         const id = String(input.item_id ?? "");
         const qty = Number(input.qty);
+        const early = refuseHandOver(id, qty, customer);
         if (!ITEM_BY_ID[id]) {
           reply(`You do not stock "${id}". Use an id from your shelf list.`);
         } else if (!Number.isInteger(qty) || qty < 1 || qty > 12) {
           reply("Hand over a whole number, one to twelve.");
+        } else if (early) {
+          jumped = true;
+          reply(early);
         } else {
           counter = addLine(counter, id, qty);
           till = null;
@@ -175,17 +208,23 @@ export async function POST(req: NextRequest) {
       }
       if (call.name === "ring_up") {
         const full = linesTotal(counter);
+        const early = refuseRingUp(customer);
         if (!counter.length) {
           reply("The counter is empty. There is nothing to ring up.");
           continue;
         }
+        if (early) {
+          jumped = true;
+          reply(early);
+          continue;
+        }
         const asked = input.total_cents === undefined ? full : Math.round(Number(input.total_cents));
         if (!Number.isFinite(asked) || asked > full || asked < Math.ceil(full * (2 / 3))) {
-          reply(`The till will not take that. Full price is ${formatEuros(full)}; you may go down to ${formatEuros(Math.ceil(full * (2 / 3)))} at most.`);
+          reply(`The till will not take that. Full price is ${eurosInWords(full)}; you may go down to ${eurosInWords(Math.ceil(full * (2 / 3)))} at most.`);
           continue;
         }
         till = asked;
-        reply(`The till shows ${formatEuros(till)}. Tell them the total.`);
+        reply(`Say the total in these words and no digits: « Ça fait ${eurosInWords(till)}. »`);
         continue;
       }
       if (call.name === "write_note") {
@@ -200,10 +239,10 @@ export async function POST(req: NextRequest) {
         continue;
       }
       if (call.name === "speak") {
-        const line = cleanLine(String(input.line ?? ""));
+        const line = spellMoneyInSpeech(cleanLine(String(input.line ?? "")));
         const expression = EXPRESSIONS.includes(input.expression as Expression) ? (input.expression as Expression) : "neutral";
         const gesture = String(input.gesture ?? "").trim().slice(0, 160);
-        const audio = forSpeech(line, input.audio);
+        const audio = spellMoneyInSpeech(forSpeech(line, input.audio));
         if (line || gesture) spoken = { line, expression, gesture, audio };
         reply(line || gesture ? "Said." : "Say something.");
         continue;
@@ -211,9 +250,15 @@ export async function POST(req: NextRequest) {
       reply("There is no such thing to do.");
     }
 
-    if (spoken) return NextResponse.json({ ...spoken, dismissed, gesture: neutralGesture(spoken.gesture), counter, till, notes: written });
+    const settlingEarly = Boolean(spoken && till === null && asksToSettle(spoken.line) && !readyToPay(customer) && !asked);
+    if (spoken && !jumped && !settlingEarly) {
+      return NextResponse.json({ ...spoken, dismissed, gesture: neutralGesture(spoken.gesture), counter, till, notes: written });
+    }
     messages.push({ role: "assistant", content: response.content });
-    messages.push({ role: "user", content: results });
+    messages.push({
+      role: "user",
+      content: settlingEarly || jumped ? [...results, { type: "text", text: holdTheBill }] : results,
+    });
   }
 
   return NextResponse.json({ error: "Gérard lost his train of thought." }, { status: 502 });

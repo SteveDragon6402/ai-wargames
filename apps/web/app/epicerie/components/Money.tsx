@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { coinLabel, formatEuros, isNote, removeCoins, sumCoins } from "../lib/shop";
+import { eurosInWords } from "../lib/money-words";
+import { coinLabel, isNote, removeCoins, sumCoins } from "../lib/shop";
 
 function metal(cents: number): "gold" | "copper" | "bi" {
   if (cents >= 100) return "bi";
@@ -63,7 +64,7 @@ export function Purse({ purse }: { purse: number[] }) {
     <div>
       <p className="flex items-baseline justify-between text-[14px] text-[var(--ep-cream)]/70">
         <span>Your purse</span>
-        <span className="ep-display text-[20px] font-semibold tabular-nums text-[var(--ep-cream)]">{formatEuros(sumCoins(purse))}</span>
+        <span className="ep-display text-[20px] font-semibold text-[var(--ep-cream)]">{eurosInWords(sumCoins(purse))}</span>
       </p>
       <div className="mt-2 flex flex-wrap items-center gap-2" aria-label="Coins and notes in your purse">
         {groupCoins(purse).map(({ value, count }) => (
@@ -119,7 +120,7 @@ export function PaymentTray({ till, purse, busy, onHandOver, title = "He's waiti
 
       <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <p className="text-[15px] text-[var(--ep-ink)]">
-          On the counter: <span className="font-semibold tabular-nums">{formatEuros(paid)}</span>
+          On the counter: <span className="font-semibold">{eurosInWords(paid)}</span>
         </p>
         <button
           type="button"

@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import type Anthropic from "@anthropic-ai/sdk";
-import { anthropicClient, createMessage, toolUses } from "../../mercenary/model";
+import { anthropicClient, createMessage, toolUses } from "@/lib/anthropic";
 import { HANDOUT_IDS, HANDOUTS } from "@/app/sejour/data/handouts";
+import { getUserFromRequest } from "@/lib/auth/session";
+import { getUserBundle, saveUserBundle } from "@/lib/db";
+import { compileTeacherBrief } from "@/lib/teacher";
 
 export const maxDuration = 60;
 
@@ -55,13 +58,18 @@ export async function POST(req: NextRequest) {
     .slice(-8)
     .map((turn) => `${turn.who === "you" ? "Guest" : "Coach"}: ${String(turn.text).slice(0, 500)}`);
   const catalogue = HANDOUTS.map((handout) => `${handout.id}: ${handout.title}`).join("; ");
+
+  const user = await getUserFromRequest(req).catch(() => null);
+  const bundle = user ? await getUserBundle(user.id, user.timezone) : null;
+  const teacherContext = bundle ? `\n\nStudent dossier:\n${compileTeacherBrief(bundle)}` : "";
+
   const response = await createMessage(client, {
     max_tokens: 700,
-    system: `You are a quiet coach after a scene in a French homestay. The scene is the context. The guest quoted something they said and asked a question. Answer that question. Do not start a new topic.
+    system: `You are the student's French Teacher and quiet coach after a scene in a French homestay. The scene is the context. The guest quoted something they said and asked a question. Answer that question warmly and clearly. Do not start a new topic.
 
 Vous is for Gérard, Madame Rousseau, waiters, the conductor, and anyone older. Never tell them to use tu with Gérard because he was friendly. Tu is only for a young person at speed friending, and only after that person used tu.
 
-If a handout fits, name it in the answer and include its id. Handouts: ${catalogue}.`,
+If a handout fits, name it in the answer and include its id. Handouts: ${catalogue}.${teacherContext}`,
     tools: [TOOL],
     tool_choice: { type: "tool", name: "coach" },
     messages: [
@@ -79,5 +87,17 @@ If a handout fits, name it in the answer and include its id. Handouts: ${catalog
   const handouts = (Array.isArray(input.handouts) ? input.handouts : [])
     .filter((id): id is string => typeof id === "string" && allowed.has(id))
     .slice(0, 3);
+
+  if (user && bundle) {
+    bundle.teacherNotes.push({
+      id: `note_coach_${Date.now()}`,
+      day: bundle.course.currentDay,
+      createdAt: new Date().toISOString(),
+      kind: "scribe",
+      body: `Student asked coach in ${body?.scene ?? "scene"}: "${question.slice(0, 120)}"`,
+    });
+    await saveUserBundle(user.id, bundle);
+  }
+
   return NextResponse.json({ say, handouts });
 }

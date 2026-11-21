@@ -1,5 +1,5 @@
-import { Epicerie } from "./components/Epicerie";
+import { redirect } from "next/navigation";
 
 export default function EpiceriePage() {
-  return <Epicerie />;
+  redirect("/home");
 }

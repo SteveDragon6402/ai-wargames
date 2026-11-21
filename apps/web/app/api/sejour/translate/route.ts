@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { anthropicClient, createMessage, textOf } from "../../mercenary/model";
+import { anthropicClient, createMessage, textOf } from "@/lib/anthropic";
 
 export const maxDuration = 30;
 

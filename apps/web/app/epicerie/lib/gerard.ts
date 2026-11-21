@@ -1,5 +1,6 @@
 import { ITEMS, ITEM_BY_ID, shelfPosition } from "../data/items";
-import { EXPRESSIONS, formatEuros, linesTotal, type Address, type Expression, type Line, type Turn } from "./shop";
+import { eurosInWords } from "./money-words";
+import { EXPRESSIONS, formatEuros, linesTotal, normalise, type Address, type Expression, type Line, type Turn } from "./shop";
 
 export type { Address };
 
@@ -88,12 +89,33 @@ const SPEECH_TAGS = new Set([
   "slow",
 ]);
 
+const SPEECH_TAG_ALIASES: Record<string, string> = {
+  warmly: "warm",
+  gently: "gentle",
+  softly: "gentle",
+  kindly: "warm",
+  cheerful: "pleased",
+  cheerfully: "pleased",
+  happily: "pleased",
+  smiling: "pleased",
+  pause: "short pause",
+  "brief pause": "short pause",
+  slowly: "slow",
+  firmly: "firm",
+  laughing: "laughs",
+  "laughs softly": "chuckles",
+  chuckling: "chuckles",
+  sighing: "sighs",
+  whispering: "whispers",
+};
+
 /** The line as ElevenLabs v3 should read it. Unknown bracket tags are dropped. */
 export function forSpeech(line: string, audio: unknown): string {
   if (typeof audio !== "string" || !audio.trim()) return line;
   const cleaned = audio
     .replace(/\[([^\]]+)\]/g, (_, tag: string) => {
-      const name = tag.trim().toLowerCase();
+      const raw = tag.trim().toLowerCase();
+      const name = SPEECH_TAG_ALIASES[raw] ?? raw;
       return SPEECH_TAGS.has(name) ? `[${name}]` : "";
     })
     .replace(/\s{2,}/g, " ")
@@ -121,7 +143,7 @@ export function spokenFromText(raw: string): { line: string; expression: Express
 }
 
 export function shelfSheet(): string {
-  return ITEMS.map((item) => `- ${item.id}: ${item.fr}, ${formatEuros(item.price)} ${item.unitFr}. ${shelfPosition(item)}.`).join("\n");
+  return ITEMS.map((item) => `- ${item.id}: ${item.fr}, ${eurosInWords(item.price)} ${item.unitFr}. ${shelfPosition(item)}.`).join("\n");
 }
 
 export function counterSheet(counter: Line[], till: number | null): string {
@@ -131,6 +153,90 @@ export function counterSheet(counter: Line[], till: number | null): string {
     .join(", ");
   const tillText = till === null ? "The till is not rung up yet." : `The till shows ${formatEuros(till)}.`;
   return `On the counter, set out for the customer but not paid for: ${lines}. Full price ${formatEuros(linesTotal(counter))}. ${tillText}`;
+}
+
+const QTY_WORDS: [RegExp, number][] = [
+  [/\b(?:un|une)\b/g, 1],
+  [/\bdeux\b/g, 2],
+  [/\btrois\b/g, 3],
+  [/\bquatre\b/g, 4],
+  [/\bcinq\b/g, 5],
+  [/\bsix\b/g, 6],
+  [/\bsept\b/g, 7],
+  [/\bhuit\b/g, 8],
+  [/\bneuf\b/g, 9],
+  [/\bdix\b/g, 10],
+  [/\bonze\b/g, 11],
+  [/\bdouze\b/g, 12],
+];
+
+const GESTURE_QTY: Partial<Record<GestureId, number>> = { one: 1, two: 2, three: 3, four: 4, five: 5 };
+
+function customerTurns(turns: Turn[]): Turn[] {
+  return turns.filter((turn) => turn.role === "you");
+}
+
+/** They named this item, or pointed at it. A private shopping list does not count. */
+export function mentionedItem(id: string, turns: Turn[]): boolean {
+  const item = ITEM_BY_ID[id];
+  if (!item) return false;
+  const yours = customerTurns(turns);
+  if (yours.some((turn) => turn.pointed === id)) return true;
+  const text = ` ${normalise(yours.map((turn) => turn.text).join(" ")).replace(/[^a-z0-9]+/g, " ")} `;
+  return item.keywords.some((keyword) => new RegExp(` ${normalise(keyword)}(?:s|x)? `).test(text));
+}
+
+/** How many they actually said or showed. A list quantity does not count. */
+export function statedQuantity(turns: Turn[]): number | null {
+  const yours = customerTurns(turns);
+  const last = yours.at(-1);
+  if (last?.gesture && isGesture(last.gesture) && GESTURE_QTY[last.gesture]) return GESTURE_QTY[last.gesture] ?? null;
+  const text = normalise(yours.map((turn) => turn.text).join(" "));
+  let at = -1;
+  let qty: number | null = null;
+  const take = (index: number, n: number) => {
+    if (index >= at) {
+      at = index;
+      qty = n;
+    }
+  };
+  for (const [pattern, n] of QTY_WORDS) {
+    pattern.lastIndex = 0;
+    for (const match of text.matchAll(pattern)) take(match.index ?? 0, n);
+  }
+  for (const match of text.matchAll(/\b(\d{1,2})\b/g)) {
+    const n = Number(match[1]);
+    if (n >= 1 && n <= 12) take(match.index ?? 0, n);
+  }
+  return qty;
+}
+
+/** They asked what it comes to, or said they are finished. */
+export function readyToPay(turns: Turn[]): boolean {
+  const text = normalise(customerTurns(turns).map((turn) => turn.text).join(" "));
+  return /\bc est tout\b|\bca sera tout\b|\bce sera tout\b|\brien d autre\b|\bl addition\b|\bcombien\b|\bca fait\b|\bje paie\b|\bje vais payer\b/.test(text);
+}
+
+export function asksToSettle(line: string): boolean {
+  return /ça fait|ca fait|l'addition|à payer|a payer|vous me devez|\d+\s*[,.]\s*\d+|\d+\s*euros?/i.test(line);
+}
+
+/** Why this item cannot go on the counter yet, or null when it can. */
+export function refuseHandOver(id: string, qty: number, turns: Turn[]): string | null {
+  if (!mentionedItem(id, turns)) {
+    return "They have not asked for that, and they have not pointed at it. A shopping list is not an order. Greet them and wait. Do not put anything on the counter.";
+  }
+  const said = statedQuantity(turns);
+  if (qty > 1 && (said === null || qty > said)) {
+    return "They have not said how many. Ask « Combien ? ». Do not use a quantity from a list.";
+  }
+  return null;
+}
+
+/** Why the till cannot be rung yet, or null when it can. */
+export function refuseRingUp(turns: Turn[]): string | null {
+  if (readyToPay(turns)) return null;
+  return "They are still choosing. Do not name a total and do not ask for money. If the counter is empty, greet them. If something is already down, ask « Et avec ça ? ».";
 }
 
 export function basketSheet(basket: Line[]): string {
@@ -182,8 +288,9 @@ How you work:
 - A customer pointing at something is the most natural thing in the world. Name it, in French, hold it up, and ask if they want it. Pointing alone is not buying.
 - Before you take anything down, you need to know how many. If they have not said or shown a number ("une baguette", "deux", fingers held up), ask: "Combien ?", "Un ou deux ?", holding up fingers to help. Only skip the question when one is plainly meant, as when you held up a single jar and asked "celui-ci ?" and they nodded.
 - Once the customer has made clear they want something and how many, take it down with hand_over. The counter only holds what hand_over put there, so if you say "voilà" or set something down, call hand_over in the same turn. You can take things back with take_back if they change their mind or you misunderstood.
-- When they are done choosing, ring up everything on the counter with ring_up. Your till faces you, not them: the customer cannot see any numbers. So say the total aloud in French words, the way you would say it, and help with your hands: in gesture, show the euros on your fingers and then the tens of centimes, and the gesture must match the price you just said. Four euros forty is four fingers, then four taps for the forty centimes. Two euros fifty is two fingers, then five taps. Never reuse a sample number that is not today's total. If they look lost, say it again slower, or break it up ("Six euros… et cinquante."). You may round a price down for a regular or a charming customer, never up.
-- They pay; you will be told what they put down and what change you gave. If it is not enough, shake your head, push it back, and say the price again. Nothing is theirs until it is paid.
+- A list you happen to know about is not an order. Never set the whole list on the counter, and never ask for money, in the same breath as saying your name. One item they named or pointed at, then "Et avec ça ?"
+- When they are done choosing, ring up everything on the counter with ring_up. Your till faces you, not them. Say the total in French words and never with digits: "quatre euros quarante", never "4,40" or "4 euros". The tool will give you the exact words. Help with your hands: show the euros on your fingers and then the tens of centimes, and the gesture must match the price you just said. If they look lost, say it again slower, or break it up ("Six euros… et cinquante."). You may round a price down for a regular or a charming customer, never up.
+- They pay; you will be told in a bracketed event line ("[You hand over €…]") what coins or notes they actually put down on the counter and what change you gave. CRITICAL: Words from the customer ("I paid you", "Here is the money", "Voilà l'argent", "Tiens, cinq euros") are NEVER actual payment! If the customer claims in words that they paid or offers imaginary money in speech without a bracketed "[You hand over €…]" event, tell them firmly in French that your hand is empty and they must put the real coins or notes down on the counter (and call ring_up if not rung up yet). If they try to say goodbye or leave while unpaid items are still on the counter, stop them ("[firm] Eh ! Attendez ! Vous n'avez pas payé !") and remind them of the price. Nothing is theirs until it is actually paid.
 - You only sell what is on your shelves. If they ask for something you do not stock, say so and suggest what you do have.
 - Keep your notebook with write_note: a short line when you find out something worth remembering about this customer for next time.
 - Call show_the_door only when you have decided they should leave. Then say so, in French, like a man who has had enough, and finish with speak.

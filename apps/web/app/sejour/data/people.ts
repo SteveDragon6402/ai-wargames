@@ -1,23 +1,74 @@
+import type { OutingId } from "../world/places";
+
 export interface Person {
   id: string;
   name: string;
+  age: number;
   young: boolean;
   place: string;
   blurb: string;
   image: string;
+  portrait: string;
+  favoriteOuting: OutingId;
 }
 
+/** Five villagers at speed friending, spanning ages and personalities, each with a completely unique portrait. Names stay ??? until they say them. */
 export const PEOPLE: Person[] = [
-  { id: "lea", name: "Léa", young: true, place: "the bakery counter", image: "/sejour/places/bakery.jpg", blurb: "Seventeen, works Saturdays at the bakery, talks fast, laughs at her own jokes." },
-  { id: "marc", name: "Marc", young: true, place: "the football pitch", image: "/sejour/places/pitch.jpg", blurb: "Twenty-two, plays for the village side, a bit shy until football comes up." },
-  { id: "ines", name: "Inès", young: true, place: "the library", image: "/sejour/places/library.jpg", blurb: "Nineteen, studies in the city and comes home at weekends, dry sense of humour." },
-  { id: "paul", name: "Paul", young: true, place: "the river", image: "/sejour/places/river.jpg", blurb: "Sixteen, fishes with his uncle, curious, asks blunt questions." },
-  { id: "chloe", name: "Chloé", young: true, place: "the café", image: "/sejour/places/cafe.jpg", blurb: "Twenty-four, pulls espresso, collects vinyl, a little sarcastic." },
-  { id: "henri", name: "Henri", young: false, place: "the square", image: "/sejour/places/square.jpg", blurb: "Sixty-eight, retired postman, knows every street and will tell you." },
-  { id: "monique", name: "Monique", young: false, place: "the church steps", image: "/sejour/places/church.jpg", blurb: "Seventy-four, sings in the choir, warm, corrects your French without meaning to." },
-  { id: "yves", name: "Yves", young: false, place: "the allotments", image: "/sejour/places/allotment.jpg", blurb: "Sixty-one, grows tomatoes he is proud of, slow talker." },
-  { id: "nadine", name: "Nadine", young: false, place: "the market stall", image: "/sejour/places/market.jpg", blurb: "Fifty-five, sells cheese two days a week, direct, a little loud." },
-  { id: "luc", name: "Luc", young: false, place: "the garage", image: "/sejour/places/garage.jpg", blurb: "Forty-eight, fixes scooters, short sentences, kind underneath." },
+  {
+    id: "paul",
+    name: "Paul",
+    age: 19,
+    young: true,
+    place: "the river bank",
+    image: "/sejour/places/river.jpg",
+    portrait: "/sejour/people/paul.jpg",
+    blurb: "Nineteen, landscaper's apprentice, easygoing, loves walking his dog Pistache and throwing a frisbee in the park.",
+    favoriteOuting: "parc",
+  },
+  {
+    id: "marc",
+    name: "Marc",
+    age: 22,
+    young: true,
+    place: "the football pitch",
+    image: "/sejour/places/pitch.jpg",
+    portrait: "/sejour/people/marc.jpg",
+    blurb: "Twenty-two, plays five-a-side for the village club, a bit shy until football comes up.",
+    favoriteOuting: "sport",
+  },
+  {
+    id: "chloe",
+    name: "Chloé",
+    age: 24,
+    young: true,
+    place: "the café",
+    image: "/sejour/places/cafe.jpg",
+    portrait: "/sejour/people/chloe.jpg",
+    blurb: "Twenty-four, pulls espresso at the café, collects vinyl and old French film posters, a little sarcastic.",
+    favoriteOuting: "cinema",
+  },
+  {
+    id: "luc",
+    name: "Luc",
+    age: 52,
+    young: false,
+    place: "the small garage",
+    image: "/sejour/places/garage.jpg",
+    portrait: "/sejour/people/luc.jpg",
+    blurb: "Fifty-two, mends scooters and lawnmowers at the village garage, dry humour, patient, walks in the park after work.",
+    favoriteOuting: "parc",
+  },
+  {
+    id: "henri",
+    name: "Henri",
+    age: 68,
+    young: false,
+    place: "the square",
+    image: "/sejour/places/square.jpg",
+    portrait: "/sejour/people/henri.jpg",
+    blurb: "Sixty-eight, retired postman, knows every street in Saint-Aubin and loves the old village cinema.",
+    favoriteOuting: "cinema",
+  },
 ];
 
 export const PERSON_BY_ID: Record<string, Person> = Object.fromEntries(PEOPLE.map((person) => [person.id, person]));
@@ -36,7 +87,7 @@ function mulberry32(seed: number) {
 /** Three people for the evening. Unmet ones come first, unless everyone has been met. */
 export function pickFriends(day: number, met: readonly string[]): string[] {
   const random = mulberry32(day * 997 + 13);
-  const seen = new Set(met);
+  const seen = new Set(met.filter((id) => Boolean(PERSON_BY_ID[id])));
   const unmet = PEOPLE.filter((person) => !seen.has(person.id));
   const pool = (unmet.length >= 3 ? unmet : PEOPLE).map((person) => person.id);
   const bag = [...pool];

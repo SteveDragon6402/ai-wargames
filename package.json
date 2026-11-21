@@ -4,14 +4,13 @@
   "version": "0.1.0",
   "packageManager": "pnpm@9.0.0",
   "scripts": {
-    "dev": "node scripts/kill-port.mjs 3001 && turbo run dev",
+    "dev": "node scripts/kill-port.mjs 3001 && node scripts/start-orpheus.mjs && turbo run dev",
+    "orpheus": "node scripts/start-orpheus.mjs",
     "build": "turbo run build",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "start": "turbo run start",
-    "test": "turbo run test",
-    "db:push": "pnpm --filter @wargame/db push",
-    "db:generate": "pnpm --filter @wargame/db generate"
+    "test": "turbo run test"
   },
   "devDependencies": {
     "turbo": "^2.3.3",

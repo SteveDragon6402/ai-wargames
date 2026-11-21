@@ -1,380 +1,973 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { ITEM_BY_ID } from "@/app/epicerie/data/items";
-import { linesTotal, makeChange, type Line } from "@/app/epicerie/lib/shop";
-import { pickFriends } from "../data/people";
-import { HANDOUT_IDS } from "../data/handouts";
-import { suggestRecipe, type Recipe } from "../lib/ladder";
-import { allGone, boardFor, gate, tickBoard, trainOn, type Departure } from "../lib/station";
-import { addBookPage, addPhrase, emptySave, movePhrase, parseSave, recordStudy, remember, SAVE_KEY, type Address, type Card, type Gap, type Phrase, type Save } from "../lib/save";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { Line, Turn as ShopTurn } from "@/app/epicerie/lib/shop";
+import type { BakeryItem } from "../data/bakery";
+import { PEOPLE, PERSON_BY_ID, pickFriends } from "../data/people";
+import {
+  addBookPage,
+  addPhrase,
+  emptySave,
+  LEGACY_SAVE_KEY,
+  movePhrase,
+  offerPlaces,
+  parseSave,
+  recordAssessment,
+  recordStudy,
+  recordVisit,
+  remember,
+  SAVE_KEY,
+  type Address,
+  type Gap,
+  type PendingInvite,
+  type Save,
+} from "../lib/save";
 import { stopHearing, type TalkTurn } from "../lib/voice";
+import { pendingEvent } from "../world/events";
+import { newlyPassed } from "../world/gates";
+import { GRAMMAR_BY_DAY, GRAMMAR_BY_ID, GRAMMAR_LESSONS } from "@/app/course/content/grammar";
+import type { GrammarLesson } from "@/app/course/types";
+import { hideNpcText, type ListeningMode } from "@/app/course/engine/answers";
+import { subscribeReadingAssist } from "../lib/reading";
+import { isOuting, isPlace, PLACE_INFO, PLACES, type EventId, type OutingId, type PlaceId, type SceneId } from "../world/places";
+import { basketCovers, suggestRecipe, type Recipe } from "../world/recipes";
+import { baselineRatingsFromLines, type Ratings } from "../world/skills";
+import type { StageCall } from "../world/stage";
+import { TUNING } from "../world/tuning";
+import { topUpWallet } from "../world/wallet";
+import type { ReviewLine } from "../components/Review";
 
-export type Activity = "cook" | "friending" | "restaurant" | "postcard";
-export type Phase = "intro" | "morning" | "briefing" | "depart" | "station" | "shop" | "friends" | "meal" | "postcard" | "review" | "return" | "dinner";
-type After = "next-friend" | "return" | "dinner" | "station";
+export type Phase =
+  | "arrival"
+  | "morning"
+  | "lesson"
+  | "walk"
+  | "boulangerie"
+  | "shop"
+  | "supermarche"
+  | "cooking"
+  | "homemeal"
+  | "meal"
+  | "signup"
+  | "friends"
+  | "outing"
+  | "event_family"
+  | "event_sick"
+  | "vocab"
+  | "review";
 
-export interface ReviewLine {
-  role: "you" | "gerard";
-  text: string;
-}
+type AfterReview = "morning" | "grammar" | "homemeal" | "cooking" | "next-friend" | "vocab" | "night";
 
-function load(): Save {
+function loadFromLocalStorage(): Save {
   if (typeof window === "undefined") return emptySave();
   try {
-    return parseSave(JSON.parse(localStorage.getItem(SAVE_KEY) ?? "")) ?? emptySave();
+    const rawV2 = localStorage.getItem(SAVE_KEY);
+    if (rawV2) {
+      const parsed = parseSave(JSON.parse(rawV2));
+      if (parsed) return parsed;
+    }
+    const rawV1 = localStorage.getItem(LEGACY_SAVE_KEY);
+    if (rawV1) {
+      const migrated = parseSave(JSON.parse(rawV1));
+      if (migrated) return migrated;
+    }
+    return emptySave();
   } catch {
     return emptySave();
   }
 }
 
-export function purseFor(activity: Activity, lines: Line[]): number[] {
-  if (activity === "cook") return makeChange(linesTotal(lines) + 200);
-  if (activity === "restaurant") return makeChange(3500);
-  if (activity === "friending") return makeChange(800);
-  return [];
-}
-
-export function destinationFor(activity: Activity, restaurantId: string | null, leg: "out" | "back"): string {
-  if (leg === "back") return "home";
-  if (activity === "cook") return "market";
-  if (activity === "friending") return "hall";
-  return restaurantId ?? "auberge";
+/** Auto-offer any unlocked place so unlocked places appear as clickable chips without waiting many turns. */
+function syncOfferedWithUnlocked(save: Save): Save {
+  const unlockedPlaces = PLACES.filter((p) => save.unlocked.includes(p));
+  if (!unlockedPlaces.length) return save;
+  return offerPlaces(save, unlockedPlaces);
 }
 
 export function useSejour() {
   const [save, setSave] = useState<Save>(emptySave);
   const [loaded, setLoaded] = useState(false);
-  const [phase, setPhaseState] = useState<Phase>("intro");
+  const [phase, setPhaseState] = useState<Phase>("arrival");
   const setPhase = useCallback((next: Phase) => {
     stopHearing();
     setPhaseState(next);
   }, []);
-  const [activity, setActivity] = useState<Activity | null>(null);
-  const [restaurantId, setRestaurantId] = useState<string | null>(null);
+
+  const [targetPlace, setTargetPlace] = useState<PlaceId | null>(null);
+  const [targetOuting, setTargetOuting] = useState<PendingInvite | null>(null);
+  const [activeEvent, setActiveEvent] = useState<EventId | null>(null);
   const [recipe, setRecipe] = useState<Recipe | null>(null);
-  const [purse, setPurse] = useState<number[]>([]);
-  const [leg, setLeg] = useState<"out" | "back">("out");
-  const [board, setBoard] = useState<Departure[]>([]);
-  const [wrongStop, setWrongStop] = useState<string | null>(null);
+  const [mealDish, setMealDish] = useState<{ fr: string; en: string; icon: string }>({
+    fr: "une baguette fraîche",
+    en: "fresh baguette",
+    icon: "🥖",
+  });
+  const [cashAddedNote, setCashAddedNote] = useState<number>(0);
+
+  // Pinned lesson id during the lesson phase so settling a lesson never unmounts the conversation mid-turn
+  const [activeLessonId, setActiveLessonId] = useState<string | null>(null);
+  const [lessonPracticed, setLessonPracticed] = useState(false);
+
   const [friendIds, setFriendIds] = useState<string[]>([]);
   const [friendIndex, setFriendIndex] = useState(0);
-  const [dayLog, setDayLog] = useState<string[]>([]);
+
   const [reviewLines, setReviewLines] = useState<ReviewLine[]>([]);
-  const [after, setAfter] = useState<After>("return");
+  const [reviewScene, setReviewScene] = useState<SceneId>("host");
+  const [afterReview, setAfterReview] = useState<AfterReview>("night");
+  const [newUnlocks, setNewUnlocks] = useState<string[]>([]);
+
   const [bookOpen, setBookOpen] = useState(false);
-  const [posted, setPosted] = useState<string | null>(null);
+  const [stageCall, setStageCall] = useState<StageCall | null>(null);
+  const [morningHostTurns, setMorningHostTurns] = useState(0);
+  const [sejourDayComplete, setSejourDayComplete] = useState(false);
+  const [courseDay, setCourseDay] = useState(1);
+  const [listenConfirm, setListenConfirm] = useState(false);
+  const [villageNote, setVillageNote] = useState("");
+  const [dayClose, setDayClose] = useState<null | { streak: number; previousStreak: number; examReady: boolean }>(null);
+  const [grammarDone, setGrammarDone] = useState(false);
+  const [courseReady, setCourseReady] = useState(false);
+  const [saveReady, setSaveReady] = useState(false);
+  const booted = useRef(false);
 
   useEffect(() => {
-    const stay = load();
+    const stay = syncOfferedWithUnlocked(loadFromLocalStorage());
     setSave(stay);
-    setPhase(stay.address ? "morning" : "intro");
+    setPhase(stay.address || stay.day > 0 ? "morning" : "arrival");
     setLoaded(true);
-  }, []);
+
+    fetch("/api/save?game=sejour")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.save) {
+          const remote = parseSave(data.save);
+          if (remote) {
+            if (
+              !stay.address ||
+              remote.day > stay.day ||
+              remote.assessments.length > stay.assessments.length ||
+              remote.phrases.length > stay.phrases.length
+            ) {
+              const synced = syncOfferedWithUnlocked(remote);
+              setSave(synced);
+              setPhase(synced.address || synced.day > 0 ? "morning" : "arrival");
+            }
+          }
+        }
+      })
+      .catch(() => {})
+      .finally(() => setSaveReady(true));
+
+    fetch("/api/course/today")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (typeof data?.day === "number") setCourseDay(data.day);
+        setGrammarDone(Boolean(data?.dayEntry?.grammarDoneAt));
+      })
+      .catch(() => {})
+      .finally(() => setCourseReady(true));
+  }, [setPhase]);
+
+  const openErrand = useCallback(
+    (errand: string) => {
+      const clear = (curr: Save) => ({ ...curr, errand: "" });
+      if (errand === "event_sick" || errand === "event_family") {
+        setActiveEvent(errand === "event_sick" ? "sick" : "family");
+        setSave(clear);
+        setPhase(errand);
+        return;
+      }
+      if (isOuting(errand)) {
+        setTargetOuting(save.pendingInvite?.outing === errand ? save.pendingInvite : { friendId: "paul", outing: errand });
+        setSave(clear);
+        setPhase("walk");
+        return;
+      }
+      if (isPlace(errand)) {
+        setTargetPlace(errand);
+        if (errand === "epicerie" || errand === "supermarche") setRecipe(suggestRecipe(save.cooked));
+        setSave(clear);
+        setPhase("walk");
+      }
+    },
+    [save.cooked, save.pendingInvite, setPhase],
+  );
+
+  useEffect(() => {
+    if (!loaded || !courseReady || !saveReady || booted.current) return;
+    booted.current = true;
+    if (!save.errand) return;
+    if (!grammarDone) {
+      window.location.replace("/course/grammar");
+      return;
+    }
+    openErrand(save.errand);
+  }, [loaded, courseReady, saveReady, grammarDone, save.errand, openErrand]);
+
+  useEffect(() => subscribeReadingAssist(() => {
+    setSave((curr) => (curr.readText ? curr : { ...curr, readText: true }));
+  }), []);
 
   useEffect(() => {
     if (!loaded) return;
     localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+    fetch("/api/save", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ game: "sejour", save }),
+    }).catch(() => {});
   }, [loaded, save]);
 
-  const patch = useCallback((next: Save | ((current: Save) => Save)) => {
-    setSave((current) => (typeof next === "function" ? next(current) : next));
-  }, []);
+  // Keyboard shortcut 'L' (when not typing in an input/textarea) toggles Listening Mode
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "l" && e.key !== "L") return;
+      const tag = (e.target as HTMLElement | null)?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      setSave((curr) => {
+        const hidden = hideNpcText(courseDay, "host", curr.listeningMode);
+        if (hidden) {
+          setListenConfirm(true);
+          return curr;
+        }
+        return { ...curr, listeningMode: "on", listening: true };
+      });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [courseDay]);
 
-  const reset = useCallback(() => {
-    setSave(emptySave());
-    setPhase("intro");
-    setActivity(null);
-    setRestaurantId(null);
-    setRecipe(null);
-    setPurse([]);
-    setLeg("out");
-    setBoard([]);
-    setWrongStop(null);
-    setFriendIds([]);
-    setFriendIndex(0);
-    setDayLog([]);
-    setReviewLines([]);
-    setAfter("return");
-    setBookOpen(false);
-    setPosted(null);
+  const textHidden = useCallback(
+    (scene: string) => {
+      const key = scene === "shop" ? "epicerie" : scene;
+      return hideNpcText(courseDay, scene, save.listeningMode, save.visits[key] ?? 0);
+    },
+    [courseDay, save.listeningMode, save.visits],
+  );
+
+  const toggleListening = useCallback(() => {
+    const hidden = hideNpcText(courseDay, "host", save.listeningMode);
+    if (hidden) {
+      setListenConfirm(true);
+      return;
+    }
+    setSave((curr) => ({ ...curr, listeningMode: "on", listening: true }));
+  }, [courseDay, save.listeningMode]);
+
+  const confirmListeningOff = useCallback(() => {
+    setListenConfirm(false);
+    setSave((curr) => ({ ...curr, listeningMode: "off" as ListeningMode, listening: false, readText: true }));
   }, []);
 
   const chooseAddress = useCallback((address: Address) => {
-    patch((current) => ({ ...current, address }));
-    setPhase("morning");
-  }, [patch]);
-
-  const absorbPhrases = useCallback((phrases: { fr: string; en: string }[], source: string) => {
-    patch((current) => ({
-      ...current,
-      phrases: phrases.reduce((book, phrase) => addPhrase(book, { ...phrase, source, day: current.day }), current.phrases),
-    }));
-  }, [patch]);
-
-  const addOwnPhrase = useCallback((fr: string, en: string, pageId?: string) => {
-    patch((current) => ({ ...current, phrases: addPhrase(current.phrases, { fr, en, source: "you", day: current.day, pageId: pageId || current.pages[0]?.id }) }));
-  }, [patch]);
-
-  const addPage = useCallback((title: string) => {
-    patch((current) => ({ ...current, pages: addBookPage(current.pages, title) }));
-  }, [patch]);
-
-  const movePhraseTo = useCallback((phraseId: string, pageId: string) => {
-    patch((current) => ({ ...current, phrases: movePhrase(current.phrases, phraseId, pageId) }));
-  }, [patch]);
-
-  const updateJournal = useCallback((journal: string) => {
-    patch((current) => ({ ...current, journal: journal.slice(0, 4000) }));
-  }, [patch]);
-
-  const noteStudy = useCallback((gaps: Gap[], mastered: string[]) => {
-    const allowed = new Set<string>(HANDOUT_IDS);
-    patch((current) => ({
-      ...current,
-      ...recordStudy(
-        current,
-        gaps.filter((item) => allowed.has(item.id)),
-        mastered.filter((id) => allowed.has(id)),
-      ),
-    }));
-  }, [patch]);
-
-  const note = useCallback((text: string) => {
-    setDayLog((current) => [...current, text].slice(-12));
+    setSave((curr) => ({ ...curr, address }));
   }, []);
 
-  const pick = useCallback((next: Activity) => {
-    setActivity(next);
-    setLeg("out");
-    setWrongStop(null);
-    if (next === "cook") setRecipe(suggestRecipe(save.day + 1, save.cooked));
-    else setRecipe(null);
-    if (next === "friending") {
+  const markMet = useCallback((id: string) => {
+    if (!id) return;
+    setSave((curr) => (curr.met.includes(id) ? curr : { ...curr, met: [...curr.met, id] }));
+  }, []);
+
+  const absorbPhrases = useCallback((incoming: { fr: string; en: string }[], source: string) => {
+    setSave((curr) => {
+      let phrases = curr.phrases;
+      for (const item of incoming) {
+        phrases = addPhrase(phrases, { fr: item.fr, en: item.en, source, day: curr.day + 1 });
+      }
+      return phrases === curr.phrases ? curr : { ...curr, phrases };
+    });
+  }, []);
+
+  /** Real-time check when the player speaks with Madame Rousseau so introducing yourself unlocks the first gate right away. */
+  const observeLiveConversation = useCallback((scene: SceneId, history: TalkTurn[], suggestedPlaces: PlaceId[]) => {
+    const playerLines = history.filter((t) => t.who === "you").map((t) => t.text);
+    const liveRatings = baselineRatingsFromLines(scene, playerLines, {});
+    setSave((curr) => {
+      let next = curr;
+      if (Object.keys(liveRatings).length > 0 && scene === "host" && !curr.gatesPassed.includes("intro") && (liveRatings.intro ?? 0) >= 2) {
+        next = recordAssessment(next, { scene: "host", day: curr.day, ratings: liveRatings });
+      }
+      if (suggestedPlaces.length > 0) {
+        next = offerPlaces(next, suggestedPlaces);
+      }
+      return syncOfferedWithUnlocked(next);
+    });
+  }, []);
+
+  const noteMorningTurn = useCallback(() => {
+    setMorningHostTurns((n) => n + 1);
+    setSave((curr) => {
+      if (morningHostTurns + 1 >= TUNING.nudgeTurns) {
+        return syncOfferedWithUnlocked(curr);
+      }
+      return curr;
+    });
+  }, [morningHostTurns]);
+
+  const finishArrival = useCallback(
+    (history: TalkTurn[]) => {
+      const playerLines = history.filter((t) => t.who === "you").map((t) => t.text);
+      const ratings = baselineRatingsFromLines("host", playerLines, {});
+      setSave((curr) => {
+        const beforeGates = curr.gatesPassed;
+        let next = remember(curr, "rousseau", history);
+        if (!next.address) next = { ...next, address: "bonjour" };
+        next = recordAssessment(next, { scene: "host", day: 0, ratings });
+        next = syncOfferedWithUnlocked(next);
+        const passedNow = newlyPassed(next, beforeGates);
+        if (passedNow.length > 0) {
+          const labels = passedNow.flatMap((g) => g.unlocks.map((u) => (isPlace(u) ? PLACE_INFO[u].label : g.label)));
+          setNewUnlocks([...new Set(labels)]);
+        }
+        return next;
+      });
+      if (history.some((t) => t.who === "you")) {
+        setReviewLines(history.map((t) => ({ role: t.who === "you" ? "you" : "gerard", text: t.text })));
+        setReviewScene("host");
+        setAfterReview("morning");
+        setPhase("review");
+      } else {
+        setPhase("morning");
+      }
+    },
+    [setPhase],
+  );
+
+  const pickPlace = useCallback(
+    (place: PlaceId, hostHistory: TalkTurn[]) => {
+      const nextDish = place === "epicerie" || place === "supermarche" ? suggestRecipe(save.cooked) : null;
+      setRecipe(nextDish);
+      setTargetPlace(place);
+      setTargetOuting(null);
+      setActiveEvent(null);
+      const topped = topUpWallet(save.wallet, place, nextDish);
+      setCashAddedNote(topped.added);
+      setSave((curr) => ({
+        ...remember(curr, "rousseau", hostHistory),
+        wallet: topped.wallet,
+        errand: place,
+      }));
+      setReviewLines(hostHistory.map((turn) => ({ role: turn.who === "you" ? "you" : "gerard", text: turn.text })));
+      setReviewScene("host");
+      setAfterReview("grammar");
+      setPhase("review");
+    },
+    [save, setPhase],
+  );
+
+  const pickOutingInvite = useCallback(
+    (invite: PendingInvite, hostHistory: TalkTurn[]) => {
+      setTargetOuting(invite);
+      setTargetPlace(null);
+      setActiveEvent(null);
+      const topped = topUpWallet(save.wallet, invite.outing, null);
+      setCashAddedNote(topped.added);
+      setSave((curr) => ({
+        ...remember(curr, "rousseau", hostHistory),
+        wallet: topped.wallet,
+        pendingInvite: invite,
+        errand: invite.outing,
+      }));
+      setReviewLines(hostHistory.map((turn) => ({ role: turn.who === "you" ? "you" : "gerard", text: turn.text })));
+      setReviewScene("host");
+      setAfterReview("grammar");
+      setPhase("review");
+    },
+    [save, setPhase],
+  );
+
+  const practiceSpecificLesson = useCallback(
+    (lessonId: string) => {
+      stopHearing();
+      setActiveLessonId(lessonId);
+      setLessonPracticed(false);
+      if (phase === "morning") {
+        const defaultPlace: PlaceId = save.unlocked.includes("boulangerie") ? "boulangerie" : "boulangerie";
+        setTargetPlace((curr) => curr ?? defaultPlace);
+        setPhase("lesson");
+      }
+    },
+    [phase, save.unlocked, setPhase],
+  );
+
+  const startEvent = useCallback(
+    (ev: EventId, hostHistory: TalkTurn[]) => {
+      setActiveEvent(ev);
+      setTargetPlace(null);
+      setTargetOuting(null);
+      const errand = ev === "sick" ? "event_sick" : "event_family";
+      if (ev === "sick") {
+        const topped = topUpWallet(save.wallet, "pharmacie", null);
+        setCashAddedNote(topped.added);
+        setSave((curr) => ({
+          ...remember(curr, "rousseau", hostHistory),
+          wallet: topped.wallet,
+          errand,
+        }));
+      } else {
+        setSave((curr) => ({ ...remember(curr, "rousseau", hostHistory), errand }));
+      }
+      setReviewLines(hostHistory.map((turn) => ({ role: turn.who === "you" ? "you" : "gerard", text: turn.text })));
+      setReviewScene("host");
+      setAfterReview("grammar");
+      setPhase("review");
+    },
+    [save.wallet, setPhase],
+  );
+
+  const skipCurrentLesson = useCallback((lessonId: string) => {
+    stopHearing();
+    setLessonPracticed(false);
+    setSave((curr) => {
+      const doneSet = new Set(curr.lessonsDone);
+      let nextSkipped = curr.lessonsSkipped.includes(lessonId)
+        ? curr.lessonsSkipped
+        : [...curr.lessonsSkipped, lessonId];
+      const remaining = GRAMMAR_LESSONS.filter((l) => !doneSet.has(l.id) && !nextSkipped.includes(l.id));
+      if (!remaining.length) {
+        nextSkipped = [lessonId];
+      }
+      const nextSave: Save = { ...curr, lessonsSkipped: nextSkipped };
+      const idx = GRAMMAR_LESSONS.findIndex((lesson) => lesson.id === lessonId);
+      const nextSpec = GRAMMAR_LESSONS[(idx + 1) % GRAMMAR_LESSONS.length] ?? GRAMMAR_LESSONS[0];
+      setActiveLessonId(nextSpec.id);
+      return nextSave;
+    });
+  }, []);
+
+  const toggleSkipLesson = useCallback((lessonId: string) => {
+    setSave((curr) => ({
+      ...curr,
+      lessonsSkipped: curr.lessonsSkipped.includes(lessonId)
+        ? curr.lessonsSkipped.filter((id) => id !== lessonId)
+        : [...curr.lessonsSkipped, lessonId],
+    }));
+  }, []);
+
+  const markLessonPracticed = useCallback((lessonId: string) => {
+    setLessonPracticed(true);
+    setSave((curr) => ({
+      ...curr,
+      lessonsDone: curr.lessonsDone.includes(lessonId) ? curr.lessonsDone : [...curr.lessonsDone, lessonId],
+      mastered: curr.mastered.includes(lessonId) ? curr.mastered : [...curr.mastered, lessonId],
+    }));
+  }, []);
+
+  const completeLessonAndLeave = useCallback(
+    (lessonId: string | null, history: TalkTurn[]) => {
+      const playerSpoke = history.some((t) => t.who === "you");
+      setSave((curr) => {
+        let next = remember(curr, "rousseau", history);
+        if (lessonId && (playerSpoke || lessonPracticed) && !next.lessonsDone.includes(lessonId)) {
+          next = {
+            ...next,
+            lessonsDone: [...next.lessonsDone, lessonId],
+            mastered: next.mastered.includes(lessonId) ? next.mastered : [...next.mastered, lessonId],
+          };
+        }
+        return next;
+      });
+      setActiveLessonId(null);
+      setLessonPracticed(false);
+      setPhase("walk");
+    },
+    [lessonPracticed, setPhase],
+  );
+
+  const arriveAtDestination = useCallback(() => {
+    if (targetOuting) {
+      setPhase("outing");
+      return;
+    }
+    if (targetPlace === "boulangerie") {
+      setPhase("boulangerie");
+    } else if (targetPlace === "epicerie") {
+      setPhase("shop");
+    } else if (targetPlace === "supermarche") {
+      setPhase("supermarche");
+    } else if (targetPlace === "bistro" || targetPlace === "auberge") {
+      setPhase("meal");
+    } else if (targetPlace === "speedfriending") {
       setFriendIds(pickFriends(save.day + 1, save.met));
       setFriendIndex(0);
+      setPhase("signup");
+    } else {
+      setPhase("boulangerie");
     }
-    if (next !== "restaurant") {
-      setRestaurantId(null);
-      setPhase("briefing");
-    }
-  }, [save.cooked, save.day, save.met]);
+  }, [save.day, save.met, setPhase, targetOuting, targetPlace]);
 
-  const pickPlace = useCallback((id: string) => {
-    setRestaurantId(id);
-    setPhase("briefing");
+  /** Used by Speed Friending sign-up form to save profile and enter the Speed Friending hall. */
+  const finishSignUp = useCallback(
+    (values: Record<string, string>) => {
+      setSave((curr) => ({ ...curr, formProfile: values }));
+      setPhase("friends");
+    },
+    [setPhase],
+  );
+
+  /** Used by Sport Outing sign-up form to save profile while staying inside the Outing phase. */
+  const saveFormProfile = useCallback((values: Record<string, string>) => {
+    setSave((curr) => ({ ...curr, formProfile: values }));
   }, []);
 
-  const cancelPlace = useCallback(() => {
-    setActivity(null);
-    setRestaurantId(null);
-  }, []);
+  const bakeryDone = useCallback(
+    (turns: TalkTurn[], bought: BakeryItem[], nextWallet: number[]) => {
+      const first = bought[0];
+      setMealDish({
+        fr: first?.fr ?? "une baguette tradition",
+        en: first?.en ?? "fresh baguette",
+        icon: first?.icon ?? "🥖",
+      });
+      setRecipe(null);
+      const playerLines = turns.filter((t) => t.who === "you").map((t) => t.text);
+      const ratings = baselineRatingsFromLines("boulangerie", playerLines, {});
+      setSave((curr) => {
+        const beforeGates = curr.gatesPassed;
+        let next = recordVisit(remember(curr, "martine", turns), "boulangerie");
+        next = { ...next, wallet: nextWallet };
+        if (Object.keys(ratings).length > 0) {
+          next = recordAssessment(next, { scene: "boulangerie", day: curr.day + 1, ratings });
+        }
+        next = syncOfferedWithUnlocked(next);
+        const passedNow = newlyPassed(next, beforeGates);
+        if (passedNow.length > 0) {
+          const labels = passedNow.flatMap((g) => g.unlocks.map((u) => (isPlace(u) ? PLACE_INFO[u].label : g.label)));
+          setNewUnlocks([...new Set(labels)]);
+        }
+        return next;
+      });
+      setReviewLines(turns.map((t) => ({ role: t.who === "you" ? "you" : "gerard", text: t.text })));
+      setReviewScene("boulangerie");
+      setAfterReview("vocab");
+      setPhase("review");
+    },
+    [setPhase],
+  );
 
-  const leaveBriefing = useCallback(() => {
-    if (!activity) return;
-    const lines = recipe?.lines ?? [];
-    setPurse(purseFor(activity, lines));
-    note(activity === "cook" && recipe ? `Cooking ${recipe.name}.` : `Out for ${activity}.`);
-    setPhase(activity === "postcard" ? "postcard" : "depart");
-  }, [activity, note, recipe]);
+  const shopDone = useCallback(
+    (turns: ShopTurn[], basket: Line[], nextWallet: number[]) => {
+      const placeId: PlaceId = targetPlace === "supermarche" ? "supermarche" : "epicerie";
+      const gotAll = recipe ? basketCovers(basket, recipe.lines) : false;
+      const playerLines = turns.filter((t) => t.role === "you").map((t) => t.text);
+      const ratings = baselineRatingsFromLines(placeId, playerLines, {});
+      setSave((curr) => {
+        const beforeGates = curr.gatesPassed;
+        let next = recordVisit(curr, placeId);
+        // Also count a supermarket trip toward grocery experience
+        if (placeId === "supermarche") {
+          next = recordVisit(next, "epicerie");
+        }
+        next = {
+          ...next,
+          wallet: nextWallet,
+          cooked: gotAll && recipe && !curr.cooked.includes(recipe.id) ? [...curr.cooked, recipe.id] : curr.cooked,
+        };
+        if (Object.keys(ratings).length > 0) {
+          next = recordAssessment(next, { scene: placeId, day: curr.day + 1, ratings });
+        }
+        next = syncOfferedWithUnlocked(next);
+        const passedNow = newlyPassed(next, beforeGates);
+        if (passedNow.length > 0) {
+          const labels = passedNow.flatMap((g) => g.unlocks.map((u) => (isPlace(u) ? PLACE_INFO[u].label : g.label)));
+          setNewUnlocks([...new Set(labels)]);
+        }
+        return next;
+      });
+      if (recipe) {
+        setMealDish({
+          fr: recipe.fr,
+          en: recipe.name,
+          icon: recipe.steps.at(-1)?.resultIcon ?? "🍲",
+        });
+      }
+      setReviewLines(
+        turns
+          .filter((t): t is ShopTurn & { role: "you" | "gerard" } => t.role === "you" || t.role === "gerard")
+          .map((t) => ({ role: t.role, text: t.text })),
+      );
+      setReviewScene(placeId);
+      setAfterReview("cooking");
+      setPhase("review");
+    },
+    [recipe, setPhase, targetPlace],
+  );
 
-  const goActivity = useCallback(() => {
-    if (activity === "cook") setPhase("shop");
-    else if (activity === "friending") setPhase("friends");
-    else if (activity === "restaurant") setPhase("meal");
-    else setPhase("postcard");
-  }, [activity]);
+  const cookingDone = useCallback(() => {
+    setPhase("vocab");
+  }, [setPhase]);
 
-  const goBy = useCallback((mode: "train" | "walk") => {
-    if (!activity) return;
-    if (mode === "walk") {
-      if (leg === "back") setPhase("dinner");
-      else goActivity();
+  const finishStay = useCallback(async (playerLines: string[]) => {
+    const response = await fetch("/api/course/sejour/complete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ playerLines, readingAssist: save.readText }),
+    }).catch(() => null);
+    if (!response?.ok) {
+      const body = response ? await response.json().catch(() => null) : null;
+      setVillageNote(body?.error ?? "Say something in French before this day can count.");
       return;
     }
-    setWrongStop(null);
-    setBoard(boardFor(save.day + 1, destinationFor(activity, restaurantId, leg)));
-    setPhase("station");
-  }, [activity, goActivity, leg, restaurantId, save.day]);
-
-  const waitMinute = useCallback(() => {
-    setBoard((current) => tickBoard(current));
-  }, []);
-
-  const ride = useCallback((platform: number): "ok" | "wrong" | "none" | "early" | "gone" => {
-    const train = trainOn(board, platform);
-    if (!train || !activity) return "none";
-    const door = gate(train);
-    if (door === "gone") return "gone";
-    if (door === "early") return "early";
-    const wanted = destinationFor(activity, restaurantId, leg);
-    if (train.stopId !== wanted) {
-      setWrongStop(train.stopId);
-      return "wrong";
-    }
-    setWrongStop(null);
-    if (leg === "back") setPhase("dinner");
-    else goActivity();
-    return "ok";
-  }, [activity, board, goActivity, leg, restaurantId]);
-
-  const walkFromStation = useCallback(() => {
-    setWrongStop(null);
-    if (allGone(board)) note("The trains had left, so they walked.");
-    if (leg === "back") setPhase("dinner");
-    else goActivity();
-  }, [board, goActivity, leg, note]);
-
-  const openReview = useCallback((lines: ReviewLine[], next: After) => {
-    if (!lines.some((line) => line.role === "gerard")) {
-      if (next === "next-friend") {
-        setFriendIndex((index) => index + 1);
-        setPhase("friends");
-      } else if (next === "station") {
-        setPhase("station");
-      } else if (next === "return") {
-        setLeg("back");
-        setPhase("return");
-      } else setPhase("dinner");
+    const data = await response.json().catch(() => null);
+    if (data?.needsGrammar) {
+      setVillageNote("Pass this morning's lesson before the day can count.");
       return;
     }
-    setReviewLines(lines);
-    setAfter(next);
-    setPhase("review");
-  }, []);
+    setVillageNote("");
+    if (data?.closed) {
+      setDayClose({
+        streak: Number(data.streak) || 1,
+        previousStreak: Number(data.previousStreak) || 0,
+        examReady: Boolean(data.examReady),
+      });
+    }
+  }, [save.readText]);
 
-  const toReview = useCallback((turns: TalkTurn[], next: After) => {
-    openReview(
-      turns.filter((turn) => turn.text.trim()).map((turn) => ({ role: turn.who === "them" ? "gerard" : "you", text: turn.text })),
-      next,
-    );
-  }, [openReview]);
+  const homeMealDone = useCallback(
+    (turns: TalkTurn[]) => {
+      setSave((curr) => syncOfferedWithUnlocked(remember(curr, "rousseau", turns)));
+      setReviewLines(turns.map((turn) => ({ role: turn.who === "you" ? "you" : "gerard", text: turn.text })));
+      setReviewScene("meal");
+      setAfterReview("night");
+      setPhase("review");
+    },
+    [setPhase],
+  );
 
-  const shopDone = useCallback((turns: { role: string; text: string }[], basket: Line[], nextPurse: number[]) => {
-    setPurse(nextPurse);
-    const bought = basket.map((line) => `${line.qty} × ${ITEM_BY_ID[line.itemId]?.en ?? line.itemId}`).join(", ");
-    note(bought ? `Came home with ${bought}.` : "Came home from the shop with nothing.");
-    openReview(
-      turns.filter((turn) => turn.role === "you" || turn.role === "gerard").map((turn) => ({
-        role: turn.role === "gerard" ? "gerard" : "you",
-        text: turn.text,
-      })),
-      "return",
-    );
-  }, [note, openReview]);
+  const restaurantDone = useCallback(
+    (turns: TalkTurn[], nextWallet: number[]) => {
+      const placeId = targetPlace === "auberge" ? "auberge" : "bistro";
+      const playerLines = turns.filter((t) => t.who === "you").map((t) => t.text);
+      const ratings = baselineRatingsFromLines(placeId, playerLines, {});
+      setSave((curr) => {
+        const beforeGates = curr.gatesPassed;
+        let next = recordVisit(remember(curr, placeId, turns), placeId);
+        next = { ...next, wallet: nextWallet };
+        if (Object.keys(ratings).length > 0) {
+          next = recordAssessment(next, { scene: placeId, day: curr.day + 1, ratings });
+        }
+        next = syncOfferedWithUnlocked(next);
+        const passedNow = newlyPassed(next, beforeGates);
+        if (passedNow.length > 0) {
+          const labels = passedNow.flatMap((g) => g.unlocks.map((u) => (isPlace(u) ? PLACE_INFO[u].label : g.label)));
+          setNewUnlocks([...new Set(labels)]);
+        }
+        return next;
+      });
+      setReviewLines(turns.map((t) => ({ role: t.who === "you" ? "you" : "gerard", text: t.text })));
+      setReviewScene(placeId);
+      setAfterReview("vocab");
+      setPhase("review");
+    },
+    [setPhase, targetPlace],
+  );
 
-  const friendDone = useCallback((personId: string, turns: TalkTurn[]) => {
-    patch((current) => remember(current, personId, turns, true));
-    note(`Talked with ${personId}.`);
-    const more = friendIndex < friendIds.length - 1;
-    toReview(turns, more ? "next-friend" : "return");
-  }, [friendIds.length, friendIndex, note, patch, toReview]);
+  const friendDone = useCallback(
+    (personId: string, turns: TalkTurn[], invitedOuting?: OutingId | null) => {
+      const person = PERSON_BY_ID[personId];
+      const playerLines = turns.filter((t) => t.who === "you").map((t) => t.text);
+      const ratings = baselineRatingsFromLines("speedfriending", playerLines, {});
+      setSave((curr) => {
+        const beforeGates = curr.gatesPassed;
+        let next = remember(curr, personId, turns, true);
+        if (Object.keys(ratings).length > 0) {
+          next = recordAssessment(next, { scene: "speedfriending", day: curr.day + 1, ratings });
+        }
+        next = syncOfferedWithUnlocked(next);
+        if (invitedOuting && person) {
+          next = { ...next, pendingInvite: { friendId: personId, outing: invitedOuting } };
+        }
+        const passedNow = newlyPassed(next, beforeGates);
+        if (passedNow.length > 0) {
+          const labels = passedNow.flatMap((g) => g.unlocks.map((u) => (isPlace(u) ? PLACE_INFO[u].label : g.label)));
+          setNewUnlocks([...new Set(labels)]);
+        }
+        return next;
+      });
+      setReviewLines(turns.map((t) => ({ role: t.who === "you" ? "you" : "gerard", text: t.text })));
+      setReviewScene("speedfriending");
+      setAfterReview(friendIndex + 1 < friendIds.length ? "next-friend" : "vocab");
+      setPhase("review");
+    },
+    [friendIds.length, friendIndex, setPhase],
+  );
 
-  const mealDone = useCallback((turns: TalkTurn[], nextPurse: number[]) => {
-    setPurse(nextPurse);
-    if (restaurantId) patch((current) => remember(current, restaurantId, turns));
-    note(`Ate at ${restaurantId ?? "a restaurant"}.`);
-    toReview(turns, "return");
-  }, [note, patch, restaurantId, toReview]);
+  const outingDone = useCallback(
+    (turns: TalkTurn[]) => {
+      const outingId = targetOuting?.outing ?? "parc";
+      const friendId = targetOuting?.friendId ?? "paul";
+      const playerLines = turns.filter((t) => t.who === "you").map((t) => t.text);
+      const ratings = baselineRatingsFromLines(outingId, playerLines, {});
+      setSave((curr) => {
+        const beforeGates = curr.gatesPassed;
+        let next = recordVisit(remember(curr, friendId, turns, true), outingId);
+        next = recordAssessment(next, { scene: outingId, day: curr.day + 1, ratings });
+        next = syncOfferedWithUnlocked(next);
+        const passedNow = newlyPassed(next, beforeGates);
+        if (passedNow.length > 0) {
+          const labels = passedNow.flatMap((g) => g.unlocks.map((u) => (isPlace(u) ? PLACE_INFO[u].label : g.label)));
+          setNewUnlocks([...new Set(labels)]);
+        }
+        return next;
+      });
+      setReviewLines(turns.map((t) => ({ role: t.who === "you" ? "you" : "gerard", text: t.text })));
+      setReviewScene(outingId);
+      setAfterReview("vocab");
+      setPhase("review");
+    },
+    [setPhase, targetOuting],
+  );
 
-  const cardSent = useCallback((card: Omit<Card, "id" | "day">) => {
-    patch((current) => ({
-      ...current,
-      cards: [...current.cards, { ...card, id: `card-${current.cards.length}`, day: current.day }],
-    }));
-    note("Sent a postcard.");
-    setPosted(card.text.trim());
-  }, [note, patch]);
+  const familyEventDone = useCallback(
+    (turns: TalkTurn[]) => {
+      const playerLines = turns.filter((t) => t.who === "you").map((t) => t.text);
+      const ratings = baselineRatingsFromLines("family", playerLines, {});
+      setSave((curr) => {
+        const beforeGates = curr.gatesPassed;
+        const withHost = remember(curr, "rousseau", turns);
+        const withCamille = remember(withHost, "camille", turns, true);
+        let next: Save = {
+          ...withCamille,
+          eventsDone: withCamille.eventsDone.includes("family")
+            ? withCamille.eventsDone
+            : [...withCamille.eventsDone, "family"],
+        };
+        next = recordAssessment(next, { scene: "family", day: curr.day + 1, ratings });
+        next = syncOfferedWithUnlocked(next);
+        const passedNow = newlyPassed(next, beforeGates);
+        if (passedNow.length > 0) {
+          const labels = passedNow.flatMap((g) => g.unlocks.map((u) => (isPlace(u) ? PLACE_INFO[u].label : g.label)));
+          setNewUnlocks([...new Set(labels)]);
+        }
+        return next;
+      });
+      setMealDish({ fr: "un poulet rôti en famille", en: "roast chicken at the family table", icon: "🍗" });
+      setReviewLines(turns.map((t) => ({ role: t.who === "you" ? "you" : "gerard", text: t.text })));
+      setReviewScene("family");
+      setAfterReview("vocab");
+      setPhase("review");
+    },
+    [setPhase],
+  );
 
-  const finishPostcard = useCallback(() => {
-    const text = posted ?? "";
-    setPosted(null);
-    toReview(text ? [{ who: "you", text }, { who: "them", text: "La carte est dans la boîte." }] : [], "dinner");
-  }, [posted, toReview]);
+  const sickEventDone = useCallback(
+    (turns: TalkTurn[], nextWallet: number[]) => {
+      const playerLines = turns.filter((t) => t.who === "you").map((t) => t.text);
+      const ratings = baselineRatingsFromLines("pharmacie", playerLines, {});
+      setSave((curr) => {
+        let next = recordVisit(remember(curr, "pharmacien", turns), "pharmacie");
+        next = {
+          ...next,
+          wallet: nextWallet,
+          eventsDone: curr.eventsDone.includes("sick") ? curr.eventsDone : [...curr.eventsDone, "sick"],
+        };
+        next = recordAssessment(next, { scene: "pharmacie", day: curr.day + 1, ratings });
+        return syncOfferedWithUnlocked(next);
+      });
+      setReviewLines(turns.map((t) => ({ role: t.who === "you" ? "you" : "gerard", text: t.text })));
+      setReviewScene("pharmacie");
+      setAfterReview("vocab");
+      setPhase("review");
+    },
+    [setPhase],
+  );
 
-  const stationTalk = useCallback((personId: string, turns: TalkTurn[]) => {
-    patch((current) => remember(current, personId, turns));
-    note("Asked at the station.");
-    toReview(turns, "station");
-  }, [note, patch, toReview]);
+  const noteStudy = useCallback(
+    (gaps: Gap[], mastered: string[], ratings: Ratings = {}) => {
+      setSave((curr) => {
+        const beforeGates = curr.gatesPassed;
+        const studied = recordStudy(curr, gaps, mastered);
+        let next: Save = {
+          ...curr,
+          gaps: studied.gaps,
+          mastered: studied.mastered,
+          lessonsDone: [...new Set([...curr.lessonsDone, ...studied.mastered])],
+        };
+        if (Object.keys(ratings).length > 0) {
+          next = recordAssessment(next, { scene: reviewScene, day: curr.day + 1, ratings });
+        }
+        next = syncOfferedWithUnlocked(next);
+        const passedNow = newlyPassed(next, beforeGates);
+        if (passedNow.length > 0) {
+          const labels = passedNow.flatMap((g) =>
+            g.unlocks.map((u) => (isPlace(u) ? PLACE_INFO[u].label : g.label)),
+          );
+          setNewUnlocks((prev) => [...new Set([...prev, ...labels])]);
+        }
+        return next;
+      });
+    },
+    [reviewScene],
+  );
 
   const reviewDone = useCallback(() => {
-    if (after === "next-friend") {
-      setFriendIndex((index) => index + 1);
+    setNewUnlocks([]);
+    if (afterReview === "morning") {
+      setMorningHostTurns(0);
+      setPhase("morning");
+      return;
+    }
+    if (afterReview === "grammar") {
+      void fetch("/api/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ game: "sejour", save }),
+      })
+        .catch(() => {})
+        .finally(() => {
+          window.location.assign("/course/grammar");
+        });
+      return;
+    }
+    if (afterReview === "vocab") {
+      setSave((curr) => ({ ...curr, errand: "" }));
+      setPhase("vocab");
+      return;
+    }
+    if (afterReview === "cooking") {
+      setPhase("cooking");
+      return;
+    }
+    if (afterReview === "homemeal") {
+      setPhase("homemeal");
+      return;
+    }
+    if (afterReview === "next-friend") {
+      setFriendIndex((idx) => idx + 1);
       setPhase("friends");
       return;
     }
-    if (after === "station") {
-      setPhase("station");
-      return;
-    }
-    if (after === "dinner") setPhase("dinner");
-    else {
-      setLeg("back");
-      setPhase("return");
-    }
-  }, [after]);
+    // End of day -> advance day and wake up next morning
+    setSave((curr) => ({ ...curr, errand: "", drill: [] }));
+    const playerLines = reviewLines.filter((line) => line.role === "you").map((line) => line.text);
+    void finishStay(playerLines);
+  }, [afterReview, finishStay, reviewLines, save, setPhase]);
 
-  const dinnerDone = useCallback((turns: TalkTurn[]) => {
-    patch((current) => {
-      let next = remember(current, "rousseau", turns);
-      if (activity === "cook" && recipe && !next.cooked.includes(recipe.id)) next = { ...next, cooked: [...next.cooked, recipe.id] };
-      return { ...next, day: next.day + 1 };
+  const rememberDrill = useCallback((phrases: { fr: string; en: string }[]) => {
+    if (!phrases.length) return;
+    setSave((curr) => {
+      const seen = new Set(curr.drill.map((item) => item.fr));
+      const next = [...curr.drill];
+      for (const phrase of phrases) {
+        if (!phrase.fr || seen.has(phrase.fr)) continue;
+        seen.add(phrase.fr);
+        next.push(phrase);
+      }
+      return { ...curr, drill: next.slice(0, 8) };
     });
-    setActivity(null);
-    setRecipe(null);
-    setDayLog([]);
-    setPhase("morning");
-  }, [activity, patch, recipe]);
+  }, []);
 
-  const keep = useCallback((personId: string, turns: TalkTurn[]) => {
-    if (!turns.length) return;
-    patch((current) => remember(current, personId, turns));
-  }, [patch]);
+  const addOwnPhrase = useCallback((fr: string, en: string, pageId?: string) => {
+    setSave((curr) => ({
+      ...curr,
+      phrases: addPhrase(curr.phrases, { fr, en, source: "you", day: curr.day + 1, pageId }),
+    }));
+  }, []);
+
+  const addPage = useCallback((title: string) => {
+    setSave((curr) => ({ ...curr, pages: addBookPage(curr.pages, title) }));
+  }, []);
+
+  const movePhraseTo = useCallback((phraseId: string, pageId: string) => {
+    setSave((curr) => ({ ...curr, phrases: movePhrase(curr.phrases, phraseId, pageId) }));
+  }, []);
+
+  const updateJournal = useCallback((journal: string) => {
+    setSave((curr) => ({ ...curr, journal: journal.slice(0, 4000) }));
+  }, []);
+
+  const reset = useCallback(() => {
+    stopHearing();
+    localStorage.removeItem(SAVE_KEY);
+    localStorage.removeItem(LEGACY_SAVE_KEY);
+    fetch("/api/save?game=sejour", { method: "DELETE" }).catch(() => {});
+    setSave(emptySave());
+    setTargetPlace(null);
+    setTargetOuting(null);
+    setActiveEvent(null);
+    setRecipe(null);
+    setActiveLessonId(null);
+    setLessonPracticed(false);
+    setFriendIds([]);
+    setFriendIndex(0);
+    setReviewLines([]);
+    setNewUnlocks([]);
+    setMorningHostTurns(0);
+    setPhase("arrival");
+  }, [setPhase]);
+
+  const currentLesson: GrammarLesson =
+    (activeLessonId ? GRAMMAR_BY_ID[activeLessonId] : undefined) ??
+    GRAMMAR_BY_DAY[Math.max(1, Math.min(28, courseDay))] ??
+    GRAMMAR_LESSONS[0];
+  const availableEvent = pendingEvent(save.unlocked, save.eventsDone, save.day);
+  const inviteFriends = PEOPLE.filter((p) => save.met.includes(p.id));
 
   return {
-    loaded,
     save,
+    loaded,
     phase,
-    activity,
-    restaurantId,
+    setPhase,
+    targetPlace,
+    targetOuting,
+    activeEvent,
     recipe,
-    purse,
-    leg,
-    board,
-    wrongStop,
+    mealDish,
+    cashAddedNote,
     friendIds,
     friendIndex,
-    dayLog,
     reviewLines,
-    after,
+    reviewScene,
+    newUnlocks,
     bookOpen,
     setBookOpen,
+    stageCall,
+    setStageCall,
+    currentLesson,
+    lessonPracticed,
+    availableEvent,
+    inviteFriends,
+    sejourDayComplete,
+    setSejourDayComplete,
+    courseDay,
+    textHidden,
+    listenConfirm,
+    setListenConfirm,
+    confirmListeningOff,
+    villageNote,
+    dayClose,
+    toggleListening,
     chooseAddress,
-    reset,
+    markMet,
     absorbPhrases,
+    observeLiveConversation,
+    noteMorningTurn,
+    finishArrival,
+    pickPlace,
+    pickOutingInvite,
+    practiceSpecificLesson,
+    startEvent,
+    skipCurrentLesson,
+    toggleSkipLesson,
+    markLessonPracticed,
+    completeLessonAndLeave,
+    arriveAtDestination,
+    finishSignUp,
+    saveFormProfile,
+    bakeryDone,
+    shopDone,
+    cookingDone,
+    homeMealDone,
+    restaurantDone,
+    friendDone,
+    outingDone,
+    familyEventDone,
+    sickEventDone,
+    noteStudy,
+    rememberDrill,
+    reviewDone,
     addOwnPhrase,
     addPage,
     movePhraseTo,
     updateJournal,
-    noteStudy,
-    pick,
-    pickPlace,
-    cancelPlace,
-    leaveBriefing,
-    goBy,
-    waitMinute,
-    ride,
-    stationTalk,
-    walkFromStation,
-    shopDone,
-    friendDone,
-    mealDone,
-    cardSent,
-    finishPostcard,
-    reviewDone,
-    dinnerDone,
-    keep,
-    phrases: save.phrases as Phrase[],
+    reset,
   };
 }

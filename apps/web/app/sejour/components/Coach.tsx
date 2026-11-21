@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { HANDOUT_BY_ID } from "../data/handouts";
-import type { ReviewLine } from "../hooks/useSejour";
+import type { ReviewLine } from "./Review";
 import { Wait } from "./Wait";
 
 interface CoachTurn {

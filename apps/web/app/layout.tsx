@@ -25,8 +25,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "The Riverlands Campaign",
-  description: "AI-adjudicated wargame — The North vs The Westerlands",
+  title: "French Immersion Games",
+  description: "L'Épicerie & Le Séjour — interactive French language immersion",
 };
 
 export default function RootLayout({

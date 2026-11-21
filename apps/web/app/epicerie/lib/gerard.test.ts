@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { basketSheet, cleanLine, counterSheet, describeTurn, forSpeech, neutralGesture, persona, spokenFromText } from "./gerard";
+import { basketSheet, cleanLine, counterSheet, describeTurn, forSpeech, neutralGesture, persona, refuseHandOver, refuseRingUp, spokenFromText } from "./gerard";
 
 describe("what Gérard hears", () => {
   it("describes pointing, gestures and silence", () => {
@@ -51,6 +51,20 @@ describe("what Gérard hears", () => {
     assert.match(persona({ notes: [], visits: 0, address: "unknown" }), /never seen this customer/);
     assert.match(text, /show_the_door/);
     assert.doesNotMatch(text, /how can I help/i);
+  });
+});
+
+describe("the sale starts when they ask", () => {
+  const hello = [{ role: "you" as const, text: "Bonjour" }];
+
+  it("does not lay out the list, or ask for money, on a greeting", () => {
+    assert.match(refuseHandOver("butter", 1, hello) ?? "", /not an order/);
+    assert.match(refuseHandOver("butter", 2, [{ role: "you", text: "Je voudrais du beurre" }]) ?? "", /Combien/);
+    assert.equal(refuseHandOver("butter", 1, [{ role: "you", text: "Je voudrais du beurre" }]), null);
+    assert.equal(refuseHandOver("butter", 2, [{ role: "you", text: "deux beurres, s'il vous plaît" }]), null);
+    assert.equal(refuseHandOver("honey", 1, [{ role: "you", text: "Bonjour", pointed: "honey" }]), null);
+    assert.match(refuseRingUp(hello) ?? "", /still choosing/);
+    assert.equal(refuseRingUp([{ role: "you", text: "C'est tout, merci" }]), null);
   });
 });
 

@@ -5,6 +5,13 @@ import { looksFrench } from "@/app/epicerie/lib/french";
 import { hear } from "../lib/voice";
 import type { Phrase } from "../lib/save";
 
+let reviewAsk: ((text: string) => void) | null = null;
+
+/** The review registers this so a highlight can be quoted. */
+export function bindReviewAsk(next: ((text: string) => void) | null) {
+  reviewAsk = next;
+}
+
 interface SelectionMenuProps {
   phrases: Phrase[];
   onAdd: (fr: string, en: string) => void;
@@ -17,6 +24,7 @@ interface Pick {
   /** Sit above the line, growing upward, so the words stay visible. */
   above: boolean;
   edge: number;
+  ask: boolean;
 }
 
 const VOICES = new Set([
@@ -38,7 +46,18 @@ const VOICES = new Set([
   "yves",
   "nadine",
   "luc",
+  "martine",
+  "pharmacien",
+  "camille",
+  "theo",
+  "pistache",
+  "caissiere",
 ]);
+
+function inReview(node: Node): boolean {
+  const element = node instanceof Element ? node : node.parentElement;
+  return Boolean(element?.closest("[aria-label='Review'], [aria-label='How it went']"));
+}
 
 function voiceOf(node: Node): string {
   const element = node instanceof Element ? node : node.parentElement;
@@ -54,7 +73,7 @@ function readPick(): Pick | null | undefined {
     const text = active.value.slice(active.selectionStart ?? 0, active.selectionEnd ?? 0).replace(/\s+/g, " ").trim();
     if (text.length < 2 || text.length > 280) return null;
     const rect = active.getBoundingClientRect();
-    return place(text, voiceOf(active), rect);
+    return place(text, voiceOf(active), rect, false);
   }
   const selection = window.getSelection();
   if (!selection || selection.isCollapsed || !selection.anchorNode || selection.rangeCount === 0) return null;
@@ -63,14 +82,14 @@ function readPick(): Pick | null | undefined {
   if (text.length < 2 || text.length > 280) return null;
   const rect = selection.getRangeAt(0).getBoundingClientRect();
   if (!rect.width && !rect.height) return null;
-  return place(text, voiceOf(selection.anchorNode), rect);
+  return place(text, voiceOf(selection.anchorNode), rect, inReview(selection.anchorNode));
 }
 
-function place(text: string, voice: string, rect: DOMRect): Pick {
+function place(text: string, voice: string, rect: DOMRect, ask: boolean): Pick {
   const above = rect.top > 160;
   const width = Math.min(440, window.innerWidth - 16);
   const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
-  return { text, voice, left, above, edge: above ? window.innerHeight - rect.top + 8 : rect.bottom + 8 };
+  return { text, voice, left, above, edge: above ? window.innerHeight - rect.top + 8 : rect.bottom + 8, ask };
 }
 
 async function translate(text: string): Promise<{ fr: string; en: string } | { error: string }> {
@@ -192,6 +211,11 @@ export function SelectionMenu({ phrases, onAdd }: SelectionMenuProps) {
         >
           Add to phrasebook
         </button>
+        {pick.ask && reviewAsk ? (
+          <button type="button" className="ep-button ep-primary" onClick={() => reviewAsk?.(pick.text)}>
+            Ask about this
+          </button>
+        ) : null}
         </div>
       </div>
       {note ? (

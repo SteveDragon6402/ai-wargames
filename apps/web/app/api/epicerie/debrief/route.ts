@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type Anthropic from "@anthropic-ai/sdk";
-import { anthropicClient, createMessage, toolUses } from "../../mercenary/model";
+import { anthropicClient, createMessage, toolUses } from "@/lib/anthropic";
 import { ITEM_BY_ID } from "@/app/epicerie/data/items";
 import { GESTURES, isGesture } from "@/app/epicerie/lib/gerard";
 import { labelForLine, phrasesBuriedIn, reviewProse, type LineLabel } from "@/app/epicerie/lib/french";
@@ -85,7 +85,7 @@ const TOOL: Anthropic.Tool = {
 };
 
 const ADDRESS =
-  "Vous is for Gérard, Madame Rousseau, waiters, the conductor and anyone older. Never tell the player to use tu with Gérard because he was friendly. Tu is only for a young person at speed friending who already used tu. If they used tu where vous was needed, the note says to use vous, and gaps includes id vous. en on every yours entry is the English of the player's own line. gaps lists handout ids this scene showed they need. mastered lists ids they handled. Use only: je, articles, voudrais, negation, questions, please, etre, vous, verbs.";
+  "Vous is for Gérard, Madame Rousseau, waiters, the conductor and anyone older. Never tell the player to use tu with Gérard because he was friendly. Tu is only for a young person at speed friending who already used tu. If they used tu where vous was needed, the note says to use vous, and gaps includes id vous. en on every yours entry is the English of the player's own line. gaps lists handout ids this scene showed they still need. If they corrected a mistake in this scene, put that id only in mastered, not in gaps. mastered lists ids they handled. Use only: je, articles, voudrais, negation, questions, please, etre, vous, verbs.";
 
 function asArray<T>(value: unknown): T[] {
   if (Array.isArray(value)) return value.filter((item) => item && typeof item === "object") as T[];

@@ -6,7 +6,8 @@ import { ITEM_BY_ID, itemIcon } from "../data/items";
 import type { DayList } from "../data/lists";
 import { labelForLine, phrasesBuriedIn, reviewProse, type LineLabel } from "../lib/french";
 import { GESTURES, isGesture } from "../lib/gerard";
-import { formatEuros, listProgress, type Turn } from "../lib/shop";
+import { eurosInWords } from "../lib/money-words";
+import { listProgress, type Turn } from "../lib/shop";
 import { canSpeak, speakFrench } from "../lib/voice";
 import type { Visit } from "../hooks/useEpicerie";
 import { HearSelection } from "./HearSelection";
@@ -105,7 +106,7 @@ export function Debrief({
           {complete ? "Everything on the list." : `${done} of ${progress.length} on the list.`}
         </h1>
         <p className="mt-2 text-[17px] text-[var(--ep-cream)]/80">
-          You spent <span className="tabular-nums">{formatEuros(visit.spent)}</span>.
+          You spent {eurosInWords(visit.spent)}.
         </p>
 
         <section className="ep-paper mt-8 rounded-md p-5" aria-label="How the visit went">

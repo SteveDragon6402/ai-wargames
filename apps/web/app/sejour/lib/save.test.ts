@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { addBookPage, addPhrase, emptySave, movePhrase, parseSave, recordStudy } from "./save";
+import { addBookPage, addPhrase, emptySave, movePhrase, offerPlaces, parseSave, recordAssessment, recordStudy, recordVisit } from "./save";
 
 describe("the phrasebook", () => {
   it("keeps a French line and refuses one that is not French", () => {
@@ -20,19 +20,59 @@ describe("the phrasebook", () => {
 });
 
 describe("the homestay save", () => {
-  it("reads a stay and refuses the shop's save", () => {
+  it("migrates v1, reads v2, and refuses the shop's save", () => {
     const save = { ...emptySave(), day: 2, address: "madame" as const, cooked: ["eggs"] };
     assert.equal(parseSave(save)?.day, 2);
-    assert.equal(parseSave({ version: 1, address: "monsieur", day: 0, visits: 3 })?.day, 0);
-    assert.equal(parseSave({ version: 1, day: 0, cards: [{ id: "a", day: 0, text: "Salut", strokes: [[0, 0, 10, 10]] }] })?.cards.length, 1);
+    assert.equal(parseSave(save)?.version, 2);
+    // Migrates v1
+    const fromV1 = parseSave({ version: 1, address: "monsieur", day: 3, phrases: [{ id: "1", fr: "Salut.", en: "Hi.", source: "you", day: 1 }] });
+    assert.equal(fromV1?.version, 2);
+    assert.equal(fromV1?.address, "monsieur");
+    assert.equal(fromV1?.phrases.length, 1);
+    // Rejects shop save (has numeric visits + carnet)
+    assert.equal(parseSave({ version: 1, address: "monsieur", day: 0, visits: 3, carnet: [] }), null);
     assert.equal(parseSave(null), null);
-    assert.equal(parseSave({ version: 2, day: 0 }), null);
+    assert.equal(parseSave({ version: 99, day: 0 }), null);
     assert.equal(parseSave({ version: 1, day: -1 }), null);
-    assert.deepEqual(parseSave({ version: 1, day: 0 })?.gaps, []);
-    assert.deepEqual(parseSave({ version: 1, day: 0 })?.mastered, []);
     const studied = recordStudy(emptySave(), [{ id: "vous", note: "tu with the shopkeeper" }], ["je"]);
     assert.deepEqual(studied.mastered, ["je"]);
     assert.equal(studied.gaps[0]?.id, "vous");
     assert.deepEqual(recordStudy({ ...emptySave(), gaps: studied.gaps, mastered: studied.mastered }, [], ["vous"]).gaps, []);
+  });
+
+  it("unlocks places through assessments and only offers unlocked places", () => {
+    let save = emptySave();
+    assert.ok(save.unlocked.includes("boulangerie"));
+    save = offerPlaces(save, ["boulangerie", "epicerie"]);
+    assert.deepEqual(save.offered, ["boulangerie"]);
+
+    save = recordAssessment(save, { scene: "host", day: 0, ratings: { intro: 2 } });
+    assert.ok(save.unlocked.includes("boulangerie"));
+    assert.ok(!save.unlocked.includes("speedfriending"));
+
+    save = recordAssessment(save, { scene: "boulangerie", day: 1, ratings: { ordering: 2 } });
+    assert.ok(save.unlocked.includes("epicerie"));
+    assert.ok(save.unlocked.includes("speedfriending"));
+    save = offerPlaces(save, ["boulangerie", "epicerie"]);
+    assert.ok(save.offered.includes("boulangerie"));
+    assert.ok(save.offered.includes("epicerie"));
+
+    save = recordVisit(save, "epicerie");
+    assert.ok(save.unlocked.includes("bistro"));
+    assert.ok(!save.unlocked.includes("supermarche"));
+  });
+
+  it("keeps grammar lesson ids and remembers when the learner read the words", () => {
+    const parsed = parseSave({
+      ...emptySave(),
+      listeningMode: "off",
+      readText: true,
+      gaps: [{ id: "w3d17_questions_est_ce_que", note: "Ask with est-ce que." }],
+    });
+    assert.equal(parsed?.listeningMode, "off");
+    assert.equal(parsed?.listening, false);
+    assert.equal(parsed?.readText, true);
+    assert.equal(parsed?.gaps[0]?.id, "w3d17_questions_est_ce_que");
+    assert.equal(parseSave({ ...emptySave(), listening: true })?.listeningMode, "on");
   });
 });

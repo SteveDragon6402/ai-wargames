@@ -4,8 +4,6 @@ import { resolve } from "node:path";
 
 config({ path: resolve(__dirname, "../../.env") });
 
-const nextConfig: NextConfig = {
-  serverExternalPackages: ["postgres", "@wargame/db"],
-};
+const nextConfig: NextConfig = {};
 
 export default nextConfig;

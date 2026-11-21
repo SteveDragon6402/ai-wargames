@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { eurosInWords } from "../lib/money-words";
 import {
   SAVE_KEY,
   addNote,
@@ -71,10 +72,35 @@ export function useEpicerie() {
     const loaded = parseSave(window.localStorage.getItem(SAVE_KEY));
     setSave(loaded);
     setPhase(loaded.session ? "shop" : "intro");
+
+    // Sync with persistent local database on localhost
+    fetch("/api/save?game=epicerie")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.save) {
+          const raw = typeof data.save === "string" ? data.save : JSON.stringify(data.save);
+          const remote = parseSave(raw);
+          if (remote) {
+            if (remote.visits > loaded.visits || remote.day > loaded.day || remote.carnet.length > loaded.carnet.length) {
+              setSave(remote);
+              saveRef.current = remote;
+              setPhase(remote.session ? "shop" : "intro");
+            }
+          }
+        }
+      })
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
-    if (save) window.localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+    if (save) {
+      window.localStorage.setItem(SAVE_KEY, JSON.stringify(save));
+      fetch("/api/save", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ game: "epicerie", save }),
+      }).catch(() => {});
+    }
   }, [save]);
 
   useEffect(() => {
@@ -205,7 +231,7 @@ export function useEpicerie() {
         if (result.reason !== "short" || session.till === null) return false;
         void talk({
           role: "event",
-          text: `You put down ${formatEuros(result.paid)}. It is not enough, and he pushes the money back.`,
+          text: `You put down ${eurosInWords(result.paid)}. It is not enough, and he pushes the money back.`,
         });
         return true;
       }
@@ -222,7 +248,7 @@ export function useEpicerie() {
       commit({ ...(saveRef.current as Save), session: next });
       void talk({
         role: "event",
-        text: `You hand over ${formatEuros(result.paid)}. ${change ? `He gives you ${formatEuros(change)} change.` : "Exact money."} The shopping goes into your bag.`,
+        text: `You hand over ${eurosInWords(result.paid)}. ${change ? `He gives you ${formatEuros(change)} change.` : "Exact money."} The shopping goes into your bag.`,
       });
       return true;
     },
@@ -281,6 +307,7 @@ export function useEpicerie() {
   const resetAll = useCallback(() => {
     stopSpeaking();
     window.localStorage.removeItem(SAVE_KEY);
+    fetch("/api/save?game=epicerie", { method: "DELETE" }).catch(() => {});
     commit(parseSave(null));
     setVisit(null);
     setProblem(null);

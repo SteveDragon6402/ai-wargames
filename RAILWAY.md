@@ -144,3 +144,48 @@ The project uses App Router but needs `pages/_error.tsx`, `pages/_document.tsx`,
 ## Adding New Scenarios
 
 Scenarios live in `scenarios/<name>/` as JSON files (`map.json`, `scenario.json`, `wiki.json`). They are included in the Railway build automatically since they are tracked in git. No Railway config changes are needed — just push the new scenario files.
+
+
+---
+
+## Le Séjour (4-Week French Curriculum) — Railway & Google Auth Setup
+
+`Le Séjour` (`apps/web`) runs inside the `web` service and automatically stores all multi-user accounts, invite codes, 4-week curriculum state, SRS vocabulary progress, and Teacher Bot notes in PostgreSQL (`sejour_app_store` table, auto-created on first request when `DATABASE_URL` is set).
+
+### 1. Required Railway Variables on `web`
+Add these in Railway → `web` service → **Variables**:
+
+```env
+DATABASE_URL         = ${{Postgres.DATABASE_URL}}
+AUTH_SECRET          = <any 32+ character random string>
+ADMIN_EMAILS         = <your-google-email@gmail.com>
+ADMIN_PASSWORD       = <your-admin-password>
+
+# LLM (set one or both — Anthropic primary, Mistral automatic fallback)
+ANTHROPIC_API_KEY    = <your Anthropic key>
+MISTRAL_API_KEY      = <your Mistral key>
+
+# Voice TTS (ElevenLabs primary; optional Orpheus endpoint fallback)
+ELEVENLABS_API_KEY   = <your ElevenLabs key>
+```
+
+### 2. Google OAuth 2.0 Setup (5 minutes)
+1. Open [Google Cloud Console → Credentials](https://console.cloud.google.com/apis/credentials).
+2. Click **Create Credentials → OAuth client ID** (Web application).
+3. Under **Authorized JavaScript origins**, add:
+   - `http://localhost:3000`
+   - `https://<your-web-domain>.up.railway.app`
+4. Under **Authorized redirect URIs**, add:
+   - `http://localhost:3000/api/auth/google/callback`
+   - `https://<your-web-domain>.up.railway.app/api/auth/google/callback`
+5. Copy the **Client ID** and **Client Secret** into Railway (`web` service variables) and your local `.env`:
+   ```env
+   GOOGLE_CLIENT_ID=<your-client-id>.apps.googleusercontent.com
+   GOOGLE_CLIENT_SECRET=<your-client-secret>
+   ```
+
+### 3. Inviting Students
+- Default starter invite codes seeded automatically: `SEJOUR2026` and `BONJOUR`.
+- Sign in with an email listed in `ADMIN_EMAILS` (or toggle **Admin / Instructor Login** on `/` and enter `ADMIN_PASSWORD`), then open `/admin` to:
+  - Generate new invite codes and copy one-click join links (`https://<your-domain>/?code=XXXX`).
+  - Inspect each student's current course day, streak, Teacher Bot scribe notes, grammar errors, remembered personal facts, and 15-domain vocabulary coverage.

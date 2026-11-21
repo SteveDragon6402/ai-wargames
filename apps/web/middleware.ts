@@ -1,40 +1,46 @@
 import { NextResponse, type NextRequest } from "next/server";
-import {
-  GATE_COOKIE,
-  expectedGateCookie,
-  safeNext,
-  tokensMatch,
-} from "@/lib/gate-auth";
+
+const SESSION_COOKIE = "sejour_session";
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
-  if (pathname === "/api/health") return NextResponse.next();
-
-  const expected = await expectedGateCookie();
-  const presented = req.cookies.get(GATE_COOKIE)?.value ?? "";
-  const authed =
-    expected !== null && presented.length > 0 && tokensMatch(presented, expected);
-
-  if (pathname === "/api/gate") return NextResponse.next();
-
-  if (pathname === "/gate") {
-    if (!authed) return NextResponse.next();
-    const dest = safeNext(req.nextUrl.searchParams.get("next"));
-    return NextResponse.redirect(new URL(dest, req.url));
+  if (
+    pathname === "/" ||
+    pathname === "/join" ||
+    pathname === "/gate" ||
+    pathname.startsWith("/api/health") ||
+    pathname.startsWith("/api/auth/") ||
+    pathname.startsWith("/api/invite/") ||
+    pathname.startsWith("/api/gate") ||
+    pathname.startsWith("/sejour/") ||
+    pathname.startsWith("/epicerie/")
+  ) {
+    return NextResponse.next();
   }
 
-  if (authed) return NextResponse.next();
+  const sessionToken = req.cookies.get(SESSION_COOKIE)?.value ?? "";
+  if (sessionToken.length >= 16) {
+    return NextResponse.next();
+  }
+
+  // Allow direct access to /sejour or /epicerie in local development if needed,
+  // while protecting /home, /course/*, and /admin/* so login flow always works cleanly.
+  if (
+    process.env.NODE_ENV === "development" &&
+    (pathname === "/sejour" || pathname === "/epicerie" || pathname.startsWith("/api/sejour") || pathname.startsWith("/api/epicerie") || pathname.startsWith("/api/save"))
+  ) {
+    return NextResponse.next();
+  }
 
   if (pathname.startsWith("/api/")) {
-    return NextResponse.json({ error: "Locked" }, { status: 401 });
+    return NextResponse.json({ error: "Authentication required." }, { status: 401 });
   }
 
   const url = req.nextUrl.clone();
-  const next = `${pathname}${req.nextUrl.search}`;
-  url.pathname = "/gate";
+  url.pathname = "/";
   url.search = "";
-  if (next !== "/") url.searchParams.set("next", next);
+  url.searchParams.set("next", pathname);
   return NextResponse.redirect(url);
 }
 
