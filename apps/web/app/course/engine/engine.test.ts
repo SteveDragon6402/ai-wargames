@@ -20,7 +20,7 @@ import { buildPracticeDeck } from "../../sejour/lib/practice-deck";
 import { PROBES } from "../content/probes";
 import { PLACEMENT_QUESTIONS } from "../content/placement";
 import { GRAMMAR_BY_ID, GRAMMAR_LESSONS } from "../content/grammar";
-import { frenchAnswerIsAlmost, frenchAnswersMatch, shuffleTiles } from "./answers";
+import { frenchAnswerIsAlmost, frenchAnswersMatch, promptWithoutGiveaway, shuffleTiles } from "./answers";
 import { fillGrammarLesson } from "./lesson-fill";
 import { VOCAB_ITEMS } from "../content/vocab";
 import { EXAM_BANK } from "../content/exam-bank";
@@ -213,6 +213,26 @@ describe("grammar answers", () => {
       frenchAnswerIsAlmost("Bonjour Madame, je suis pret", "Bonjour Madame, je suis prêt."),
       false,
     );
+  });
+
+  it("accepts Merci when the stored line is Merci.", () => {
+    assert.equal(frenchAnswersMatch("Merci", "Merci."), true);
+    assert.equal(frenchAnswersMatch("Merci.", "Merci"), true);
+    assert.equal(frenchAnswerIsAlmost("Merci", "Merci."), false);
+  });
+
+  it("takes the French answer out of a prompt that already translated it", () => {
+    const enchanté = promptWithoutGiveaway(
+      "Enchanté means nice to meet you. You just heard it. Someone tells you their name. What do you say?",
+      "Enchanté",
+    );
+    assert.equal(enchanté.toLowerCase().includes("enchante"), false);
+    assert.equal(enchanté.includes("What do you say?"), true);
+    const hinted = promptWithoutGiveaway(
+      "Say that you learned a lot. Hint: J'ai beaucoup appris means I learned a lot.",
+      "J'ai beaucoup appris.",
+    );
+    assert.equal(hinted, "Say that you learned a lot.");
   });
 
   it("calls a one-letter miss Almost", () => {

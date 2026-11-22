@@ -136,6 +136,8 @@ export function Conversation({
   const alive = useRef(true);
   const lastPayEventId = useRef<number>(0);
 
+  const takesPayment = role === "baker" || role === "waiter" || role === "cashier" || role === "pharmacist";
+
   const roster: Participant[] =
     rawParticipants && rawParticipants.length > 0
       ? rawParticipants
@@ -214,8 +216,10 @@ export function Conversation({
     setHistory(next);
     if (reply.quiet || (reply.left && canEnd)) setClosed(true);
     if (reply.bedtime || reply.left || reply.suggestedPlaces.length > 0 || reply.settled.length > 0) {
-      setNudgeKind(canEnd ? "leave" : "pay");
-    } else if (reply.billed && !canEnd) {
+      if (canEnd) setNudgeKind("leave");
+      else if (takesPayment) setNudgeKind("pay");
+      else setNudgeKind(null);
+    } else if (reply.billed && takesPayment && !canEnd) {
       setNudgeKind("pay");
     }
 
@@ -279,10 +283,10 @@ export function Conversation({
     if ((!said && !gesture) || busy || closed) return;
     setError(null);
     setText("");
-    if (said && !canEnd && looksLikeVerbalPayment(said)) {
+    if (said && !canEnd && takesPayment && looksLikeVerbalPayment(said)) {
       setNudgeKind("pay");
     } else if (said && looksLikeReadyToLeave(said)) {
-      setNudgeKind(canEnd ? "leave" : "pay");
+      setNudgeKind(canEnd ? "leave" : takesPayment ? "pay" : null);
     }
     setBusy(true);
     const label = gesture ? `[${GESTURES[gesture]}]` : "";
@@ -461,18 +465,22 @@ export function Conversation({
       {error ? <p className="sj-error">{error}</p> : null}
 
       {/* Inline pop-up / callout when payment is required before leaving */}
-      {!canEnd && (nudgeKind === "pay" || blockedEndReason) && history.length > 1 ? (
+      {!canEnd && history.length > 1 && (takesPayment ? nudgeKind === "pay" || blockedEndReason : blockedEndReason) ? (
         <div
           role="status"
           className={`flex flex-wrap items-center justify-between gap-3 rounded-xl border-2 p-3.5 shadow-sm transition ${
-            nudgeKind === "pay"
+            takesPayment && nudgeKind === "pay"
               ? "border-amber-700 bg-amber-100/95 ring-4 ring-amber-400/40"
               : "border-amber-800/30 bg-amber-50/90"
           }`}
         >
           <div className="min-w-0 flex-1">
             <p className="text-[13px] font-bold uppercase tracking-wider text-amber-950">
-              {nudgeKind === "pay" ? "💶 Payment required before leaving" : "💶 How to pay"}
+              {takesPayment
+                ? nudgeKind === "pay"
+                  ? "💶 Payment required before leaving"
+                  : "💶 How to pay"
+                : "Before you go"}
             </p>
             <p className="mt-0.5 text-[14px] text-amber-950">
               {blockedEndReason ??

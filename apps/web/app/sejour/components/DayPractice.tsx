@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { frenchAnswerIsAlmost, frenchAnswersMatch } from "@/app/course/engine/answers";
+import { frenchAnswerIsAlmost, frenchAnswersMatch, normalizeFrenchAnswer, promptWithoutGiveaway } from "@/app/course/engine/answers";
 import { hear } from "../lib/voice";
 import { buildPracticeDeck, type PracticeCard } from "../lib/practice-deck";
 
@@ -48,6 +48,7 @@ export function DayPractice({
   const [typed, setTyped] = useState("");
   const [verdict, setVerdict] = useState<null | "yes" | "almost" | "no">(null);
   const [sentence, setSentence] = useState(false);
+  const [misses, setMisses] = useState(0);
   const card = cards[index];
 
   function resetCard() {
@@ -55,6 +56,7 @@ export function DayPractice({
     setTyped("");
     setVerdict(null);
     setSentence(false);
+    setMisses(0);
   }
 
   if (!card) {
@@ -70,8 +72,10 @@ export function DayPractice({
   }
 
   const last = index === cards.length - 1;
-  const prompt = card.direction === "from" ? card.fr : card.en || card.fr;
+  const frenchPrompt = card.direction === "to" ? promptWithoutGiveaway(card.en || "", card.fr) : card.fr;
+  const prompt = card.direction === "from" ? card.fr : frenchPrompt || card.en || card.fr;
   const locked = verdict === "yes" || verdict === "no";
+  const promptGivesFrench = normalizeFrenchAnswer(prompt).includes(normalizeFrenchAnswer(card.fr)) && normalizeFrenchAnswer(card.fr).length >= 4;
 
   function check() {
     if (!typed.trim() || locked) return;
@@ -81,6 +85,12 @@ export function DayPractice({
     if (right) {
       setVerdict("yes");
       playYes();
+      return;
+    }
+    const nextMisses = misses + 1;
+    setMisses(nextMisses);
+    if (nextMisses >= 2) {
+      setVerdict("no");
       return;
     }
     if (card.direction === "to" && frenchAnswerIsAlmost(typed, card.fr)) {
@@ -112,10 +122,12 @@ export function DayPractice({
           </p>
           <h2 className="ep-display mt-2 text-[32px] leading-tight">{prompt}</h2>
           <div className="mt-4 flex flex-wrap gap-2">
-            <button type="button" className="ep-button" onClick={() => void hear("rousseau", card.fr, "any")}>
-              Hear the French
-            </button>
-            {!card.sentence ? (
+            {card.direction === "from" || locked ? (
+              <button type="button" className="ep-button" onClick={() => void hear("rousseau", card.fr, "any")}>
+                Hear the French
+              </button>
+            ) : null}
+            {!card.sentence && !promptGivesFrench && locked ? (
               <button type="button" className="ep-button" onClick={() => setSentence((open) => !open)}>
                 {sentence ? "Hide the sentence" : "Use it in a sentence"}
               </button>

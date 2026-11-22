@@ -1,4 +1,5 @@
 import { VOCAB_ITEMS } from "@/app/course/content/vocab";
+import { normalizeFrenchAnswer, promptWithoutGiveaway } from "@/app/course/engine/answers";
 import { recognitionForDay, spokenForDay } from "@/app/course/content/spoken";
 
 export interface PracticeCard {
@@ -92,5 +93,13 @@ export function buildPracticeDeck(day: number, extra: readonly { fr: string; en:
   for (const card of laterWords) push(card, "to", false);
   for (const card of spokenSentences) push(card, day < 8 ? "from" : "to", false);
 
-  return cards.slice(0, 8);
+  return cards
+    .filter((card) => {
+      if (card.direction !== "to") return true;
+      const goal = normalizeFrenchAnswer(card.fr);
+      if (goal.length < 4) return true;
+      const cleaned = promptWithoutGiveaway(card.en, card.fr);
+      return Boolean(cleaned) || !normalizeFrenchAnswer(card.en).includes(goal);
+    })
+    .slice(0, 8);
 }

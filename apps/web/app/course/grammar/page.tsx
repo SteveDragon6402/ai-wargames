@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GrammarExercise, GrammarLesson } from "@/app/course/types";
-import { frenchAnswerIsAlmost, frenchAnswersMatch, shuffleTiles } from "@/app/course/engine/answers";
+import { frenchAnswerIsAlmost, frenchAnswersMatch, promptWithoutGiveaway, shuffleTiles } from "@/app/course/engine/answers";
 import { hear, stopHearing } from "@/app/sejour/lib/voice";
 
 type Verdict = { correct: boolean; almost: boolean; explanation: string };
@@ -63,6 +63,7 @@ export default function GrammarLessonPage() {
   const [voiceNote, setVoiceNote] = useState("");
   const answersRef = useRef<Record<string, string>>({});
   const teachRun = useRef(0);
+  const [misses, setMisses] = useState(0);
 
   useEffect(() => {
     fetch("/api/course/today")
@@ -89,7 +90,12 @@ export default function GrammarLessonPage() {
     };
   }, []);
 
-  const allExercises: GrammarExercise[] = lesson ? [...lesson.exercises, ...remediation] : [];
+  const allExercises: GrammarExercise[] = lesson
+    ? [...lesson.exercises, ...remediation].flatMap((exercise) => {
+        const prompt = promptWithoutGiveaway(exercise.prompt, exercise.answer);
+        return prompt ? [{ ...exercise, prompt }] : [];
+      })
+    : [];
   const currentEx = allExercises[exIdx];
 
   const bank = useMemo(() => {
@@ -162,19 +168,31 @@ export default function GrammarLessonPage() {
     const accept = currentEx.accept ?? [];
     const correct = frenchAnswersMatch(raw, currentEx.answer, accept);
     const almost = !correct && frenchAnswerIsAlmost(raw, currentEx.answer, accept);
+    if (correct) {
+      answersRef.current[currentEx.id] = raw;
+      setChecked({ correct: true, almost: false, explanation: currentEx.explanation });
+      playSuccess();
+      const spoken = sentenceToHear(currentEx.answer);
+      if (spoken && spoken !== currentEx.audioFr) void hear("rousseau", spoken);
+      return;
+    }
+    const nextMisses = misses + 1;
+    setMisses(nextMisses);
+    if (nextMisses >= 2) {
+      answersRef.current[currentEx.id] = raw;
+      setChecked({ correct: false, almost: false, explanation: currentEx.explanation });
+      return;
+    }
     if (almost) {
-      setChecked({ correct: false, almost: true, explanation: "Almost! One letter is off." });
+      setChecked({ correct: false, almost: true, explanation: "Almost. One letter is off. Try once more." });
       return;
     }
     answersRef.current[currentEx.id] = raw;
     setChecked({
-      correct,
+      correct: false,
       almost: false,
       explanation: currentEx.explanation,
     });
-    if (correct) playSuccess();
-    const spoken = sentenceToHear(currentEx.answer);
-    if (spoken && spoken !== currentEx.audioFr) void hear("rousseau", spoken);
   }
 
   function checkCurrentAnswer() {
@@ -187,6 +205,7 @@ export default function GrammarLessonPage() {
   async function nextExercise() {
     if (!lesson) return;
     setChecked(null);
+    setMisses(0);
     setUserInput("");
     setTileWords([]);
     setUsed([]);
@@ -503,6 +522,7 @@ export default function GrammarLessonPage() {
                 setTileWords([]);
                 setUsed([]);
                 setChecked(null);
+                setMisses(0);
                 setResult(null);
                 setFinishError("");
                 setStep("practice");

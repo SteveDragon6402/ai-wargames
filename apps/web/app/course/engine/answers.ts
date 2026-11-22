@@ -21,6 +21,20 @@ export function frenchAnswersMatch(given: string, answer: string, accept: readon
   return [answer, ...accept].some((target) => normalizeFrenchAnswer(target) === candidate);
 }
 
+/** The question already prints the French it is asking for. */
+export function promptWithoutGiveaway(prompt: string, answer: string): string {
+  const goal = normalizeFrenchAnswer(answer);
+  const givesAway = (text: string) => goal.length >= 4 && normalizeFrenchAnswer(text).includes(goal);
+  if (!givesAway(prompt)) return prompt;
+  const stripped = prompt
+    .replace(/\bhint:.*$/i, "")
+    .replace(/[^.?!]*\bmeans\b[^.?!]*[.?!]?/gi, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (stripped.length > 12 && !givesAway(stripped)) return stripped;
+  return "";
+}
+
 function editDistance(a: string, b: string): number {
   const rows = a.length + 1;
   const cols = b.length + 1;
