@@ -17,6 +17,8 @@ interface HomeMealProps {
   knownIds?: readonly string[];
   onMeet?: (id: string) => void;
   memory: string;
+  notes?: string[];
+  onNotes?: (notes: string[]) => void;
   unlocked: UnlockId[];
   knownFrench: string[];
   listening: boolean;
@@ -43,6 +45,8 @@ export function HomeMeal({
   knownIds = [],
   onMeet,
   memory,
+  notes = [],
+  onNotes,
   unlocked,
   knownFrench,
   listening,
@@ -162,7 +166,9 @@ export function HomeMeal({
             unlocked={unlocked}
             knownFrench={knownFrench}
             memory={memory}
-            context={`MEAL. Day ${day}. This is DINNER at the table, not breakfast. Eating ${dishFr} (${dishEn}). Use these words and have them say one back: ${words.map((w) => w.fr).join(", ")}. Ask how the day went and how the food is. Do not ask if they slept well, how the night was, or anything about the morning. Keep the meal going for three or four exchanges. Only call bedtime once you have said the meal is finished, and only after at least ${minTurnsRequired} replies from the guest.`}
+            notes={notes}
+            onNotes={onNotes}
+            context={`MEAL. Day ${day}. Dinner at the table, eating ${dishFr} (${dishEn}). Words around the table: ${words.map((w) => w.fr).join(", ")}.`}
             canEnd={canLeaveTable}
             endLabel="Finish dinner"
             actionPrompt="✅ You've finished your dinner and chatted with Madame Rousseau! Ready to head upstairs for the night:"

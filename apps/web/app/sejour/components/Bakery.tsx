@@ -11,6 +11,8 @@ import { Conversation, type PaymentEvent } from "./Conversation";
 interface BakeryProps {
   purse: number[];
   memory: string;
+  notes?: string[];
+  onNotes?: (notes: string[]) => void;
   listening: boolean;
   knownIds?: readonly string[];
   onMeet?: (id: string) => void;
@@ -18,7 +20,7 @@ interface BakeryProps {
   onDone: (turns: TalkTurn[], bought: BakeryItem[], purse: number[]) => void;
 }
 
-export function Bakery({ purse: initialPurse, memory, listening, knownIds = [], onMeet, onPhrase, onDone }: BakeryProps) {
+export function Bakery({ purse: initialPurse, memory, notes = [], onNotes, listening, knownIds = [], onMeet, onPhrase, onDone }: BakeryProps) {
   const [pointed, setPointed] = useState<string | null>(null);
   const [counter, setCounter] = useState<string[]>([]);
   const [paidCents, setPaidCents] = useState(0);
@@ -232,6 +234,8 @@ export function Bakery({ purse: initialPurse, memory, listening, knownIds = [], 
             speakFirst
             listening={listening}
             memory={memory}
+            notes={notes}
+            onNotes={onNotes}
             context={buildContext(paidCents)}
             paymentEvent={paymentEvent}
             canEnd={paid}

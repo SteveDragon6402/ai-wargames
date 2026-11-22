@@ -58,6 +58,8 @@ export interface Save {
   pages: BookPage[];
   journal: string;
   memories: Record<string, MemoryTurn[]>;
+  /** Short notes each person has chosen to keep. */
+  notebooks: Record<string, string[]>;
   met: string[];
   cards: Card[];
   /** Lesson / handout ids they have already handled. */
@@ -109,6 +111,7 @@ export function emptySave(): Save {
     pages: [FIRST_PAGE],
     journal: "",
     memories: {},
+    notebooks: {},
     met: [],
     cards: [],
     mastered: [],
@@ -305,6 +308,7 @@ export function parseSave(raw: unknown): Save | null {
     pages,
     journal: typeof value.journal === "string" ? value.journal.slice(0, 4000) : "",
     memories,
+    notebooks: parseNotebooks(value.notebooks),
     met,
     cards,
     mastered: Array.isArray(value.mastered) ? value.mastered.filter((id): id is string => typeof id === "string" && /^[a-z0-9_]+$/.test(id)).slice(0, 40) : [],
@@ -406,6 +410,31 @@ export function addBookPage(pages: BookPage[], title: string): BookPage[] {
 
 export function movePhrase(phrases: Phrase[], phraseId: string, pageId: string): Phrase[] {
   return phrases.map((phrase) => (phrase.id === phraseId ? { ...phrase, pageId } : phrase));
+}
+
+function parseNotebooks(raw: unknown): Record<string, string[]> {
+  const notebooks: Record<string, string[]> = {};
+  if (!raw || typeof raw !== "object") return notebooks;
+  for (const [id, lines] of Object.entries(raw as Record<string, unknown>).slice(0, 30)) {
+    if (!Array.isArray(lines)) continue;
+    notebooks[id] = lines
+      .filter((line): line is string => typeof line === "string")
+      .map((line) => line.trim().slice(0, 180))
+      .filter(Boolean)
+      .slice(-24);
+  }
+  return notebooks;
+}
+
+export function addNotes(save: Save, personId: string, lines: readonly string[]): Save {
+  const previous = save.notebooks[personId] ?? [];
+  const next = [...previous];
+  for (const line of lines) {
+    const text = line.trim().slice(0, 180);
+    if (!text || next.includes(text)) continue;
+    next.push(text);
+  }
+  return { ...save, notebooks: { ...save.notebooks, [personId]: next.slice(-24) } };
 }
 
 export function remember(save: Save, personId: string, turns: MemoryTurn[], met = false): Save {

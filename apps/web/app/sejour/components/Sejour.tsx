@@ -267,12 +267,14 @@ export function Sejour() {
             onMeet={stay.markMet}
             speakFirst
             memory={hostMemory}
+            notes={stay.save.notebooks.rousseau ?? []}
+            onNotes={(lines) => stay.rememberNotes("rousseau", lines)}
             unlocked={stay.save.unlocked}
             knownFrench={knownFrench}
             listening={stay.textHidden("host")}
             placeholder="Say hello (or tell her in English if you don't know any French yet)..."
             hearLabel="Hear her"
-            context="ARRIVAL. First evening at your house in Saint-Aubin, rue des Tilleuls. You are Madame Rousseau. Your first line only: welcome them, say your name, and ask their name. After that, answer the line they just said. If they told you about the journey, react to that and correct one French mistake if there is one. Do not welcome them again. Do not ask a question they already answered. If they say they do not understand, or they know no French, switch to English, explain the last line, and teach one short phrase. After a few exchanges, wish them bonne nuit and call bedtime."
+            context="ARRIVAL. First evening at your house in Saint-Aubin, rue des Tilleuls."
             actions={arrivalActions}
             actionPrompt="🌙 Ready to turn in for the night? Press the button to go upstairs:"
             onReply={onHostReply}
@@ -364,22 +366,19 @@ export function Sejour() {
             onMeet={stay.markMet}
             speakFirst
             memory={hostMemory}
+            notes={stay.save.notebooks.rousseau ?? []}
+            onNotes={(lines) => stay.rememberNotes("rousseau", lines)}
             unlocked={stay.save.unlocked}
             knownFrench={knownFrench}
             listening={stay.textHidden("host")}
             placeholder="Talk in French or English..."
             hearLabel="Hear her"
-            context={`MORNING. Day ${day}. Call them ${stay.save.address || "bonjour"}. ${level}
-Available places you can suggest today: ${unlockedPlaces.length ? unlockedPlaces.join(", ") : "none yet (help them practice introducing themselves with 'Bonjour, je m'appelle...' first; if they don't know French, teach them in English!)"}.
-${
-  !unlockedPlaces.length
-    ? "Warmly greet them at breakfast. Help them practice introducing themselves in French (teach them in English if they need help)."
-    : unlockedPlaces.includes("epicerie") && !stay.save.visits.epicerie
-      ? `Suggest cooking together today ('Peut-être qu'aujourd'hui on cuisine ?') — ${nextSuggestedRecipe.fr} (${nextSuggestedRecipe.name}) — and going to the épicerie, and call suggest_place with epicerie.`
-      : unlockedPlaces.includes("bistro") && !stay.save.visits.bistro
-        ? "Suggest trying the casual village bistro Le Petit Bistro or another place, and call suggest_place."
-        : "This is a short breakfast, a few turns. Help them choose one place for today and call suggest_place. Do not teach the day's grammar here. That lesson comes after this talk."
-}`}
+            context={`MORNING. Day ${day}. Breakfast. You call them ${stay.save.address || "bonjour"}. ${level}
+Places open today: ${unlockedPlaces.length ? unlockedPlaces.join(", ") : "none yet"}.${
+              unlockedPlaces.includes("epicerie") && !stay.save.visits.epicerie
+                ? ` Cooking together is possible: ${nextSuggestedRecipe.fr} (${nextSuggestedRecipe.name}).`
+                : ""
+            }`}
             actions={morningActions}
             onReply={onHostReply}
           />
@@ -456,13 +455,15 @@ ${
             knownIds={knownIds}
             onMeet={stay.markMet}
             speakFirst
-            memory=""
+            memory={hostMemory}
+            notes={stay.save.notebooks.rousseau ?? []}
+            onNotes={(lines) => stay.rememberNotes("rousseau", lines)}
             unlocked={stay.save.unlocked}
             knownFrench={knownFrench}
             listening={stay.textHidden("lesson")}
             placeholder="Try one of the phrases in French (or ask a question in English)..."
             hearLabel="Hear her"
-            context={`DAILY LESSON before heading out. Lesson id: "${stay.currentLesson.id}". Title: "${stay.currentLesson.title}". How to use it today: ${stay.currentLesson.useItPrompt}. Examples: ${stay.currentLesson.examples.map((e) => `${e.fr} (${e.en})`).join("; ")}. Say the French out loud. Explain in English if they are stuck, then invite them to try one phrase in French. When they try it, praise them and call settled({ ids: ["${stay.currentLesson.id}"] }).`}
+            context={`DAILY LESSON before heading out. Lesson id: "${stay.currentLesson.id}". Title: "${stay.currentLesson.title}". How it shows up today: ${stay.currentLesson.useItPrompt}. Examples: ${stay.currentLesson.examples.map((e) => `${e.fr} (${e.en})`).join("; ")}.`}
             actions={lessonActions}
             actionPrompt="🚪 Ready to head out to the village? Press here:"
             onReply={onLessonReply}
@@ -502,6 +503,8 @@ ${
         <Bakery
           purse={stay.save.wallet}
           memory={memoryText(stay.save.memories.martine)}
+          notes={stay.save.notebooks.martine ?? []}
+          onNotes={(lines) => stay.rememberNotes("martine", lines)}
           listening={stay.textHidden("boulangerie")}
           knownIds={knownIds}
           onMeet={stay.markMet}
@@ -529,6 +532,8 @@ ${
           recipe={stay.recipe}
           purse={stay.save.wallet}
           memory={memoryText(stay.save.memories.elodie)}
+          notes={stay.save.notebooks.elodie ?? []}
+          onNotes={(lines) => stay.rememberNotes("elodie", lines)}
           listening={stay.textHidden("supermarche")}
           knownIds={knownIds}
           onMeet={stay.markMet}
@@ -559,6 +564,8 @@ ${
           knownIds={knownIds}
           onMeet={stay.markMet}
           memory={hostMemory}
+          notes={stay.save.notebooks.rousseau ?? []}
+          onNotes={(lines) => stay.rememberNotes("rousseau", lines)}
           unlocked={stay.save.unlocked}
           knownFrench={knownFrench}
           listening={stay.textHidden("meal")}
@@ -575,6 +582,8 @@ ${
           place={restaurant}
           purse={stay.save.wallet}
           memory={memoryText(stay.save.memories[restaurant.id])}
+          notes={stay.save.notebooks[restaurant.id] ?? []}
+          onNotes={(lines) => stay.rememberNotes(restaurant.id, lines)}
           listening={stay.textHidden(restaurant.id)}
           knownIds={knownIds}
           onMeet={stay.markMet}
@@ -620,15 +629,9 @@ ${
               knownFrench={knownFrench}
               listening={stay.textHidden("speedfriending")}
               memory={memoryText(stay.save.memories[person.id])}
-              context={`Speed friending at the Salle des Fêtes, day ${day}. Slot ${stay.friendIndex + 1} of ${stay.friendIds.length}. ${
-                knownIds.includes(person.id)
-                  ? "You have met them before; greet them warmly like an acquaintance."
-                  : "You have not met them yet. The screen shows ??? until you say your name in French."
-              } ${person.blurb} ${
-                stay.save.unlocked.includes("invite_parc")
-                  ? `If the conversation goes well and they engage with you, invite them to ${person.favoriteOuting} tomorrow and only call the invite tool with ${person.favoriteOuting} once they agree in French!`
-                  : ""
-              }`}
+              notes={stay.save.notebooks[person.id] ?? []}
+              onNotes={(lines) => stay.rememberNotes(person.id, lines)}
+              context={`Speed friending at the Salle des Fêtes, day ${day}. Slot ${stay.friendIndex + 1} of ${stay.friendIds.length}. ${person.blurb}`}
               canEnd={friendTurns.filter((t) => t.who === "you").length >= 4}
               blockedEndReason={`Chat a little more with ${knownIds.includes(person.id) ? person.name : "this villager"} before moving on (${friendTurns.filter((t) => t.who === "you").length}/4 turns completed).`}
               endLabel={stay.friendIndex + 1 < stay.friendIds.length ? "Move to next person →" : "Finish speed friending →"}
@@ -659,6 +662,8 @@ ${
           outing={stay.targetOuting.outing}
           friend={outingFriend}
           memory={memoryText(stay.save.memories[outingFriend.id])}
+          notes={stay.save.notebooks[outingFriend.id] ?? []}
+          onNotes={(lines) => stay.rememberNotes(outingFriend.id, lines)}
           listening={stay.textHidden(stay.targetOuting.outing)}
           knownIds={knownIds}
           onMeet={stay.markMet}
@@ -689,7 +694,9 @@ ${
               knownFrench={knownFrench}
               listening={stay.textHidden("family")}
               memory={`${hostMemory}\n${memoryText(stay.save.memories.camille)}`.trim()}
-              context={`Three-way conversation at the dining table on day ${day} between the guest, Madame Rousseau ("rousseau"), and her 22-year-old granddaughter Camille ("camille", visiting from Dijon). Have Madame Rousseau and Camille riff naturally with each other and with the guest in each turn (e.g. Madame introduces Camille, then Camille speaks; or Camille asks a question and Madame chimes in to translate or comment). If the guest speaks English or is unsure, Madame Rousseau gladly explains in English and helps them reply to Camille.`}
+              notes={stay.save.notebooks.rousseau ?? []}
+              onNotes={(lines) => stay.rememberNotes("rousseau", lines)}
+              context={`Lunch at the dining table on day ${day}. Madame Rousseau and Camille are both here.`}
               endLabel="Sit down to eat lunch together →"
               onReply={(reply) => {
                 if (reply.phrases.length) stay.absorbPhrases(reply.phrases, "Family lunch");
@@ -706,6 +713,11 @@ ${
         <Pharmacie
           purse={stay.save.wallet}
           memory={memoryText(stay.save.memories.pharmacien)}
+          notes={stay.save.notebooks.pharmacien ?? []}
+          onNotes={(lines) => stay.rememberNotes("pharmacien", lines)}
+          hostMemory={hostMemory}
+          hostNotes={stay.save.notebooks.rousseau ?? []}
+          onHostNotes={(lines) => stay.rememberNotes("rousseau", lines)}
           listening={stay.textHidden("pharmacie")}
           knownIds={knownIds}
           onMeet={stay.markMet}

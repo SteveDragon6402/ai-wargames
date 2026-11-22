@@ -39,10 +39,10 @@ export function recognitionForDay(day: number): { fr: string; en: string }[] {
   return rotate(scene, ((day - 1) * 4) % Math.max(1, scene.length), 6);
 }
 
-/** One aside for the character's first line. The next turn does not include it. */
-export function openingWordNudge(day: number, extra: readonly { fr: string }[] = []): string {
+/** The tutor stops by for the first line of a scene, then leaves. Later turns do not include him. */
+export function tutorDropsBy(day: number, extra: readonly { fr: string }[] = []): string {
   const spoken = spokenForDay(day).map((item) => item.fr);
   const again = extra.map((item) => item.fr).filter(Boolean);
-  const focus = again[0] ? ` They had trouble with « ${again[0]} ». If that one fits, prefer it.` : "";
-  return `Private, for this line only. You are still yourself. This is not a lesson, and you do not mention practice or teaching. If one of these can come up the way you would actually talk, use one, then get on with why they are here. A baker with the weather on the list might ask how the weather is, and then ask what they want. If none of it fits, say what you were going to say.${focus}\n${spoken.join(", ")}`;
+  const stumble = again[0] ? ` They had a hard time with « ${again[0]} ».` : "";
+  return `Language tutor, stopping in for a second: "Hey. This person is trying to learn French. We're around ${spoken.join(", ")}.${stumble} If it comes up naturally, feel free to include it. No pressure."\n\nThe tutor leaves.`;
 }

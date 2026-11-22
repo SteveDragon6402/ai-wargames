@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import type Anthropic from "@anthropic-ai/sdk";
 import { computeDomainCoverage, getFiringProbes } from "@/app/course/engine";
-import { openingWordNudge } from "@/app/course/content/spoken";
+import { tutorDropsBy } from "@/app/course/content/spoken";
 import { anthropicClient, createMessage, toolUses, textOf } from "@/lib/anthropic";
 import { getUserFromRequest } from "@/lib/auth/session";
 import { getGameSave, getUserBundle, saveUserBundle } from "@/lib/db";
@@ -34,6 +34,7 @@ interface Body {
   gesture?: string;
   unlocked?: UnlockId[];
   knownFrench?: string[];
+  notes?: string[];
 }
 
 function makeSpeakTool(participants: Participant[]): Anthropic.Tool {
@@ -91,6 +92,55 @@ const ADD_PHRASE: Anthropic.Tool = {
   },
 };
 
+const RECALL_TOOL: Anthropic.Tool = {
+  name: "recall",
+  description: "Look through your notebook and earlier conversations. Say what you are trying to remember.",
+  input_schema: {
+    type: "object",
+    properties: { about: { type: "string" } },
+    required: ["about"],
+  },
+};
+
+const NOTE_TOOL: Anthropic.Tool = {
+  name: "note",
+  description: "Jot one short line in your notebook about this person.",
+  input_schema: {
+    type: "object",
+    properties: { text: { type: "string" } },
+    required: ["text"],
+  },
+};
+
+function withNotebook(tools: Anthropic.Tool[]): Anthropic.Tool[] {
+  return [RECALL_TOOL, NOTE_TOOL, ...tools];
+}
+
+function searchMemory(about: string, memory: string, notes: readonly string[]): string {
+  const words = about
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/\p{M}/gu, "")
+    .split(/[^a-z0-9']+/)
+    .filter((word) => word.length > 2);
+  const filed = notes.map((line) => line.trim()).filter(Boolean);
+  const lines = memory.split("\n").map((line) => line.trim()).filter(Boolean);
+  const hit = (line: string) => {
+    const hay = line.toLowerCase().normalize("NFD").replace(/\p{M}/gu, "");
+    return words.some((word) => hay.includes(word));
+  };
+  const noteHits = (words.length ? filed.filter(hit) : filed.slice(-8)).slice(0, 8);
+  const lineHits = (words.length ? lines.filter(hit) : []).slice(-8);
+  const parts: string[] = [];
+  if (noteHits.length) parts.push(`Notebook:\n${noteHits.join("\n")}`);
+  if (lineHits.length) parts.push(`From earlier talks:\n${lineHits.join("\n")}`);
+  if (parts.length) return parts.join("\n\n");
+  if (!filed.length && !lines.length) return "Nothing filed yet.";
+  return words.length
+    ? `Nothing on that. The notebook has ${filed.length} notes, and earlier talks run ${lines.length} lines.`
+    : "Say what you want to look up.";
+}
+
 const STAGE_TOOL: Anthropic.Tool = {
   name: "stage",
   description: "Pop up a visual card, menu, form, or minigame on screen when it fits the moment.",
@@ -110,10 +160,8 @@ function systemFor(
   participants: Participant[],
 ): { system: string; tools: Anthropic.Tool[] } {
   const speakTool = makeSpeakTool(participants);
-  const metBefore = Boolean(body.memory?.trim());
-  const memory = metBefore
-    ? `\n\nEarlier talks, oldest first. This is your memory. If one detail matters now, use it. Do not recap the list, and do not greet them as a stranger.\n${body.memory!.trim()}`
-    : "\n\nYou have not talked with them before.";
+  const notebook =
+    "You keep a notebook. Earlier conversations are filed there. If something from before might matter, call recall. If you want to keep something, call note. Then say what you want to say.";
   const known =
     Array.isArray(body.knownFrench) && body.knownFrench.length
       ? `\nFrench they already know in their phrasebook: ${body.knownFrench.slice(0, 40).join("; ")}`
@@ -132,7 +180,7 @@ function systemFor(
 
   if (body.role === "lesson") {
     return {
-      tools: [
+      tools: withNotebook([
         ADD_PHRASE,
         {
           name: "settled",
@@ -144,35 +192,36 @@ function systemFor(
           },
         },
         speakTool,
-      ],
-      system: `You are Madame Rousseau, 71, at your kitchen table, teaching one small thing before they go out. You are the same woman they have breakfast with: warm, a bit talkative, pleased when they try.
+      ]),
+      system: `You are Madame Rousseau, 71, at the kitchen table with your guest before they head out. You are the same woman they have breakfast with. The message describes the one small thing to look at together.
 
-This is a lesson, so English is natural here. Say what the point is in plain English, say one or two French examples out loud, and ask them to try one sentence. If they are lost, stay with that sentence: explain the snag, then let them try again. If they manage it, even roughly, be pleased, offer the cleaner line once, and call settled with the lesson id.
+English is welcome here. French is still in the room. When they have a go at it, even roughly, call settled with the lesson id.
 
-Stay on the lesson in the message. Bed, errands, and the rest of the day can wait. When a phrase is worth keeping, add it with add_phrase. Call speak last.${memory}`,
+${notebook}
+A phrase worth keeping goes in with add_phrase. Call speak last.`,
     };
   }
 
   if (body.role === "cashier") {
     return {
-      tools: [
+      tools: withNotebook([
         ADD_PHRASE,
         { name: "bill", description: "Ask for payment at the supermarket checkout.", input_schema: { type: "object", properties: {} } },
         speakTool,
-      ],
-      system: `You are Élodie, on the checkout at the Supermarché de Saint-Aubin. You are quick, cheerful, and you use vous. A regular gets a real hello. A stranger gets your name.
+      ]),
+      system: `You are Élodie, on the checkout at the Supermarché de Saint-Aubin. Quick, cheerful, vous. French is the language of the till. You catch a tourist word sometimes, hello or thank you or something in the basket, and miss the rest.
 
-${metBefore ? "You have seen them at this till before. Skip the full introduction. Say your name only if it has not come up yet." : `The screen shows ??? until you say "Élodie". Early on: "Bonjour ! Je m'appelle Élodie."`}
+Until you say "Élodie", the screen shows ???.
 
-French is the language of the till. You catch a tourist word sometimes — hello, thank you, the name of something in the basket — and the rest you miss. You look unsure, repeat the total more slowly, or point at the screen. You don't switch the conversation into English.
-
-Tell them the total in the French words from the context, never with digits. Ask if they want a bag, or if they have the store card, when it fits. The coins count only when the context says paid. If they say they paid and it still says no, the money is not on the tray: call bill and say so in your own words. When it is paid, wish them a good afternoon and a good dinner. Call speak last.${memory}`,
+The total is in the message, in French words rather than digits. Money counts when the context says it was paid. Call bill when you are asking them to pay.
+${notebook}
+Call speak last.`,
     };
   }
 
   if (body.role === "host") {
     return {
-      tools: [
+      tools: withNotebook([
         ADD_PHRASE,
         {
           name: "suggest_place",
@@ -197,47 +246,45 @@ Tell them the total in the French words from the context, never with digits. Ask
         },
         STAGE_TOOL,
         speakTool,
-      ],
-      system: `You are Madame Rousseau, 71, a widow on the rue des Tilleuls in Saint-Aubin-sur-Loire. The spare room is yours to rent. You notice who finished the bread, who came home late, what the kitchen smells like. You talk at a natural length, two to four sentences, the way you talk at your own table. You are not an assistant, and you never mention gates, unlocks, or buttons.
+      ]),
+      system: `You are Madame Rousseau, 71, a widow on the rue des Tilleuls in Saint-Aubin-sur-Loire. You rent the spare room. Your guest is here to learn French. You notice the house: who finished the bread, who came home late, what the kitchen smells like. You talk the way you talk at your own table. You are not an assistant, and you never mention gates, unlocks, or buttons.
 
-You spent a few years in England, so English is easy. French is still how you talk. Stay in French while they are managing, including when a word is a bit off. When they are really struggling — they say they don't understand, they answer in English because the French will not come, they have gone quiet — you can step into English for that moment, untangle the bit that snagged, and leave them one short French phrase to try. Then come back to French. A small hesitation is not a reason to switch.
+You spent a few years in England, so English is easy. French is how you normally talk, and you can speak English when you need to. Speak French with them, and help them learn it. When they don't understand what's happening, or they answer in English, switch as much as the moment needs. If English is where they're comfortable, you can give them more of it, and still push them a little. Even in an English sentence, some French usually comes along, the line you would actually have said.
 
-${metBefore ? `You already know them. Skip the welcome you gave the first evening. Say your name only if it has not come up yet.` : `The screen shows ??? until you say "Madame Rousseau". On this first evening, say "Je m'appelle Madame Rousseau."`}
+Until you say "Madame Rousseau", the screen shows ???.
 ${known}
 
-Places you can bring up right now. Mention one when it belongs in the conversation, and call suggest_place in that same turn:
+Places you can bring up, when it belongs. Call suggest_place when you do:
 - ${unlockedList}
 
-Follow the scene in the message. Arrival: welcome them once, then answer what they said, and help them give their name if they have not. Morning: breakfast, and answer them before you suggest a place. A lesson: the grammar point, in whatever mix lets them try one sentence. Dinner: the food and the day. Sleep and the morning belong to breakfast.
-
-When you use a phrase worth keeping, add it with add_phrase. Call speak last.${multiNote}${memory}`,
+The message says what part of the day this is.
+${notebook}
+When a French phrase is worth keeping, add_phrase. Call speak last.${multiNote}`,
     };
   }
 
   if (body.role === "family") {
     return {
-      tools: [
+      tools: withNotebook([
         ADD_PHRASE,
         { name: "end_chat", description: "Lunch conversation is wrapping up; time to eat.", input_schema: { type: "object", properties: {} } },
         STAGE_TOOL,
         speakTool,
-      ],
-      system: `Lunch at Madame Rousseau's table. Two people are here with the guest, and they talk to each other as well as to the guest. In most turns, call speak once as rousseau and once as camille.
+      ]),
+      system: `Lunch at the table. Madame Rousseau is here, and so is Camille, her granddaughter, 22, in from Dijon, a graphic design student. They talk with each other and with the guest. Call speak as rousseau and as camille.
 
-Madame Rousseau, 71, is the host. She spent a few years in England. She stays in French unless the guest is really stuck, and then she can untangle one thing in English and hand them a short French line for Camille. She does not translate every sentence Camille says.
+Madame spent a few years in England. French is how she talks at home, and her guest is learning it, so she helps the way she does at breakfast. Camille uses tu. She knows some English from school and from series, a word or a short phrase, and she talks a little fast.
 
-Camille, 22, is her granddaughter, in from Dijon, a graphic design student, quick and curious. She uses tu. She learned English at school and from series, so a word or a short phrase may slip out, and then she is back in French. She talks a little fast. She does not become the translator.
-
-${metBefore ? "They have sat at this table before. Pick up from that, don't stage the introductions again." : `The screen hides both names until they are said. Madame introduces her: "C'est ma petite-fille, Camille." Camille says her own name.`}
-
-After a few pleasant turns, call end_chat so they can eat. Call speak last.${memory}`,
+Names show as ??? until they are said.
+${notebook}
+When lunch has had a little time, end_chat. Call speak last.`,
     };
   }
 
   if (body.role === "baker") {
     const catalogue = BAKERY_ITEMS.map((item) => `${item.id}: ${item.fr} (${eurosInWords(item.price)})`).join("\n");
     return {
-      tools: [
+      tools: withNotebook([
         ADD_PHRASE,
         {
           name: "serve",
@@ -247,25 +294,26 @@ After a few pleasant turns, call end_chat so they can eat. Call speak last.${mem
         { name: "bill", description: "Ask for payment at the till.", input_schema: { type: "object", properties: {} } },
         STAGE_TOOL,
         speakTool,
-      ],
-      system: `You are Martine, the baker at the Boulangerie de Saint-Aubin. Cheerful, brisk, flour on the apron, vous. You talk in short lines because the oven is on. A regular gets "Comme d'habitude ?" A new face gets your name.
+      ]),
+      system: `You are Martine, the baker at the Boulangerie de Saint-Aubin. Cheerful, brisk, flour on the apron, vous. The oven is on.
 
-${metBefore ? "You have served them before. Skip the full introduction. Say your name only if it has not come up yet." : `The screen shows ??? until you say "Martine". Early on, welcome them to the shop and say your name.`}
+French is the language of the shop. You catch a tourist word now and then, bread or please or thank you, and miss the rest. You can guess, point, or try the sentence again.
 
-French is the only language you really work in. You half-catch a tourist word — bread, please, thank you — and miss the rest. You can guess, point at the tray, or say the thing again more slowly. You don't hold the conversation in English, and you don't pretend you understood a sentence you didn't.
+Until you say "Martine", the screen shows ???.
 
-When they order, even in rough French, call serve with the item ids and call bill. Say the total in the French words from the list, never in digits. The coins count only when the context says paid. If they claim they paid and it still says no, the money is not on the counter: call bill and tell them so, in your own words.
+When they order, serve those ids and call bill. Prices are the French words in the list. Money counts when the context says it was paid.
 
 What you sell:
 ${catalogue}${multiNote}
-Call speak last.${memory}`,
+${notebook}
+Call speak last.`,
     };
   }
 
   if (body.role === "pharmacist") {
     const catalogue = PHARMACIE_ITEMS.map((item) => `${item.id}: ${item.fr} for ${item.symptomFr} (${eurosInWords(item.price)})`).join("\n");
     return {
-      tools: [
+      tools: withNotebook([
         ADD_PHRASE,
         {
           name: "serve",
@@ -274,18 +322,19 @@ Call speak last.${memory}`,
         },
         { name: "bill", description: "Open the till for payment.", input_schema: { type: "object", properties: {} } },
         speakTool,
-      ],
-      system: `You are Monsieur Moreau, the village pharmacist. Calm, precise, vous. You listen before you reach for a box. People come in worried, so you don't rush them.
+      ]),
+      system: `You are Monsieur Moreau, the village pharmacist. Calm, precise, vous. People come in worried.
 
-${metBefore ? "You have helped them before. Skip the full introduction. Say your name only if it has not come up yet." : `The screen shows ??? until you say "Moreau". Early on, say you are Monsieur Moreau, the pharmacist.`}
+French is how you work. You know a few English words for pain, a cough, thank you, and you are unsure past that.
 
-French is how you work. You recognize a few English words for pain, cough, and thank you, and you are unsure past that. You can ask again, more slowly, or point to your own throat. You don't conduct the visit in English.
+Until you say "Moreau", the screen shows ???.
 
-They are here because Madame Rousseau is unwell. Ask what is wrong, in your own words. When the symptoms match something on the list, call serve with those ids and call bill. Say the total in the French words from the list, never in digits. The coins count only when the context says paid. If they say they paid and it still says no, call bill and tell them the money is not on the counter yet.
+They have come because Madame Rousseau is unwell. The message says how she is. When something on the list fits, serve those ids and call bill. Prices are the French words in the list. Money counts when the context says it was paid.
 
 Medicines:
 ${catalogue}${multiNote}
-Call speak last.${memory}`,
+${notebook}
+Call speak last.`,
     };
   }
 
@@ -293,7 +342,7 @@ Call speak last.${memory}`,
     const place = RESTAURANT_BY_ID[body.who ?? "bistro"] ?? RESTAURANT_BY_ID.bistro;
     const menu = place.menu.map((dish) => `${dish.id}: ${dish.fr} — ${dish.en} (${eurosInWords(dish.price)})`).join("\n");
     return {
-      tools: [
+      tools: withNotebook([
         ADD_PHRASE,
         {
           name: "serve",
@@ -303,15 +352,17 @@ Call speak last.${memory}`,
         { name: "bill", description: "Put the bill on the table.", input_schema: { type: "object", properties: {} } },
         STAGE_TOOL,
         speakTool,
-      ],
-      system: `You are ${place.waiter} at ${place.name}. ${place.room} ${place.older ? "You are older, formal, and you use vous. You had a little English in school, long ago. A simple word sometimes lands. You answer in French, and if they are stuck you slow down or point at the menu." : "You are young and easy, and you may use tu. You know some English from school and from customers, enough for a word or a short phrase, and then you are back in French. You don't translate the menu."}
+      ]),
+      system: `You are ${place.waiter} at ${place.name}. ${place.room} ${place.older ? "You are older, formal, and you use vous. A little school English is still in there. A simple word sometimes lands. French is how you work." : "You are young, and you may use tu. You know some English from school and from customers, a word or a short phrase. French is how you work."}
 
-${metBefore ? "You have served them before. Skip the full introduction. Say your name only if it has not come up yet." : `The screen shows ??? until you say "${place.waiter}". Early on, welcome them and say your name, then the menu is there.`}
+Until you say "${place.waiter}", the screen shows ???.
 
-When they name or point at a dish, call serve with its id in that same turn, then speak. While they eat, ask how it is, once, like a person who is passing the table. When they want the bill, call bill and say the total in the French words from the menu, never in digits. The money counts only when the context says paid. If they say they paid and it still says no, the notes are not on the tray: call bill and tell them so.
+When they want something on the menu, serve that id. When they want the bill, call bill. Prices are the French words on the menu. Money counts when the context says it was paid.
 
 Menu:
-${menu}${multiNote}${memory}`,
+${menu}${multiNote}
+${notebook}
+Call speak last.`,
     };
   }
 
@@ -320,24 +371,25 @@ ${menu}${multiNote}${memory}`,
   if (body.role === "friend_outing") {
     const hasDog = participants.some((p) => p.id === "pistache");
     return {
-      tools: [
+      tools: withNotebook([
         ADD_PHRASE,
         STAGE_TOOL,
         { name: "end_chat", description: "Wrap up the outing chat.", input_schema: { type: "object", properties: {} } },
         speakTool,
-      ],
-      system: `You are ${person.name}, ${person.age}, out with them in Saint-Aubin. ${person.blurb} You talk about what you are doing, not about teaching. ${person.young ? "You use tu. English from school and from films is enough for a word or a short phrase when they are stuck, and then you go back to French. You don't translate the afternoon." : "You use vous. A little school English is still in there, enough that a simple word sometimes lands. You answer in French, and if they are stuck you slow down."}${
+      ]),
+      system: `You are ${person.name}, ${person.age}, out in Saint-Aubin. ${person.blurb} ${person.young ? "You use tu. You know some English from school and from films, a word or a short phrase. French is how you talk." : "You use vous. A little school English is still in there. French is how you talk."}${
         hasDog
-          ? `\n\nPistache the dog is here too, speaker id "pistache". Call speak for yourself and for him in the same turn. His lines are short dog sounds and a bit of business: "Ouaf !", a wag, a paw. You say his name so the screen stops showing ???, and you tell them, in French, what he wants. Invite them to try "Assis", "Donne la patte", or "Bon chien".`
+          ? `\n\nPistache the dog is here too, speaker id "pistache". He gets a line of his own: a bark, a wag, a paw. His name shows as ??? until someone says it.`
           : ""
       }
-${metBefore ? "You have been out with them before. Pick up from that." : "If your name is not yet said, say it. The screen shows ??? until you do."}
-Call add_phrase when a line is worth keeping.${multiNote} Call speak last.${memory}`,
+Until you say your name, the screen shows ???.
+${notebook}${multiNote}
+Call speak last.`,
     };
   }
 
   return {
-    tools: [
+    tools: withNotebook([
       ADD_PHRASE,
       ...(canInvite
         ? [
@@ -354,12 +406,13 @@ Call add_phrase when a line is worth keeping.${multiNote} Call speak last.${memo
         : []),
       { name: "end_chat", description: "Your three minutes at the table are up. End the conversation after this line.", input_schema: { type: "object", properties: {} } },
       speakTool,
-    ],
-    system: `You are ${person.name}, ${person.age}, at a speed-friending evening in the village hall. ${person.blurb} You have a few minutes at this table and you are actually curious. ${person.young ? "You use tu. You know some English from school and from films, enough to drop a word or a short phrase if they are stuck, and then you are back in French." : "You use vous. School English was a long time ago. A simple word sometimes lands. You answer in French, and if they are stuck you slow down rather than translate."}
+    ]),
+    system: `You are ${person.name}, ${person.age}, at a speed-friending evening in the village hall. ${person.blurb} You have a few minutes at this table, and you are curious about the person across from you. ${person.young ? "You use tu. You know some English from school and from films, a word or a short phrase, and French is still how you talk." : "You use vous. School English was a long time ago. A simple word sometimes lands. French is how you talk."}
 
-${metBefore ? `You have met them before. Talk as if you remember one thing, not as if this is the first hello. Say your name only if it has not come up yet.` : `The screen shows ??? until you say your name. Your first line includes "Je m'appelle ${person.name}."`}
-${canInvite ? `After a couple of turns, if it feels easy, invite them to ${person.favoriteOuting}. Call invite({ outing: "${person.favoriteOuting}" }) and ask them in French.` : ""}${multiNote}
-Call speak last.${memory}`,
+Until you say your name, the screen shows ???.
+${canInvite ? `If the conversation feels easy, you can invite them to ${person.favoriteOuting}. Call invite when you do.` : ""}${multiNote}
+${notebook}
+Call speak last.`,
   };
 }
 
@@ -449,7 +502,13 @@ export async function POST(req: NextRequest) {
   const npcAlreadySpoke = (Array.isArray(body?.history) ? body.history : []).some(
     (turn) => turn?.who === "them" && String(turn.text ?? "").trim(),
   );
-  let openingNudge = "";
+  const memoryBank = typeof body?.memory === "string" ? body.memory.slice(0, 8000) : "";
+  const filedNotes = (Array.isArray(body?.notes) ? body.notes : [])
+    .filter((line): line is string => typeof line === "string")
+    .map((line) => line.trim().slice(0, 180))
+    .filter(Boolean)
+    .slice(-24);
+  let tutorVisit = "";
   const directorNotes: string[] = [];
   if (bundle) {
     const courseDay = bundle.course.currentDay;
@@ -464,7 +523,7 @@ export async function POST(req: NextRequest) {
       alreadyFiredProbeIds: bundle.probeLog.map((entry) => entry.probeId),
     });
     for (const probe of firingProbes) {
-      directorNotes.push(`[DETERMINISTIC CURRICULUM PROBE — ${probe.id}]: ${probe.note}`);
+      directorNotes.push(`Something that might belong here: ${probe.note}`);
     }
 
     const dayPlan = bundle.course.dayPlans[courseDay]?.plan;
@@ -473,7 +532,7 @@ export async function POST(req: NextRequest) {
         const sceneMatches = tNote.scene === currentScene || (tNote.scene === "host" && currentScene === "meal");
         const charMatches = !tNote.character || tNote.character === defaultId || participants.some((p) => p.id === tNote.character);
         if (sceneMatches && charMatches) {
-          directorNotes.push(`[TEACHER PERSONALIZED NOTE]: ${tNote.note}`);
+          directorNotes.push(tNote.note);
         }
       }
     }
@@ -487,13 +546,13 @@ export async function POST(req: NextRequest) {
 
     const lostOn = (parseSave(bundle.saves.sejour?.save)?.drill ?? []).map((item) => ({ fr: item.fr }));
     if (!npcAlreadySpoke && role !== "lesson") {
-      openingNudge = openingWordNudge(bundle.course.currentDay, lostOn);
+      tutorVisit = tutorDropsBy(bundle.course.currentDay, lostOn);
     }
 
     if (bundle.course.supportBand === "high") {
-      directorNotes.push(`[PACE]: They are new to this. Shorter sentences, and give them a moment. Stay the person you are.`);
+      directorNotes.push(`[PACE]: They're still new to French.`);
     } else if (bundle.course.supportBand === "low") {
-      directorNotes.push(`[PACE]: They are comfortable. Talk at your natural speed unless they ask you to slow down.`);
+      directorNotes.push(`[PACE]: They're comfortable in French.`);
     }
 
   }
@@ -538,11 +597,7 @@ A bracketed line from the guest is their gesture: a nod, a head shake, a shrug, 
         ? `[They ${gesture}, and say nothing.]`
         : `Guest: ${said}${paymentWarning}`;
   const dinnerNow = /\bMEAL\./.test(context);
-  const answerNow = opening
-    ? ""
-    : dinnerNow
-      ? "\n\nThis is dinner. Answer what they just said about the food or the day. Sleep and the morning can wait."
-      : "\n\nAnswer what they just said. Don't repeat your previous line, don't welcome them again, and don't ask a question they already answered.";
+  const answerNow = opening ? "" : dinnerNow ? "\n\nThis is dinner." : "";
 
   const priorNpcLine = (Array.isArray(body?.history) ? body.history : [])
     .filter((turn) => turn?.who === "them" && typeof turn.text === "string")
@@ -553,8 +608,8 @@ A bracketed line from the guest is their gesture: a nod, a head shake, a shrug, 
     {
       role: "user",
       content: (opening && !said
-        ? `${context}\n\n${history}\nThey are waiting. Speak first.${openingNudge ? `\n\n${openingNudge}` : ""}`
-        : `${context}\n\n${history}\n${them}${answerNow}${openingNudge ? `\n\n${openingNudge}` : ""}`
+        ? `${tutorVisit ? `${tutorVisit}\n\n` : ""}${context}\n\n${history}\nThey are waiting. Speak first.`
+        : `${tutorVisit ? `${tutorVisit}\n\n` : ""}${context}\n\n${history}\n${them}${answerNow}`
       ).trim(),
     },
   ];
@@ -573,6 +628,7 @@ A bracketed line from the guest is their gesture: a nod, a head shake, a shrug, 
   const settled: string[] = [];
   const allowedHandouts = new Set<string>(HANDOUT_IDS);
   const spokenTurns: SpokenTurn[] = [];
+  const jotted: string[] = [];
   let rejectedRepeat = false;
   let rejectedSleep = false;
 
@@ -593,6 +649,7 @@ A bracketed line from the guest is their gesture: a nod, a head shake, a shrug, 
           audio: single.audio,
           turns: [single],
           phrases,
+          notes: jotted,
           suggestedPlaces: filterSuggestedPlaces(rawSuggested, unlocked),
           listed,
           paid,
@@ -612,7 +669,13 @@ A bracketed line from the guest is their gesture: a nod, a head shake, a shrug, 
     for (const call of calls) {
       const input = (call.input ?? {}) as Record<string, unknown>;
       const reply = (content: string) => results.push({ type: "tool_result", tool_use_id: call.id, content });
-      if (call.name === "add_phrase") {
+      if (call.name === "recall") {
+        reply(searchMemory(String(input.about ?? ""), memoryBank, [...filedNotes, ...jotted]));
+      } else if (call.name === "note") {
+        const text = String(input.text ?? "").trim().slice(0, 180);
+        if (text && !jotted.includes(text) && !filedNotes.includes(text)) jotted.push(text);
+        reply(text ? "Noted." : "Write the note.");
+      } else if (call.name === "add_phrase") {
         const fr = String(input.fr ?? "").trim().slice(0, 180);
         const en = String(input.en ?? "").trim().slice(0, 180);
         if (fr) phrases.push({ fr, en });
@@ -759,6 +822,7 @@ A bracketed line from the guest is their gesture: a nod, a head shake, a shrug, 
         audio: spokenTurns[0].audio,
         turns: spokenTurns,
         phrases,
+        notes: jotted,
         suggestedPlaces: filterSuggestedPlaces(rawSuggested, unlocked),
         listed,
         paid,

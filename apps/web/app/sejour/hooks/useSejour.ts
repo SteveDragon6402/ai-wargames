@@ -15,6 +15,7 @@ import {
   recordAssessment,
   recordStudy,
   recordVisit,
+  addNotes,
   remember,
   SAVE_KEY,
   type Address,
@@ -845,6 +846,11 @@ export function useSejour() {
     void finishStay(playerLines);
   }, [afterReview, finishStay, reviewLines, save, setPhase]);
 
+  const rememberNotes = useCallback((id: string, lines: string[]) => {
+    if (!id || !lines.length) return;
+    setSave((curr) => addNotes(curr, id, lines));
+  }, []);
+
   const rememberDrill = useCallback((phrases: { fr: string; en: string }[]) => {
     if (!phrases.length) return;
     setSave((curr) => {
@@ -967,6 +973,7 @@ export function useSejour() {
     sickEventDone,
     noteStudy,
     rememberDrill,
+    rememberNotes,
     reviewDone,
     addOwnPhrase,
     addPage,

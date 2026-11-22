@@ -248,6 +248,7 @@ export interface TalkReply {
   served: string[];
   billed: boolean;
   settled: string[];
+  notes: string[];
   error?: string;
 }
 
@@ -259,6 +260,7 @@ export async function talk(body: {
   said: string;
   context: string;
   memory: string;
+  notes?: string[];
   opening?: boolean;
   gesture?: string;
   unlocked?: UnlockId[];
@@ -280,6 +282,7 @@ export async function talk(body: {
     served: [],
     billed: false,
     settled: [],
+    notes: [],
   };
   try {
     const response = await fetch("/api/sejour/talk", {
@@ -320,6 +323,7 @@ export async function talk(body: {
       served: Array.isArray(data?.served) ? data.served.filter((id): id is string => typeof id === "string") : [],
       billed: Boolean(data?.billed),
       settled: Array.isArray(data?.settled) ? data.settled.filter((id): id is string => typeof id === "string") : [],
+      notes: Array.isArray(data?.notes) ? data.notes.filter((line): line is string => typeof line === "string" && line.trim().length > 0) : [],
       error: turns.length || fallbackLine ? undefined : data?.error,
     };
   } catch {

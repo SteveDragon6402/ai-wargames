@@ -11,6 +11,11 @@ import { Conversation, type PaymentEvent } from "./Conversation";
 interface PharmacieProps {
   purse: number[];
   memory: string;
+  notes?: string[];
+  onNotes?: (notes: string[]) => void;
+  hostMemory?: string;
+  hostNotes?: string[];
+  onHostNotes?: (notes: string[]) => void;
   listening: boolean;
   knownIds?: readonly string[];
   onMeet?: (id: string) => void;
@@ -18,7 +23,7 @@ interface PharmacieProps {
   onDone: (turns: TalkTurn[], purse: number[]) => void;
 }
 
-export function Pharmacie({ purse: initialPurse, memory, listening, knownIds = [], onMeet, onPhrase, onDone }: PharmacieProps) {
+export function Pharmacie({ purse: initialPurse, memory, notes = [], onNotes, hostMemory = "", hostNotes = [], onHostNotes, listening, knownIds = [], onMeet, onPhrase, onDone }: PharmacieProps) {
   const [step, setStep] = useState<"bedside" | "shop">("bedside");
   const [bedsideTurns, setBedsideTurns] = useState<TalkTurn[]>([]);
   const [shopTurns, setShopTurns] = useState<TalkTurn[]>([]);
@@ -132,8 +137,10 @@ export function Pharmacie({ purse: initialPurse, memory, listening, knownIds = [
               onMeet={onMeet}
               speakFirst
               listening={listening}
-              memory={memory}
-              context="SICK EVENT. You are in bed with a cold: you have a sore throat (j'ai mal à la gorge) and a cough (je tousse). Ask the guest in simple French (and explain in English if they need help) to go to the pharmacie and describe your symptoms to the pharmacist so he gives them cough syrup (un sirop pour la toux) and throat lozenges (des pastilles pour la gorge). Hand them cash."
+              memory={hostMemory}
+              notes={hostNotes}
+              onNotes={onHostNotes}
+              context="SICK EVENT. You are in bed with a cold: a sore throat, j'ai mal à la gorge, and a cough, je tousse. You need un sirop pour la toux and des pastilles pour la gorge from the pharmacie. You can hand them the cash."
               endLabel="Head to the Pharmacie"
               onReply={(reply, history) => {
                 setBedsideTurns(history);
@@ -241,6 +248,8 @@ export function Pharmacie({ purse: initialPurse, memory, listening, knownIds = [
             speakFirst
             listening={listening}
             memory={memory}
+            notes={notes}
+            onNotes={onNotes}
             context={buildContext(paidCents)}
             paymentEvent={paymentEvent}
             canEnd={paid}

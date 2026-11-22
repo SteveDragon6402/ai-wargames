@@ -12,6 +12,8 @@ interface MealProps {
   place: Restaurant;
   purse: number[];
   memory: string;
+  notes?: string[];
+  onNotes?: (notes: string[]) => void;
   listening?: boolean;
   knownIds?: readonly string[];
   onMeet?: (id: string) => void;
@@ -19,7 +21,7 @@ interface MealProps {
   onDone: (turns: TalkTurn[], purse: number[]) => void;
 }
 
-export function Meal({ place, purse: initialPurse, memory, listening = false, knownIds = [], onMeet, onPhrase, onDone }: MealProps) {
+export function Meal({ place, purse: initialPurse, memory, notes = [], onNotes, listening = false, knownIds = [], onMeet, onPhrase, onDone }: MealProps) {
   const [stage, setStage] = useState<"ordering" | "eating" | "bill_and_pay">("ordering");
   const [menuOpen, setMenuOpen] = useState(true);
   const [pointed, setPointed] = useState<string | null>(null);
@@ -337,6 +339,8 @@ export function Meal({ place, purse: initialPurse, memory, listening = false, kn
             speakFirst
             listening={listening}
             memory={memory}
+            notes={notes}
+            onNotes={onNotes}
             context={buildContext(paidCents)}
             paymentEvent={paymentEvent}
             canEnd={paid}

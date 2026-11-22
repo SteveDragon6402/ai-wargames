@@ -67,6 +67,8 @@ interface ConversationProps {
   onMeet?: (id: string) => void;
   context: string;
   memory: string;
+  notes?: string[];
+  onNotes?: (notes: string[]) => void;
   unlocked?: UnlockId[];
   knownFrench?: string[];
   listening?: boolean;
@@ -103,6 +105,8 @@ export function Conversation({
   onMeet,
   context,
   memory,
+  notes = [],
+  onNotes,
   unlocked,
   knownFrench,
   listening = false,
@@ -183,8 +187,9 @@ export function Conversation({
       participants: roster,
       history,
       said: ev.prompt,
-      context: ev.updatedContext ?? context,
+      context: ev.updatedContext ??       context,
       memory,
+      notes,
       unlocked,
       knownFrench,
     });
@@ -226,6 +231,7 @@ export function Conversation({
       }
     }
 
+    if (reply.notes.length) onNotes?.(reply.notes);
     onReply?.(reply, next);
 
     // Speak all NPC lines in sequence using their respective voices
@@ -255,6 +261,7 @@ export function Conversation({
       opening: true,
       context,
       memory,
+      notes,
       unlocked,
       knownFrench,
     });
@@ -291,6 +298,7 @@ export function Conversation({
       gesture,
       context,
       memory,
+      notes,
       unlocked,
       knownFrench,
     });

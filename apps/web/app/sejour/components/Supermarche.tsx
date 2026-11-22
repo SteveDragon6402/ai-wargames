@@ -13,6 +13,8 @@ interface SupermarcheProps {
   recipe: Recipe;
   purse: number[];
   memory?: string;
+  notes?: string[];
+  onNotes?: (notes: string[]) => void;
   listening: boolean;
   knownIds?: readonly string[];
   onMeet?: (id: string) => void;
@@ -71,6 +73,8 @@ export function Supermarche({
   recipe,
   purse: initialPurse,
   memory = "",
+  notes = [],
+  onNotes,
   listening,
   knownIds = [],
   onMeet,
@@ -434,6 +438,8 @@ export function Supermarche({
               onMeet={onMeet}
               speakFirst
               memory={memory}
+              notes={notes}
+              onNotes={onNotes}
               listening={listening}
               context={buildCheckoutContext(paid)}
               paymentEvent={paymentEvent}

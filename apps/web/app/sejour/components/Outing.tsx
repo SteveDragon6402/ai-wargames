@@ -13,6 +13,8 @@ interface OutingProps {
   outing: OutingId;
   friend: Person;
   memory: string;
+  notes?: string[];
+  onNotes?: (notes: string[]) => void;
   listening: boolean;
   knownIds?: readonly string[];
   onMeet?: (id: string) => void;
@@ -76,6 +78,8 @@ export function Outing({
   outing,
   friend,
   memory,
+  notes = [],
+  onNotes,
   listening,
   knownIds = [],
   onMeet,
@@ -331,6 +335,8 @@ export function Outing({
               speakFirst
               listening={listening}
               memory={memory}
+              notes={notes}
+              onNotes={onNotes}
               context={`BEFORE OUTING: ${info.fr} (${info.label}) with ${friend.name}. You have just met up. Talk in simple French about what you are about to do (${outing === "parc" ? "walking in the park with the dog Pistache and playing frisbee" : outing === "cinema" ? "watching a short French film together" : "playing five-a-side football"}).`}
               endLabel="Start the activity"
               onReply={handleReplyBefore}
@@ -416,6 +422,8 @@ export function Outing({
                   speakFirst
                   listening={listening}
                   memory={memory}
+              notes={notes}
+              onNotes={onNotes}
                   context={`THREE-WAY CONVERSATION IN THE PARK between the player, ${friend.name} ("${friend.id}"), and the dog Pistache ("pistache"). Pets given so far: ${dogPets}. Both ${friend.name} and Pistache ("pistache") should speak/react in each turn so the player talks with both the owner and the dog!`}
                   endLabel="Switch to Frisbee 🥏"
                   onReply={handleReplyDog}
@@ -858,6 +866,8 @@ export function Outing({
               speakFirst
               listening={listening}
               memory={memory}
+              notes={notes}
+              onNotes={onNotes}
               context={`AFTER OUTING: You and ${friend.name} just finished ${
                 outing === "parc"
                   ? `hanging out at the park (talked and played with Pistache the dog ${dogPets} times, and caught the frisbee ${catches} times following French direction calls like à gauche, à droite, en haut, en bas)`
