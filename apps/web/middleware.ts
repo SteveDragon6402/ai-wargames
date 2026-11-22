@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { appUrlFromRequest } from "@/lib/app-url";
 
 const SESSION_COOKIE = "sejour_session";
 
@@ -35,9 +36,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.json({ error: "Authentication required." }, { status: 401 });
   }
 
-  const url = req.nextUrl.clone();
-  url.pathname = "/";
-  url.search = "";
+  const url = appUrlFromRequest(req, "/");
   url.searchParams.set("next", pathname);
   return NextResponse.redirect(url);
 }

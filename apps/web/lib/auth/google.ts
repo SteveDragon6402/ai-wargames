@@ -1,4 +1,7 @@
 import crypto from "node:crypto";
+import { getAppBaseUrl } from "@/lib/app-url";
+
+export { getAppBaseUrl };
 
 export interface OAuthStatePayload {
   nonce: string;
@@ -34,16 +37,6 @@ export function decodeOAuthStateCookie(cookieVal: string | undefined): OAuthStat
   } catch {
     return null;
   }
-}
-
-export function getAppBaseUrl(requestOrigin: string): string {
-  const configured = process.env.APP_URL?.trim();
-  if (configured) return configured.replace(/\/+$/, "");
-  const railway = process.env.RAILWAY_PUBLIC_DOMAIN?.trim() || process.env.RAILWAY_STATIC_URL?.trim();
-  if (railway) {
-    return railway.startsWith("http") ? railway.replace(/\/+$/, "") : `https://${railway.replace(/\/+$/, "")}`;
-  }
-  return requestOrigin.replace(/\/+$/, "");
 }
 
 export function isGoogleOAuthConfigured(): boolean {
