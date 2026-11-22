@@ -1,29 +1,7 @@
 import type { Metadata } from "next";
-import { Caveat, Fraunces, Lora } from "next/font/google";
+import { caveat, fraunces, lora } from "../fonts/fonts";
 import "../epicerie/epicerie.css";
 import "./sejour.css";
-
-const display = Fraunces({
-  weight: ["500", "600", "700"],
-  subsets: ["latin"],
-  variable: "--font-ep-display",
-  display: "swap",
-});
-
-const body = Lora({
-  weight: ["400", "500", "600"],
-  style: ["normal", "italic"],
-  subsets: ["latin"],
-  variable: "--font-ep-body",
-  display: "swap",
-});
-
-const hand = Caveat({
-  weight: ["500", "700"],
-  subsets: ["latin"],
-  variable: "--font-ep-hand",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "Le Séjour",
@@ -31,5 +9,7 @@ export const metadata: Metadata = {
 };
 
 export default function SejourLayout({ children }: { children: React.ReactNode }) {
-  return <div className={`${display.variable} ${body.variable} ${hand.variable} ep-page sj-page`}>{children}</div>;
+  return (
+    <div className={`${fraunces.variable} ${lora.variable} ${caveat.variable} ep-page sj-page`}>{children}</div>
+  );
 }

@@ -1,28 +1,7 @@
 import type { Metadata } from "next";
-import { Cormorant_Garamond, Inter, JetBrains_Mono } from "next/font/google";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { cormorant, inter, jetbrains } from "./fonts/fonts";
 import "./globals.css";
-
-const inter = Inter({
-  weight: ["400", "500", "600", "700"],
-  subsets: ["latin"],
-  variable: "--font-sans",
-  display: "swap",
-});
-
-const display = Cormorant_Garamond({
-  weight: ["500", "600", "700"],
-  subsets: ["latin"],
-  variable: "--font-display",
-  display: "swap",
-});
-
-const jetbrainsMono = JetBrains_Mono({
-  weight: ["400", "500", "700"],
-  subsets: ["latin"],
-  variable: "--font-mono",
-  display: "swap",
-});
 
 export const metadata: Metadata = {
   title: "French Immersion Games",
@@ -35,7 +14,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${inter.variable} ${display.variable} ${jetbrainsMono.variable}`}
+      className={`${inter.variable} ${cormorant.variable} ${jetbrains.variable}`}
     >
       <body>
         <TooltipProvider delayDuration={480}>{children}</TooltipProvider>
