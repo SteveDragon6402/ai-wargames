@@ -8,11 +8,9 @@ export async function middleware(req: NextRequest) {
   if (
     pathname === "/" ||
     pathname === "/join" ||
-    pathname === "/gate" ||
     pathname.startsWith("/api/health") ||
     pathname.startsWith("/api/auth/") ||
     pathname.startsWith("/api/invite/") ||
-    pathname.startsWith("/api/gate") ||
     pathname.startsWith("/sejour/") ||
     pathname.startsWith("/epicerie/")
   ) {

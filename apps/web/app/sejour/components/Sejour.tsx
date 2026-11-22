@@ -373,8 +373,7 @@ export function Sejour() {
             listening={stay.textHidden("host")}
             placeholder="Talk in French or English..."
             hearLabel="Hear her"
-            context={`MORNING. Day ${day}. Breakfast. You call them ${stay.save.address || "bonjour"}. ${level}
-Places open today: ${unlockedPlaces.length ? unlockedPlaces.join(", ") : "none yet"}.${
+            context={`MORNING. Day ${day}. Breakfast. You call them ${stay.save.address || "bonjour"}. ${level}${
               unlockedPlaces.includes("epicerie") && !stay.save.visits.epicerie
                 ? ` Cooking together is possible: ${nextSuggestedRecipe.fr} (${nextSuggestedRecipe.name}).`
                 : ""

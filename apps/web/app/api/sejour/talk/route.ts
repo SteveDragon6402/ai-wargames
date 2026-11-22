@@ -15,6 +15,8 @@ import { PHARMACIE_ITEMS } from "@/app/sejour/data/pharmacie";
 import { RESTAURANT_BY_ID } from "@/app/sejour/data/restaurants";
 import { parseSave } from "@/app/sejour/lib/save";
 import type { Participant, SpokenTurn } from "@/app/sejour/lib/voice";
+import { hostMorningAside } from "@/app/sejour/lib/morning-aside";
+import { pendingEvent } from "@/app/sejour/world/events";
 import { isOuting, isPlace, PLACE_INFO, PLACES, type OutingId, type PlaceId, type SceneId, type UnlockId } from "@/app/sejour/world/places";
 import { cleanStageCall, filterInvite, filterSuggestedPlaces, type StageCall } from "@/app/sejour/world/stage";
 
@@ -254,10 +256,10 @@ You spent a few years in England, so English is easy. French is how you normally
 Until you say "Madame Rousseau", the screen shows ???.
 ${known}
 
-Places you can bring up, when it belongs. Call suggest_place when you do:
+Places you can send them, once the morning gets there. Call suggest_place when you do:
 - ${unlockedList}
 
-The message says what part of the day this is.
+A morning message may include a private aside about how the conversation should go. Follow it, and don't read it aloud. The message also says what part of the day this is.
 ${notebook}
 When a French phrase is worth keeping, add_phrase. Call speak last.${multiNote}`,
     };
@@ -558,6 +560,19 @@ export async function POST(req: NextRequest) {
   }
 
   const unlocked = [...unlockedSet];
+  const invite = parsedDbSave?.pendingInvite;
+  const morningNote =
+    role === "host"
+      ? hostMorningAside({
+          context,
+          name: user?.name ?? "",
+          places: unlocked.filter(isPlace),
+          event: pendingEvent(unlocked, parsedDbSave?.eventsDone ?? [], parsedDbSave?.day ?? 0),
+          invite: invite
+            ? { outing: invite.outing, who: PERSON_BY_ID[invite.friendId]?.name ?? "a friend" }
+            : null,
+        })
+      : "";
 
   const history = (Array.isArray(body?.history) ? body.history : [])
     .filter((turn) => (turn?.who === "you" || turn?.who === "them") && typeof turn.text === "string")
@@ -608,8 +623,8 @@ A bracketed line from the guest is their gesture: a nod, a head shake, a shrug, 
     {
       role: "user",
       content: (opening && !said
-        ? `${tutorVisit ? `${tutorVisit}\n\n` : ""}${context}\n\n${history}\nThey are waiting. Speak first.`
-        : `${tutorVisit ? `${tutorVisit}\n\n` : ""}${context}\n\n${history}\n${them}${answerNow}`
+        ? `${morningNote ? `${morningNote}\n\n` : ""}${tutorVisit ? `${tutorVisit}\n\n` : ""}${context}\n\n${history}\nThey are waiting. Speak first.`
+        : `${morningNote ? `${morningNote}\n\n` : ""}${tutorVisit ? `${tutorVisit}\n\n` : ""}${context}\n\n${history}\n${them}${answerNow}`
       ).trim(),
     },
   ];
